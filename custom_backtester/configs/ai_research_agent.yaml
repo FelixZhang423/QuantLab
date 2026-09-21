@@ -1,0 +1,55 @@
+agent:
+  name: QuantResearchAgent
+  mode: model_backed
+  default_language: zh
+  require_user_confirmation: true
+  max_candidates_per_round: 30
+  max_tool_calls_per_round: 8
+
+llm:
+  provider: deepseek
+  model: deepseek-v4-flash
+  base_url: https://api.deepseek.com
+  temperature: 0.2
+  top_p: 1.0
+  response_format: json
+  timeout_seconds: 120
+
+research_defaults:
+  pool_id: liquid_500_864dc25f
+  target_horizon: 20
+  holding_period: 20
+  train_start: "2022-01-14"
+  train_end: "2024-07-26"
+  valid_start: "2024-01-25"
+  valid_end: "2025-07-28"
+  test_start: "2025-01-27"
+  test_end: "2026-06-12"
+
+quality_gates:
+  min_coverage: 0.8
+  min_valid_ic: 0.02
+  min_valid_rank_ic: 0.02
+  min_icir: 0.2
+  max_turnover: 1.0
+  require_positive_backtest: true
+
+guardrails:
+  allow_python_code: false
+  allow_unknown_fields: false
+  allow_unknown_operators: false
+  allow_direct_trading: false
+  require_identity_lock: true
+  require_failure_memory: true
+  require_reflection_memory: true
+  require_audit_report: true
+  require_tool_call_limit: true
+
+paths:
+  master_store: data_cache/master
+  pools_root: data_cache/pools
+  runtime_root: data_cache/factor_runtime
+  factor_runs_root: factor_runs
+  saved_results_root: outputs/saved_backtests
+  jobs_root: jobs
+  ai_research_root: outputs/ai_research

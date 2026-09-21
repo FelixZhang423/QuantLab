@@ -1,0 +1,6 @@
+# Paths are resolved from the shell working directory unless absolute.
+market_panel: single_factor/data/selected_500_liquid_processed/panel.parquet
+pool_dir: custom_backtester/data_cache/pools/liquid_500_864dc25f
+factor_runs_root: custom_backtester/factor_runs
+backtests_root: custom_backtester/outputs/saved_backtests/factor/liquid_500_864dc25f
+output_root: research_data

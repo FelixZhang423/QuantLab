@@ -1,0 +1,22 @@
+alphas:
+  - name: momentum_20
+    expr: "close / delay(close, 20) - 1"
+    weight: 1.0
+  - name: turnover_reversal
+    expr: "-rank(TurnoverRate)"
+    weight: 0.5
+
+backtest:
+  start_date: "2021-06-18"
+  end_date: "2026-06-16"
+  top_k: 50
+  rebalance_freq: "1D"
+  price: "next_open"
+  initial_cash: 100000000
+  buy_cost: 0.0015
+  sell_cost: 0.0015
+  slippage: 0.0005
+  min_cost: 5
+  max_weight_per_stock: 0.02
+  exclude_limit_up_buy: true
+  exclude_limit_down_sell: true

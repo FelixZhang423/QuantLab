@@ -1,0 +1,10 @@
+master_store: "../../data_cache/master"
+pools_root: "../../data_cache/pools"
+name: liquid_500
+selection_start: "2021-06-18"
+selection_end: "2024-07-26"
+top_n: 500
+min_listed_days: 250
+min_coverage: 0.9
+exclude_suspended: true
+overwrite: false

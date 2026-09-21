@@ -1,0 +1,82 @@
+{
+  "processed_dir": "data/selected_500_liquid_processed",
+  "pool_codes_file": "data/pool_codes_500_liquid.txt",
+  "fields": [
+    "open",
+    "close",
+    "high",
+    "low",
+    "ycp",
+    "volume",
+    "amount",
+    "ChangePCT",
+    "RangePCT",
+    "TurnoverRate",
+    "Ifsuspend",
+    "if_up",
+    "if_flat",
+    "if_down",
+    "RisingUpDays",
+    "FallingDownDays",
+    "MaxRisingUpDays",
+    "MaxFallingDownDays",
+    "HighestPrice",
+    "LowestPrice",
+    "ema12",
+    "ema26",
+    "dif",
+    "dea",
+    "macd",
+    "max_high_9",
+    "min_low_9",
+    "RSV",
+    "kdj_k",
+    "kdj_d",
+    "kdj_j",
+    "ma4",
+    "ma5",
+    "ma8",
+    "ma12",
+    "ma16",
+    "ma20",
+    "ma47"
+  ],
+  "cache_splits": {
+    "train": {
+      "cache_dir": "cache/train",
+      "cache_start": "2022-01-14",
+      "cache_end": "2024-07-26"
+    },
+    "valid": {
+      "cache_dir": "cache/valid",
+      "cache_start": "2024-01-25",
+      "cache_end": "2025-07-28"
+    },
+    "test": {
+      "cache_dir": "cache/test",
+      "cache_start": "2025-01-27",
+      "cache_end": "2026-06-12"
+    }
+  },
+  "cache_dir": "cache/train",
+  "valid_cache_dir": "cache/valid",
+  "test_cache_dir": "cache/test",
+  "max_backtrack_days": 100,
+  "target_horizon": 20,
+  "max_future_days": 20,
+  "target_factor_count": 50,
+  "max_attempts": 100000,
+  "output_dir": "run",
+  "rollout_timesteps": 2048,
+  "seed": 0,
+  "device": "cpu",
+  "quality": {
+    "min_coverage": 0.8,
+    "min_train_ic": 0.03,
+    "min_valid_ic": 0.02,
+    "min_icir": 0.2,
+    "score_ic_weight": 0.5,
+    "score_rank_ic_weight": 0.3,
+    "score_icir_weight": 0.2
+  }
+}

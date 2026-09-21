@@ -1,0 +1,69 @@
+master_store: "../data_cache/master"
+pools_root: "../data_cache/pools"
+runtime_root: "../data_cache/factor_runtime"
+factor_runs_root: "../factor_runs"
+fields:
+  - open
+  - close
+  - high
+  - low
+  - ycp
+  - volume
+  - amount
+  - ChangePCT
+  - RangePCT
+  - TurnoverRate
+  - Ifsuspend
+  - if_up
+  - if_flat
+  - if_down
+  - RisingUpDays
+  - FallingDownDays
+  - MaxRisingUpDays
+  - MaxFallingDownDays
+  - HighestPrice
+  - LowestPrice
+  - ema12
+  - ema26
+  - dif
+  - dea
+  - macd
+  - max_high_9
+  - min_low_9
+  - RSV
+  - kdj_k
+  - kdj_d
+  - kdj_j
+  - ma4
+  - ma5
+  - ma8
+  - ma12
+  - ma16
+  - ma20
+  - ma47
+splits:
+  train:
+    cache_start: "2022-01-14"
+    cache_end: "2024-07-26"
+  valid:
+    cache_start: "2024-01-25"
+    cache_end: "2025-07-28"
+  test:
+    cache_start: "2025-01-27"
+    cache_end: "2026-06-12"
+max_backtrack_days: 100
+target_horizon: 20
+max_future_days: 20
+target_factor_count: 50
+max_attempts: 100000
+rollout_timesteps: 2048
+seed: 0
+device: cpu
+quality:
+  min_coverage: 0.9
+  min_train_ic: 0.05
+  min_valid_ic: 0.04
+  min_icir: 0.5
+  score_ic_weight: 0.5
+  score_rank_ic_weight: 0.3
+  score_icir_weight: 0.2

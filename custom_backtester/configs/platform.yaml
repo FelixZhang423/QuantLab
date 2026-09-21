@@ -1,0 +1,45 @@
+source_csv: "../../../数据/daily_with_maindata_v2.csv"
+master_store: "../data_cache/master"
+chunksize: 200000
+# The current source uses tab separators despite its .csv extension; auto also works.
+delimiter: auto
+overwrite: false
+factor_fields:
+  - open
+  - close
+  - high
+  - low
+  - ycp
+  - volume
+  - amount
+  - ChangePCT
+  - RangePCT
+  - TurnoverRate
+  - Ifsuspend
+  - if_up
+  - if_flat
+  - if_down
+  - RisingUpDays
+  - FallingDownDays
+  - MaxRisingUpDays
+  - MaxFallingDownDays
+  - HighestPrice
+  - LowestPrice
+  - ema12
+  - ema26
+  - dif
+  - dea
+  - macd
+  - max_high_9
+  - min_low_9
+  - RSV
+  - kdj_k
+  - kdj_d
+  - kdj_j
+  - ma4
+  - ma5
+  - ma8
+  - ma12
+  - ma16
+  - ma20
+  - ma47
