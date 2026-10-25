@@ -79,6 +79,48 @@ class PoolTests(unittest.TestCase):
 
             self.assertEqual(load_pool_codes(root / "pools", result["pool_id"]), ["000002", "000001"])
 
+    def test_create_pool_can_allow_fewer_than_top_n_and_records_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store_dir = self._build_store(root)
+            provenance = {"source": "clickhouse", "filters": {"industries": ["银行"]}}
+
+            result = create_pool(
+                store_dir=store_dir,
+                pools_root=root / "pools",
+                name="liquid_more",
+                selection_start="2024-01-01",
+                selection_end="2024-01-02",
+                top_n=5,
+                min_coverage=1.0,
+                strict_top_n=False,
+                provenance=provenance,
+            )
+
+            self.assertEqual(result["n_stocks"], 3)
+            manifest = load_pool_manifest(root / "pools", result["pool_id"])
+            self.assertEqual(manifest["top_n"], 5)
+            self.assertFalse(manifest["strict_top_n"])
+            self.assertEqual(manifest["provenance"], provenance)
+
+    def test_provenance_does_not_change_pool_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store_dir = self._build_store(root)
+            common = dict(
+                store_dir=store_dir,
+                name="liquid_2",
+                selection_start="2024-01-01",
+                selection_end="2024-01-02",
+                top_n=2,
+                min_coverage=1.0,
+            )
+
+            first = create_pool(pools_root=root / "pools_a", provenance={"source": "a"}, **common)
+            second = create_pool(pools_root=root / "pools_b", provenance={"source": "b"}, **common)
+
+            self.assertEqual(first["pool_id"], second["pool_id"])
+
     def test_create_pool_explains_incomplete_master_import(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -144,7 +144,33 @@ def _run_operation(operation: str, payload: Mapping[str, Any], job_dir: Path | N
     if operation == "generate_factors":
         return run_factor_generation(**dict(payload))
     if operation == "backtest_factors":
-        return backtest_accepted_factors(**dict(payload))
+        options = dict(payload)
+        if job_dir is not None:
+            # 批次输出按 job_id 版本化，重复回测不会覆盖旧结果
+            options["backtest_id"] = job_dir.name
+
+            def report(progress: Dict[str, object]) -> None:
+                selected = int(progress.get("selected_count") or 0)
+                processed = int(progress.get("processed") or 0)
+                completed = int(progress.get("completed") or 0)
+                failed = int(progress.get("failed") or 0)
+                stage = str(progress.get("stage") or "running")
+                if stage == "finished":
+                    message = f"因子回测完成：成功 {completed} 个，失败 {failed} 个"
+                else:
+                    message = (
+                        f"因子回测中：已处理 {processed}/{selected}，"
+                        f"成功 {completed} 个，失败 {failed} 个"
+                    )
+                update_job_status(
+                    job_dir,
+                    "running",
+                    message,
+                    {"progress": _jsonable(progress)},
+                )
+
+            options["progress_callback"] = report
+        return backtest_accepted_factors(**options)
     if operation == "compose_factors":
         options = dict(payload)
         if job_dir is not None:

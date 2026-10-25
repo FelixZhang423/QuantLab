@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -12,6 +13,8 @@ from custom_bt.ai_research.prompts import TOOL_WHITELIST
 from custom_bt.ai_research.tools import validate_candidate_expression
 from custom_bt.canonical_expression import normalize_expression
 from custom_bt.platform_jobs import create_platform_job, run_platform_job
+
+logger = logging.getLogger(__name__)
 
 
 _LONG_JOB_TO_OPERATION = {
@@ -344,6 +347,12 @@ class AIToolExecutor:
             json.dumps(manifest, ensure_ascii=False, indent=2, default=str),
             encoding="utf-8",
         )
+        try:
+            from custom_bt.mysql_store import persist_factor_run
+
+            persist_factor_run(factor_run_dir)
+        except Exception:
+            logger.warning("MySQL persist failed for factor run %s", run_id, exc_info=True)
         self.store.write_json(self.session_dir / "materialized_factor_run.json", manifest)
         return factor_run_dir
 

@@ -117,7 +117,7 @@ python -m custom_bt.cli backtest-factors `
   --config configs/default.yaml
 ```
 
-回测结果位于 `outputs/factor_backtests/<pool_id>/<run_id>/`，包含每个因子的收益、Sharpe、最大回撤、换手率和交易成本汇总。
+回测结果位于 `outputs/saved_backtests/factor/<pool_id>/<run_id>/`，包含每个因子的收益、Sharpe、最大回撤、换手率和交易成本汇总。Web/平台任务提交时会再套一层批次目录 `<backtest_id>/`（即 job_id），重复回测不覆盖历史结果。
 
 ### 4.5 网页查看
 
@@ -283,3 +283,97 @@ python app/run_streamlit.py
 Open the displayed local URL, usually `http://localhost:8501`.
 
 The `平台任务` tab can submit the master-cache import. The `股票池` tab creates a named pool. The `因子生成` tab selects a pool and submits PPO generation. The `因子回测` tab selects a factor run and submits batch backtests for accepted factors. All four operations run in the background and can be monitored in `后台任务`; the original `回测` tab remains available for manual expression debugging.
+
+## MySQL 集中存储（股票池 / 因子 / 回测）
+
+本地文件仍是主存储（`data_cache/pools`、`factor_runs`、`outputs/saved_backtests`），
+MySQL 是集中存档：建池、因子生成、回测保存后自动同步，重复同步幂等。
+
+连接配置（环境变量优先，其次本地文件）：
+
+```powershell
+# 长期配置：复制模板后填写；mysql.local.env 已被 **/*.local.env 忽略
+copy configs\mysql.env.example configs\mysql.local.env
+
+# 或当次会话临时指定
+$env:QL_MYSQL_HOST = "127.0.0.1"
+$env:QL_MYSQL_PORT = "3306"
+$env:QL_MYSQL_USER = "quantlab"
+$env:QL_MYSQL_PASSWORD = "<密码>"
+$env:QL_MYSQL_DATABASE = "QuantLab"
+```
+
+安装驱动（已加入 `requirements.txt`）：
+
+```powershell
+py -3 -m pip install PyMySQL
+```
+
+表结构：
+
+| 分组 | 表 |
+| --- | --- |
+| 股票池 | `pools`、`pool_codes`、`pool_candidates`、`pool_stats` |
+| 因子 | `factor_runs`、`factors` |
+| 回测 | `backtests`、`backtest_components`、`backtest_daily`、`backtest_annual`、`backtest_trades`、`backtest_positions` |
+| 批量因子回测 | `factor_backtest_runs`（批次汇总，主键 `backtest_id`） |
+
+常用命令（在 `custom_backtester` 目录）：
+
+```powershell
+py -3 -m custom_bt.mysql_store schema   # 幂等建表
+py -3 -m custom_bt.mysql_store check    # 连接自检 + 各表行数
+py -3 -m custom_bt.cli mysql-sync       # 把现有本地结果补录到 MySQL
+```
+
+说明：MySQL 未配置或连不上时只记录 warning，不影响本地建池/回测；密码不会进入日志、响应或 manifest。
+
+## Web API（React 原型用）
+
+`原型/` 下的 React 前端通过 `/api/*` 读取真实数据，接口层在 `api/main.py`（FastAPI；查询端点 + 建池 `POST /api/pools` + 批量因子回测 `POST /api/factor-backtests`）。
+在 `custom_backtester` 目录启动：
+
+```powershell
+python -m api
+```
+
+默认监听 `127.0.0.1:8000`，可用环境变量 `QL_API_HOST` / `QL_API_PORT` 覆盖。
+本机若 `python` 是 Windows 商店占位程序（退出码 49），改用 `py -3 -m api`。
+
+日志除了照旧打在控制台，还会同时落盘到 `outputs/logs/`（`api_<日期>.log` 应用/错误日志、
+`api_access_<日期>.log` 每请求一行），关窗后依然可查。`QL_API_LOG=0` 关闭落盘，
+`QL_API_LOG_DIR=D:\logs` 换目录，详见 `docs/web_api.md` §5.1。
+
+**数据总览 / 数据字段 / 股票列表 / 股票池候选查公司 ClickHouse（HTTP 只读，实时）**，需要在公司网络下并配置凭据：
+环境变量 `QL_CH_PASSWORD`（以及可选的 `QL_CH_HOST` / `QL_CH_PORT` / `QL_CH_USER`）优先，其次读本地文件
+`configs/clickhouse.local.env`（已 gitignore，格式见同目录模板与 `.env.example`，不要提交）。
+没配凭据时所有依赖公司库的端点返回 503 并带中文原因，其余端点不受影响。
+
+端点：
+
+- `GET /api/data/master` 实时数据源概况（行数、股票数、日期区间、可用字段数、查询时间）
+- `GET /api/data/fields` 实时字段清单（库表结构 + 中文说明 + 能否进回测面板）
+- `GET /api/data/stocks` 实时股票清单（全市场逐股聚合 + 简称/行业/上市信息）
+- `GET /api/universe/options` 股票池筛选分布（行业/市场/板块/库内原始编码）
+- `GET /api/universe/stocks` 股票池候选预览（条件筛选 + 本地可建池标记 + 服务端分页）
+- `GET /api/universe/codes` 当前筛选下全部可建池代码（预览表格跨页全选/反选）
+- `POST /api/pools` 按筛选结果建池（可传 `selected_codes` 只建勾选股票；202 + job_id，后台子进程执行）
+- `GET /api/jobs/{job_id}` 建池任务状态（queued / running / finished / failed）
+- `GET /api/operators` 表达式算子（operator_registry + 中文说明/示例）
+- `GET /api/pools`、`GET /api/pools/{pool_id}` 股票池清单与明细（含池内代码与筛选来源）
+- `GET /api/factor-runs`、`GET /api/factor-runs/{run_id}` 因子运行与合格因子清单（`factor_id` 可直接用于提交）
+- `POST /api/factor-backtests` 提交批量因子回测（可传 `factor_ids` 只回测勾选因子；202 + job_id）
+- `GET /api/factor-backtests`、`GET /api/factor-backtests/{backtest_id}` 批次列表与汇总/失败明细（每行带 `run_key`）
+- `GET /api/factor-backtests/{backtest_id}/files/{file_name}` 下载批次汇总/失败 CSV
+- `GET /api/results`、`GET /api/results/{run_name}` 已保存回测结果（净值/年度指标/文件清单）
+- `GET /api/results/detail?run_key=...`、`GET /api/results/file?run_key=...` 按相对路径打开/下载任意层级结果（嵌套因子结果用这个）
+- `GET /api/results/{run_name}/files/{file_name}` 下载旧扁平结果文件（按 manifest 白名单）
+
+边界：股票池候选由公司库决定，但建池前会与本地主缓存取交集（公司库有、缓存没有的股票自动排除并提示）；
+导入、池内数据、因子生成与回测仍读本地主缓存 `data_cache/master`（`prepare-master` 导入的快照），
+两边的日期口径不同，页面上均有标注。行业只取 `dim.stock_main_info_fd.FirstIndustryName` 单级行业（申万一级；`Industry` 列是细分行业编码，不能直接当单级行业用）；市场/板块由代码前缀推导。
+
+前端开发时由 vite 把 `/api` 代理到该地址（见 `原型/vite.config.ts`，可用 `QL_API_TARGET` 覆盖）。
+建池与批量因子回测的 POST 已接入；因子生成/组合的提交端点仍在后续步骤。
+
+已接入的真实数据清单（各端点的实测值）与前后端技术栈详见 [docs/web_api.md](docs/web_api.md)。

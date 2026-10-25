@@ -229,6 +229,24 @@ def run_platform_job_cmd(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
+def mysql_sync_cmd(args: argparse.Namespace) -> None:
+    from custom_bt.mysql_store import load_settings, sync_all
+
+    settings = load_settings()
+    if settings is None:
+        raise SystemExit(
+            "MySQL 未配置：请设置 QL_MYSQL_HOST/QL_MYSQL_USER/QL_MYSQL_DATABASE，"
+            "或在 configs/mysql.local.env 中填写连接信息"
+        )
+    result = sync_all(
+        pools_root=args.pools_root,
+        factor_runs_root=args.factor_runs_root,
+        outputs_root=args.outputs_root,
+        settings=settings,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
 def ai_research_cmd(args: argparse.Namespace) -> None:
     runner = AIResearchRunner(
         config_path=args.config,
@@ -327,6 +345,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_platform_job = sub.add_parser("run-platform-job")
     p_platform_job.add_argument("--job-dir", required=True)
     p_platform_job.set_defaults(func=run_platform_job_cmd)
+    p_mysql_sync = sub.add_parser("mysql-sync", help="把本地股票池/因子运行/回测结果补录到 MySQL")
+    p_mysql_sync.add_argument("--pools-root", default=None)
+    p_mysql_sync.add_argument("--factor-runs-root", default=None)
+    p_mysql_sync.add_argument("--outputs-root", default=None)
+    p_mysql_sync.set_defaults(func=mysql_sync_cmd)
     p_ai = sub.add_parser("ai-research")
     p_ai.add_argument("intent", help="Natural language research goal.")
     p_ai.add_argument("--config", default="configs/ai_research_agent.yaml")

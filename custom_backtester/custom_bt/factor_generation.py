@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,8 @@ import pyarrow.parquet as pq
 
 from custom_bt.data import load_meta, normalize_code
 from custom_bt.pools import load_pool_codes, load_pool_manifest
+
+logger = logging.getLogger(__name__)
 
 
 def _close_panel(panel) -> None:
@@ -298,4 +301,10 @@ def run_factor_generation(
         json.dumps(result, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    try:
+        from custom_bt.mysql_store import persist_factor_run
+
+        persist_factor_run(factor_run_dir)
+    except Exception:
+        logger.warning("MySQL persist failed for factor run %s", run_id, exc_info=True)
     return result

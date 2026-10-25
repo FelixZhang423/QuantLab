@@ -130,6 +130,54 @@ class PlatformJobTests(unittest.TestCase):
             self.assertEqual(result["n_stocks"], 2)
             self.assertTrue((root / "pools" / result["pool_id"] / "manifest.json").exists())
 
+    def test_backtest_factors_platform_job_injects_batch_id_and_progress(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            payload = {
+                "master_store": "master",
+                "pools_root": "pools",
+                "factor_run_dir": "factor_run",
+                "outputs_root": "outputs",
+                "backtest_config": {},
+            }
+            job_dir = create_platform_job(root / "jobs", "backtest_factors", payload)
+            captured = {}
+
+            def fake_backtest(**kwargs):
+                captured.update(kwargs)
+                callback = kwargs["progress_callback"]
+                callback(
+                    {
+                        "stage": "running",
+                        "selected_count": 3,
+                        "processed": 1,
+                        "completed": 1,
+                        "failed": 0,
+                    }
+                )
+                callback(
+                    {
+                        "stage": "finished",
+                        "selected_count": 3,
+                        "processed": 3,
+                        "completed": 2,
+                        "failed": 1,
+                        "backtest_id": job_dir.name,
+                    }
+                )
+                return {"backtest_id": job_dir.name, "completed": 2, "failed": 1}
+
+            with patch("custom_bt.platform_jobs.backtest_accepted_factors", side_effect=fake_backtest):
+                result = run_platform_job(job_dir)
+
+            status = json.loads((job_dir / "status.json").read_text(encoding="utf-8"))
+            self.assertEqual(captured["backtest_id"], job_dir.name)
+            self.assertEqual(status["status"], "finished")
+            self.assertEqual(status["progress"]["processed"], 3)
+            self.assertEqual(status["progress"]["completed"], 2)
+            self.assertEqual(status["progress"]["failed"], 1)
+            self.assertEqual(result["backtest_id"], job_dir.name)
+
     def test_compose_factors_platform_job_dispatches_and_persists_progress(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

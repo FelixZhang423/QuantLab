@@ -1,0 +1,102 @@
+@import 'tailwindcss';
+
+:root {
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #172033;
+  background: #f3f6fa;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 1180px; min-height: 100vh; }
+.full-width, .page-stack { width: 100%; }
+.full-height { height: 100%; }
+.app-shell { min-height: 100vh; }
+.app-sider { position: sticky !important; top: 0; height: 100vh; overflow: hidden; z-index: 20; box-shadow: 6px 0 18px rgba(0, 21, 41, .08); }
+.sider-brand { height: 64px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid rgba(255,255,255,.08); overflow: hidden; }
+.brand { min-width: 180px; }
+.brand-mark { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; color: white; border-radius: 10px; font-size: 20px; background: linear-gradient(135deg, #1677ff, #7557ff); box-shadow: 0 8px 20px rgba(22,119,255,.25); }
+.brand-name { display: block; color: #172033; font-size: 20px; line-height: 1.2; letter-spacing: -.3px; }
+.brand-name-light { color: white; }
+.brand-sub { display: block; margin-top: 4px; color: #728095; font-size: 12px; }
+.app-sider .ant-menu { padding-top: 10px; border-inline-end: 0 !important; }
+.app-sider .ant-menu-item, .app-sider .ant-menu-submenu-title { margin-block: 4px; }
+.sider-version { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #7f91a5; white-space: nowrap; }
+.sider-version .ant-typography { color: #7f91a5; font-size: 11px; }
+.top-header { position: sticky; top: 0; z-index: 15; height: 64px; padding: 0 24px; border-bottom: 1px solid #e8edf3; box-shadow: 0 2px 8px rgba(22,35,52,.03); }
+.top-header .ant-breadcrumb { margin-bottom: 2px; font-size: 11px; }
+.top-header h4.ant-typography { margin: 0; }
+.profile-button { height: 42px; padding-inline: 8px; }
+.user-avatar { background: linear-gradient(135deg, #1677ff, #7557ff); }
+.app-content { min-width: 0; padding: 20px 24px 32px; overflow-x: hidden; }
+.ant-card { border-color: #e7ebf0; box-shadow: 0 3px 12px rgba(32,51,77,.035); }
+.ant-card .ant-card-head { min-height: 48px; }
+.metric-card { position: relative; min-height: 108px; overflow: hidden; }
+.metric-card::after { content: ""; position: absolute; width: 72px; height: 72px; right: -14px; top: -18px; border-radius: 50%; opacity: .13; }
+.metric-blue::after { background: #1677ff; } .metric-green::after { background: #52c41a; }
+.metric-red::after { background: #ff4d4f; } .metric-violet::after { background: #722ed1; }
+.metric-cyan::after { background: #13c2c2; } .metric-orange::after { background: #fa8c16; }
+.metric-card .ant-statistic-title { color: #718096; font-size: 13px; }
+.metric-card .ant-statistic-content { margin-top: 8px; color: #172033; font-weight: 650; }
+.metric-card .ant-statistic-content-suffix { margin-left: 6px; font-size: 13px; font-weight: 400; }
+.data-card { height: 100%; }
+.filter-card .category-chip { font-size: 13px; line-height: 22px; padding: 3px 12px; border: 1px solid #e7ebf0; border-radius: 999px; background: #f7f9fc; margin-inline-end: 0; user-select: none; }
+.filter-card .category-chip:hover { border-color: #91caff; background: #f0f7ff; }
+/* 选中项置灰（未选中项保持上面的浅色样式） */
+.filter-card .category-chip-active, .filter-card .category-chip-active:hover { background: #e3e8ee !important; border-color: #d5dbe4 !important; color: #172033 !important; font-weight: 600; }
+.category-chip-count { font-size: 12px; opacity: .72; margin-left: 4px; }
+.clickable-rows .ant-table-row { cursor: pointer; }
+.chart { width: 100%; height: 300px; }
+.chart-compact { height: 248px; }
+.status-summary { height: 100%; }
+.status-summary .ant-progress { margin-top: 6px; }
+.status-tag { min-width: 76px; text-align: center; }
+.status-running { animation: statusPulse 1.8s ease-in-out infinite; }
+@keyframes statusPulse { 0%, 100% { opacity: 1; } 50% { opacity: .68; } }
+.filter-card .ant-card-body { padding-block: 14px; }
+.filter-select { width: 132px; }
+.task-search { width: 230px; }
+.task-table-card .ant-card-body { padding: 0; }
+.table-pagination { padding: 14px 18px; border-top: 1px solid #edf0f4; }
+.highlight-row td { background: #eaf4ff !important; animation: rowGlow 1.5s ease-in-out 2; }
+@keyframes rowGlow { 50% { background: #cce4ff; } }
+.simulation-card { border-style: dashed; background: linear-gradient(90deg, #fbfcff, #f7f5ff); }
+.log-viewer { height: 280px; margin-top: 10px; padding: 14px; overflow-y: auto; border-radius: 8px; background: #0d1726; color: #b7c7da; font: 12px/1.9 "SFMono-Regular", Consolas, monospace; }
+.log-error { color: #ff7875; font-weight: 600; }
+.backtest-layout { align-items: stretch; }
+.form-card, .result-preview { min-height: calc(100vh - 108px); }
+.code-input, code { font-family: "SFMono-Regular", Consolas, monospace !important; }
+.example-row { margin-top: -14px; margin-bottom: 18px; }
+.result-preview .chart { margin-block: 8px; }
+.result-hero { background: linear-gradient(120deg, #fff 55%, #f1f7ff); }
+.result-hero h3.ant-typography { margin: 10px 0 8px; }
+.note-action { margin-top: 12px; }
+.import-form { margin-top: 16px; }
+.pool-submit { margin-top: 16px; }
+.factor-run-select { min-width: 320px; }
+.composition-row { margin-top: 16px; }
+.composition-table { margin-top: 8px; }
+.notification-list { width: 320px; }
+.notification-list .ant-divider { margin: 10px 0 14px; }
+.notification-list p.ant-typography { margin: 4px 0 0 14px; font-size: 12px; }
+
+.login-page { min-height: 100vh; position: relative; display: grid; place-items: center; overflow: hidden; background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 45%, #f8f5ff 100%); }
+.login-page::before { content: ""; position: absolute; inset: 0; opacity: .45; background-image: linear-gradient(#dbe8f8 1px, transparent 1px), linear-gradient(90deg, #dbe8f8 1px, transparent 1px); background-size: 36px 36px; mask-image: linear-gradient(to bottom, black, transparent 80%); }
+.login-orb { position: absolute; border-radius: 50%; filter: blur(2px); }
+.login-orb-a { width: 420px; height: 420px; top: -180px; right: -80px; background: radial-gradient(circle, rgba(22,119,255,.18), transparent 68%); }
+.login-orb-b { width: 360px; height: 360px; bottom: -160px; left: -80px; background: radial-gradient(circle, rgba(114,46,209,.14), transparent 68%); }
+.login-card { z-index: 1; width: 440px; padding: 20px 22px; border: 1px solid rgba(255,255,255,.85); box-shadow: 0 30px 80px rgba(42,75,120,.16); backdrop-filter: blur(16px); background: rgba(255,255,255,.93); }
+.login-heading { text-align: center; }
+.login-heading .brand { justify-content: center; margin-bottom: 28px; }
+.login-heading h3.ant-typography { margin: 0 0 8px; }
+.login-options { margin: -4px 0 18px; }
+.login-footer { position: absolute; bottom: 24px; z-index: 1; color: #8491a4; font-size: 12px; }
+
+@media (max-width: 1400px) {
+  .app-content { padding: 16px 18px 28px; }
+  .top-header { padding: 0 18px; }
+  .metric-card { min-height: 102px; }
+  .chart { height: 270px; }
+  .chart-compact { height: 220px; }
+  .ant-table { font-size: 12px; }
+}

@@ -51,7 +51,45 @@ class ResultsTests(unittest.TestCase):
             manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["result_type"], "manual")
             self.assertEqual(manifest["canonical_expression"], "close")
+            self.assertEqual(manifest["run_key"], "unit_run")
             self.assertEqual(runs[0]["run_name"], "unit_run")
+
+    def test_save_result_keeps_explicit_run_key_from_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp)
+            result = BacktestResult(
+                daily_report=pd.DataFrame(
+                    {
+                        "date": pd.to_datetime(["2024-01-01"]),
+                        "account": [100.0],
+                        "return": [0.0],
+                        "cost": [0.0],
+                        "turnover": [0.0],
+                        "pnl": [0.0],
+                        "drawdown": [0.0],
+                    }
+                ),
+                positions=pd.DataFrame({"date": ["2024-01-02"], "code": ["000001"]}),
+                trades=pd.DataFrame({"date": ["2024-01-02"], "code": ["000001"], "side": ["buy"]}),
+                summary={"total_return": 0.0},
+                annual=pd.DataFrame({"year": [2024], "return": [0.0], "sharpe": [1.0]}),
+            )
+
+            run_dir = save_result(
+                result,
+                output_root,
+                "factor_0001_abcdef1234",
+                metadata={
+                    "result_type": "factor",
+                    "run_key": "factor/pool_a/run_001/factor_0001_abcdef1234",
+                },
+            )
+
+            manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                manifest["run_key"],
+                "factor/pool_a/run_001/factor_0001_abcdef1234",
+            )
 
     def test_list_runs_finds_nested_saved_results(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -68,6 +106,9 @@ class ResultsTests(unittest.TestCase):
 
             self.assertEqual(len(runs), 1)
             self.assertEqual(runs[0]["run_name"], "factor_0001")
+            self.assertEqual(
+                runs[0]["run_key"], "factor/pool/run/factor_0001"
+            )  # 嵌套结果没有显式 run_key 时按相对路径补全
 
     def test_list_runs_ignores_manifests_without_supported_result_type(self):
         with tempfile.TemporaryDirectory() as tmp:

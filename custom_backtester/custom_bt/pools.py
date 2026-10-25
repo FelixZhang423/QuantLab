@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
 import pandas as pd
 import pyarrow.parquet as pq
 
 from custom_bt.data import load_meta, normalize_code
+
+logger = logging.getLogger(__name__)
 
 
 def _available_columns(path: Path) -> set[str]:
@@ -79,6 +82,8 @@ def create_pool(
     market_code: Optional[str] = None,
     codes: Optional[Iterable[str]] = None,
     overwrite: bool = False,
+    strict_top_n: bool = True,
+    provenance: Optional[dict[str, Any]] = None,
 ) -> dict:
     if not name.strip():
         raise ValueError("pool name must not be empty")
@@ -145,7 +150,7 @@ def create_pool(
     candidates = [row for row in candidates if row["valid_rows"] >= minimum_valid_rows]
     candidates.sort(key=lambda row: (-row["average_amount"], row["code"]))
     selected = candidates if top_n is None else candidates[:top_n]
-    if top_n is not None and len(selected) < top_n:
+    if top_n is not None and len(selected) < top_n and strict_top_n:
         raise ValueError(f"only {len(selected)} stocks met the pool rules; required {top_n}")
     if not selected:
         raise ValueError("no stocks met the pool rules")
@@ -181,8 +186,21 @@ def create_pool(
         "pool_id": pool_id,
         "codes_file": "codes.txt",
         **manifest_base,
+        # 下面两项只是元数据，不参与上面的 pool_id 摘要：同一组选股条件/代码
+        # 无论来自哪次筛选，pool_id 都保持一致。
+        "strict_top_n": strict_top_n,
+        "provenance": provenance,
     }
-    (pool_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    (pool_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    try:
+        from custom_bt.mysql_store import persist_pool
+
+        persist_pool(pool_dir)
+    except Exception:
+        logger.warning("MySQL persist failed for pool %s", pool_id, exc_info=True)
     return manifest
 
 

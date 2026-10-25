@@ -1,7 +1,7 @@
 master_store: "../data_cache/master"
 pools_root: "../data_cache/pools"
 runtime_root: "../data_cache/factor_runtime"
-factor_runs_root: "../factor_runs"
+factor_runs_root: "../../factor_runs"
 fields:
   - open
   - close

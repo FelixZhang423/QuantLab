@@ -860,7 +860,17 @@ def _find_factor_backtest_summary(
     ]
     if saved_results_root is not None:
         for run_id in run_ids:
-            candidates.append(saved_results_root / "factor" / expected_pool_id / run_id / "factor_backtest_summary.csv")
+            run_result_dir = saved_results_root / "factor" / expected_pool_id / run_id
+            # 平台任务按 backtest_id 版本化输出：优先使用最新一次批次
+            if run_result_dir.exists():
+                candidates.extend(
+                    sorted(
+                        run_result_dir.glob("*/factor_backtest_summary.csv"),
+                        key=lambda item: item.stat().st_mtime,
+                        reverse=True,
+                    )
+                )
+            candidates.append(run_result_dir / "factor_backtest_summary.csv")
     for candidate in candidates:
         if candidate.exists():
             return candidate
@@ -1081,6 +1091,7 @@ def compose_factors(
         run_name = f"{composition_id}_size_{size:03d}"
         metadata = {
             "result_type": "composite",
+            "run_key": f"composite/{pool_id}/{composition_id}/{run_name}",
             "pool_id": pool_id,
             "composition_id": composition_id,
             "source_factor_run_ids": [item.get("run_id") or Path(run_dir).name for item, run_dir in zip(run_manifests, run_dirs)],
