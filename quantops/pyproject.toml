@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantops"
+version = "0.1.0"
+description = "80 个 Alpha101 风格因子算子 + 表达式引擎（只依赖 numpy / pandas）"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "pandas>=2.0"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+quantops = "quantops.__main__:main"
+
+[tool.setuptools]
+packages = ["quantops"]
+
+[tool.pytest.ini_options]
+# 固定测试目录：防止盘符根目录（如 D:\pyproject.toml）被当成配置文件劫持 rootdir
+testpaths = ["tests"]
