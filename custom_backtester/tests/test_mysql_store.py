@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -14,6 +14,8 @@ class FakeCursor:
     def __init__(self) -> None:
         self.executed = []
         self.many = []
+        self.fetchone_queue = []
+        self.fetchall_queue = []
 
     def __enter__(self):
         return self
@@ -27,6 +29,12 @@ class FakeCursor:
     def executemany(self, sql, rows):
         self.many.append((sql, list(rows)))
 
+    def fetchone(self):
+        return self.fetchone_queue.pop(0) if self.fetchone_queue else None
+
+    def fetchall(self):
+        return self.fetchall_queue.pop(0) if self.fetchall_queue else []
+
 
 class FakeConnection:
     def __init__(self) -> None:
@@ -36,6 +44,18 @@ class FakeConnection:
         cursor = FakeCursor()
         self.cursors.append(cursor)
         return cursor
+
+
+class SingleCursorConnection(FakeConnection):
+    """每次 cursor() 都返回同一个游标，便于依次喂 fetchone / fetchall 结果。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._cursor = FakeCursor()
+
+    def cursor(self):
+        self.cursors.append(self._cursor)
+        return self._cursor
 
 
 def test_parse_env_file_ignores_comments_and_quotes(tmp_path: Path):
@@ -166,6 +186,92 @@ def test_persist_pool_writes_manifest_codes_and_stats(tmp_path: Path):
     ]
     candidate_rows = next(rows for sql, rows in cursor.many if "INSERT INTO pool_candidates" in sql)
     assert [row[1] for row in candidate_rows] == ["000001", "600000", "300750"]
+
+
+def test_fetch_pools_reads_manifest_and_formats_created_at():
+    conn = SingleCursorConnection()
+    cursor = conn.cursor()
+    cursor.fetchall_queue.append(
+        [
+            {
+                "pool_id": "demo_pool",
+                "manifest": json.dumps(
+                    {
+                        "name": "demo",
+                        "n_stocks": 2,
+                        "selected_stats": [
+                            {"code": "000001", "average_amount": 1.5e8, "coverage": 1.0},
+                            {"code": "600000", "average_amount": 2.5e8, "coverage": 0.5},
+                        ],
+                    }
+                ),
+                "created_at": datetime(2026, 10, 27, 10, 30),
+            }
+        ]
+    )
+
+    rows = mysql_store._fetch_pools_conn(conn)
+
+    assert len(rows) == 1
+    assert rows[0]["pool_id"] == "demo_pool"
+    assert rows[0]["manifest"]["pool_id"] == "demo_pool"
+    assert rows[0]["manifest"]["name"] == "demo"
+    assert rows[0]["created_at"] == "2026-10-27 10:30"
+
+
+def test_fetch_pool_reads_codes_and_manifest_fields():
+    conn = SingleCursorConnection()
+    cursor = conn.cursor()
+    cursor.fetchone_queue.append(
+        {
+            "pool_id": "demo_pool",
+            "manifest": json.dumps({"name": "demo", "requested_codes": ["000001"]}),
+            "minimum_valid_rows": 100,
+            "created_at": datetime(2026, 10, 27, 10, 30),
+        }
+    )
+    cursor.fetchall_queue.append([{"code": "000001"}, {"code": "600000"}])
+
+    row = mysql_store._fetch_pool_conn(conn, "demo_pool")
+
+    assert row is not None
+    assert row["pool_id"] == "demo_pool"
+    assert row["codes"] == ["000001", "600000"]
+    assert row["manifest"]["minimum_valid_rows"] == 100
+    assert row["manifest"]["requested_codes"] == ["000001"]
+    assert row["created_at"] == "2026-10-27 10:30"
+
+
+def test_fetch_pool_falls_back_to_pool_candidates():
+    conn = SingleCursorConnection()
+    cursor = conn.cursor()
+    cursor.fetchone_queue.append(
+        {
+            "pool_id": "demo_pool",
+            "manifest": json.dumps({"name": "demo"}),
+            "minimum_valid_rows": None,
+            "created_at": datetime(2026, 10, 27, 10, 30),
+        }
+    )
+    cursor.fetchall_queue.extend(
+        [
+            [{"code": "000001"}],
+            [{"code": "000001"}, {"code": "600000"}],
+        ]
+    )
+
+    row = mysql_store._fetch_pool_conn(conn, "demo_pool")
+
+    assert row is not None
+    assert row["codes"] == ["000001"]
+    assert row["manifest"]["requested_codes"] == ["000001", "600000"]
+
+
+def test_fetch_pools_returns_none_without_settings(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(mysql_store, "load_settings", lambda *args, **kwargs: None)
+
+    assert mysql_store.fetch_pools() is None
+    assert mysql_store.fetch_pool("demo_pool") is None
 
 
 def test_persist_backtest_writes_summary_and_result_tables(tmp_path: Path):

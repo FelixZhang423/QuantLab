@@ -556,6 +556,31 @@ def _read_json(path: str | Path) -> Optional[Any]:
         return None
 
 
+def _json_object(value: Any) -> Dict[str, Any]:
+    """把 MySQL JSON 列（str / bytes / dict）统一成 dict。"""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "replace")
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _format_datetime(value: Any) -> Optional[str]:
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M")
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value) if value else None
+
+
+def _normalize_db_code(value: Any) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits.zfill(6) if digits else ""
+
+
 def _read_jsonl(path: str | Path) -> List[Dict[str, Any]]:
     path = Path(path)
     if not path.is_file():
@@ -792,6 +817,103 @@ def persist_pool(pool_dir: str | Path, *, settings: MySQLSettings | None = None,
         conn,
         lambda owned: _persist_pool_conn(owned, Path(pool_dir)),
     )
+
+
+def _fetch_pools_conn(conn) -> List[Dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT pool_id, manifest, created_at FROM pools "
+            "ORDER BY created_at DESC, pool_id"
+        )
+        rows = cur.fetchall()
+    results: List[Dict[str, Any]] = []
+    for row in rows:
+        manifest = _json_object(row.get("manifest"))
+        pool_id = str(row.get("pool_id") or manifest.get("pool_id") or "")
+        if not pool_id:
+            continue
+        manifest.setdefault("pool_id", pool_id)
+        manifest.setdefault("name", pool_id)
+        results.append(
+            {
+                "pool_id": pool_id,
+                "manifest": manifest,
+                "created_at": _format_datetime(row.get("created_at")),
+            }
+        )
+    return results
+
+
+def fetch_pools(
+    *, settings: MySQLSettings | None = None, conn=None
+) -> Optional[List[Dict[str, Any]]]:
+    """从 MySQL 读取全部股票池；未配置 MySQL 时返回 None。
+
+    返回项形如 ``{"pool_id", "manifest", "created_at"}``，manifest 即建池时
+    写入的完整 JSON（含 provenance / selected_stats / requested_codes）。
+    """
+    if conn is not None:
+        return _fetch_pools_conn(conn)
+    settings = settings or load_settings()
+    if settings is None:
+        return None
+    owned = connect(settings)
+    try:
+        return _fetch_pools_conn(owned)
+    finally:
+        owned.close()
+
+
+def _fetch_pool_conn(conn, pool_id: str) -> Optional[Dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT pool_id, manifest, minimum_valid_rows, created_at FROM pools "
+            "WHERE pool_id=%s",
+            (pool_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        manifest = _json_object(row.get("manifest"))
+        resolved_id = str(row.get("pool_id") or pool_id)
+        manifest.setdefault("pool_id", resolved_id)
+        if manifest.get("minimum_valid_rows") is None and row.get("minimum_valid_rows") is not None:
+            manifest["minimum_valid_rows"] = row.get("minimum_valid_rows")
+        cur.execute(
+            "SELECT code FROM pool_codes WHERE pool_id=%s ORDER BY seq",
+            (pool_id,),
+        )
+        codes = [_normalize_db_code(item.get("code")) for item in cur.fetchall()]
+        codes = [code for code in codes if code]
+        if manifest.get("requested_codes") is None:
+            cur.execute(
+                "SELECT code FROM pool_candidates WHERE pool_id=%s ORDER BY seq",
+                (pool_id,),
+            )
+            requested = [_normalize_db_code(item.get("code")) for item in cur.fetchall()]
+            manifest["requested_codes"] = [code for code in requested if code]
+    return {
+        "pool_id": resolved_id,
+        "manifest": manifest,
+        "codes": codes,
+        "created_at": _format_datetime(row.get("created_at")),
+    }
+
+
+def fetch_pool(
+    pool_id: str, *, settings: MySQLSettings | None = None, conn=None
+) -> Optional[Dict[str, Any]]:
+    """从 MySQL 读取单个股票池；未配置或不存在时返回 None。"""
+    if conn is not None:
+        return _fetch_pool_conn(conn, pool_id)
+    settings = settings or load_settings()
+    if settings is None:
+        return None
+    owned = connect(settings)
+    try:
+        return _fetch_pool_conn(owned, pool_id)
+    finally:
+        owned.close()
 
 
 # ---------------------------------------------------------------------------

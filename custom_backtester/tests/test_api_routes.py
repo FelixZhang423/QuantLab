@@ -828,3 +828,103 @@ def test_nested_result_detail_and_download_by_run_key(master, tmp_path, monkeypa
     with pytest.raises(HTTPException) as excinfo:
         main._safe_relative(main.RESULTS_ROOT, "factor//pool")
     assert excinfo.value.status_code == 404
+
+
+def _write_pool(root: Path, pool_id: str, name: str, codes=("000001",)) -> Path:
+    pool_dir = root / pool_id
+    pool_dir.mkdir(parents=True)
+    manifest = {
+        "pool_id": pool_id,
+        "name": name,
+        "n_stocks": len(codes),
+        "selection_start": "2025-01-01",
+        "selection_end": "2025-06-30",
+        "selected_stats": [
+            {"code": code, "average_amount": 1e8, "coverage": 1.0} for code in codes
+        ],
+    }
+    (pool_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (pool_dir / "codes.txt").write_text("\n".join(codes) + "\n", encoding="utf-8")
+    return pool_dir
+
+
+def test_get_pools_merges_mysql_and_local(master, monkeypatch):
+    _write_pool(main.POOLS_ROOT, "local_pool", "本地池")
+    monkeypatch.setattr(
+        main.mysql_store,
+        "fetch_pools",
+        lambda: [
+            {
+                "pool_id": "mysql_pool",
+                "manifest": {
+                    "pool_id": "mysql_pool",
+                    "name": "MySQL 池",
+                    "n_stocks": 2,
+                    "selected_stats": [
+                        {"code": "000001", "average_amount": 1e8, "coverage": 1.0},
+                        {"code": "600000", "average_amount": 2e8, "coverage": 0.5},
+                    ],
+                },
+                "created_at": "2026-10-27 12:00",
+            }
+        ],
+    )
+
+    data = main.get_pools()
+
+    assert data["total"] == 2
+    assert data["storage"] == "mysql+local"
+    by_id = {item["pool_id"]: item for item in data["pools"]}
+    assert by_id["mysql_pool"]["storage"] == "mysql"
+    assert by_id["local_pool"]["storage"] == "local"
+    assert by_id["mysql_pool"]["coverage"] == 0.75
+
+
+def test_get_pools_falls_back_to_local_when_mysql_unavailable(master, monkeypatch):
+    _write_pool(main.POOLS_ROOT, "local_pool", "本地池")
+
+    def boom():
+        raise RuntimeError("mysql down")
+
+    monkeypatch.setattr(main.mysql_store, "fetch_pools", boom)
+
+    data = main.get_pools()
+
+    assert data["storage"] == "local"
+    assert data["total"] == 1
+    assert data["pools"][0]["pool_id"] == "local_pool"
+
+
+def test_get_pool_reads_from_mysql(master, monkeypatch):
+    monkeypatch.setattr(
+        main.mysql_store,
+        "fetch_pool",
+        lambda pool_id: {
+            "pool_id": pool_id,
+            "manifest": {
+                "pool_id": pool_id,
+                "name": "MySQL 池",
+                "requested_codes": ["000001"],
+                "minimum_valid_rows": 100,
+            },
+            "codes": ["000001", "600000"],
+            "created_at": "2026-10-27 12:00",
+        },
+    )
+
+    data = main.get_pool("mysql_pool")
+
+    assert data["storage"] == "mysql"
+    assert data["codes"] == ["000001", "600000"]
+    assert data["requested_codes"] == ["000001"]
+    assert data["minimum_valid_rows"] == 100
+
+
+def test_get_pool_falls_back_to_local_file(master, monkeypatch):
+    _write_pool(main.POOLS_ROOT, "local_pool", "本地池", codes=("000001", "600000"))
+    monkeypatch.setattr(main.mysql_store, "fetch_pool", lambda pool_id: None)
+
+    data = main.get_pool("local_pool")
+
+    assert data["storage"] == "local"
+    assert data["codes"] == ["000001", "600000"]

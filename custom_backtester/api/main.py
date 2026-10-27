@@ -4,7 +4,8 @@
 （/api/universe/*）与建池任务（POST /api/pools + /api/jobs/{job_id}）。
 
 数据总览 / 数据字段 / 股票列表 / 股票池候选走 ClickHouse 实时查询
-（api/live_db.py）；算子、股票池文件、回测结果与回测链路仍读本地 data_cache / outputs。
+（api/live_db.py）；股票池列表/详情优先读 MySQL，连不上时回退本地 data_cache/pools；
+算子、回测结果与回测链路仍读本地 factor_runs / outputs。
 建池任务在后台子进程里执行（api/job_runner.py），状态写 outputs/jobs/*/status.json。
 
 所有响应统一走 _sanitize：把 NaN / Infinity 转成 null，
@@ -13,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import re
@@ -36,6 +38,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from api import live_db  # noqa: E402
 from api.job_runner import spawn_platform_job  # noqa: E402
+from custom_bt import mysql_store  # noqa: E402
 from custom_bt.data import load_meta, normalize_code  # noqa: E402
 from custom_bt.docs import enrich_fields, enrich_operators  # noqa: E402
 from custom_bt.expressions import list_operators  # noqa: E402
@@ -56,6 +59,9 @@ FIELD_DOC_PATH = next(
     iter(WORKSPACE_ROOT.glob("v_stock_daily_full_*.md")),
     WORKSPACE_ROOT / "v_stock_daily_full_字段说明.md",
 )
+
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -450,15 +456,10 @@ def get_operators() -> Dict[str, Any]:
 # ---------- 股票池 ----------
 
 
-def _pool_summary(pool_dir: Path) -> Optional[Dict[str, Any]]:
-    manifest_path = pool_dir / "manifest.json"
-    if not manifest_path.is_file():
-        return None
-    try:
-        manifest = _read_json(manifest_path)
-    except (OSError, json.JSONDecodeError):
-        return None
-    stats = manifest.get("selected_stats") or []
+def _pool_summary_from_manifest(
+    manifest: Dict[str, Any], created_at: Optional[str]
+) -> Dict[str, Any]:
+    stats = [item for item in (manifest.get("selected_stats") or []) if isinstance(item, dict)]
     coverage = (
         sum(float(item.get("coverage") or 0.0) for item in stats) / len(stats) if stats else None
     )
@@ -467,9 +468,8 @@ def _pool_summary(pool_dir: Path) -> Optional[Dict[str, Any]]:
         if stats
         else None
     )
-    created_at = datetime.fromtimestamp(manifest_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
     return {
-        "pool_id": manifest.get("pool_id", pool_dir.name),
+        "pool_id": manifest.get("pool_id"),
         "name": manifest.get("name"),
         "n_stocks": manifest.get("n_stocks"),
         "selection_start": manifest.get("selection_start"),
@@ -491,8 +491,22 @@ def _pool_summary(pool_dir: Path) -> Optional[Dict[str, Any]]:
     }
 
 
-@app.get("/api/pools")
-def get_pools() -> Dict[str, Any]:
+def _pool_summary(pool_dir: Path) -> Optional[Dict[str, Any]]:
+    manifest_path = pool_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = _read_json(manifest_path)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    manifest.setdefault("pool_id", pool_dir.name)
+    created_at = datetime.fromtimestamp(manifest_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+    return _pool_summary_from_manifest(manifest, created_at)
+
+
+def _local_pool_summaries() -> List[Dict[str, Any]]:
     summaries: List[Dict[str, Any]] = []
     if POOLS_ROOT.is_dir():
         for pool_dir in POOLS_ROOT.iterdir():
@@ -500,14 +514,71 @@ def get_pools() -> Dict[str, Any]:
                 continue
             summary = _pool_summary(pool_dir)
             if summary is not None:
+                summary["storage"] = "local"
                 summaries.append(summary)
+    return summaries
+
+
+def _mysql_pool_summaries() -> Optional[List[Dict[str, Any]]]:
+    try:
+        rows = mysql_store.fetch_pools()
+    except Exception:
+        logger.warning("读取 MySQL 股票池失败，回退本地文件", exc_info=True)
+        return None
+    if rows is None:
+        return None
+    summaries: List[Dict[str, Any]] = []
+    for row in rows:
+        manifest = row.get("manifest") if isinstance(row.get("manifest"), dict) else {}
+        manifest = dict(manifest)
+        manifest.setdefault("pool_id", row.get("pool_id"))
+        summary = _pool_summary_from_manifest(manifest, row.get("created_at"))
+        summary["storage"] = "mysql"
+        summaries.append(summary)
+    return summaries
+
+
+@app.get("/api/pools")
+def get_pools() -> Dict[str, Any]:
+    """股票池列表：MySQL 优先，合并仅存在于本地的池。"""
+    mysql_summaries = _mysql_pool_summaries()
+    local_summaries = _local_pool_summaries()
+    if mysql_summaries is None:
+        summaries = local_summaries
+        storage = "local"
+    else:
+        seen = {item.get("pool_id") for item in mysql_summaries}
+        summaries = mysql_summaries + [
+            item for item in local_summaries if item.get("pool_id") not in seen
+        ]
+        storage = "mysql" if len(summaries) == len(seen) else "mysql+local"
     summaries.sort(key=lambda item: item.get("created_at") or "", reverse=True)
-    return _sanitize({"total": len(summaries), "pools": summaries})
+    return _sanitize({"total": len(summaries), "pools": summaries, "storage": storage})
 
 
 @app.get("/api/pools/{pool_id}")
 def get_pool(pool_id: str) -> Dict[str, Any]:
+    """股票池详情：MySQL 优先，找不到或连不上时回退本地 manifest。"""
     pool_dir = _safe_child(POOLS_ROOT, pool_id)
+    mysql_detail = None
+    try:
+        mysql_detail = mysql_store.fetch_pool(pool_id)
+    except Exception:
+        logger.warning("读取 MySQL 股票池 %s 失败，回退本地文件", pool_id, exc_info=True)
+
+    if mysql_detail is not None:
+        manifest = mysql_detail.get("manifest") or {}
+        summary = _pool_summary_from_manifest(manifest, mysql_detail.get("created_at"))
+        return _sanitize(
+            {
+                **summary,
+                "requested_codes": manifest.get("requested_codes"),
+                "minimum_valid_rows": manifest.get("minimum_valid_rows"),
+                "codes": mysql_detail.get("codes") or [],
+                "storage": "mysql",
+            }
+        )
+
     manifest_path = pool_dir / "manifest.json"
     if not manifest_path.is_file():
         raise HTTPException(status_code=404, detail=f"pool not found: {pool_id}")
@@ -523,6 +594,7 @@ def get_pool(pool_id: str) -> Dict[str, Any]:
             "requested_codes": manifest.get("requested_codes"),
             "minimum_valid_rows": manifest.get("minimum_valid_rows"),
             "codes": codes,
+            "storage": "local",
         }
     )
 

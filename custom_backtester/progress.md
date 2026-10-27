@@ -234,3 +234,12 @@
 - 实测板块分布：沪市主板 1717、深市主板 1505、创业板 1415、科创板 617、北交所 337、其他 1；`/api/universe/stocks?boards=创业板&master_only=true` → matched 1415 / creatable 1400。
 - UI 验证：选择「创业板（1415）」后请求 `boards=创业板`，默认 250 天上市过滤下匹配/可建池 1310，预览行板块均为创业板；`pnpm exec tsc --noEmit` 与 `pnpm build` 通过。
 - 口径说明：「板块」是上市板块（沪市主板/深市主板/创业板/科创板/北交所/其他），不使用 `ListedSector` 原始编码；行业仍走 `FirstIndustryName`。
+
+## 2026-10-27 股票池改为 MySQL 主读、本地兜底
+
+- 背景：用户要求股票池候选直接读公司 ClickHouse、建池结果存 MySQL；此前建池已尽力镜像 MySQL，但 API 只读本地文件。
+- `GET /api/pools` / `GET /api/pools/{pool_id}`：优先读 MySQL `pools.manifest` + `pool_codes`，未配置、连不上或池只存在于本地时回退 `data_cache/pools/*/manifest.json`；列表会合并本地独有池，响应新增 `storage`（`mysql` / `mysql+local` / `local`）。
+- `custom_bt/mysql_store.py` 新增 `fetch_pools` / `fetch_pool`：只读连接（不执行建表），JSON 列兼容 `str` / `bytes` / `dict`；`pool_codes` 为空时用 `pool_candidates` 补 `requested_codes`。
+- 建池流程不变：先写本地 manifest（回测需要），成功后 `persist_pool` 写 MySQL；失败只记 warning，本地池仍可展示，之后可用 `mysql-sync` 补录。
+- 股票池候选仍由公司 ClickHouse 决定（`/api/universe/*`），与本地主缓存取交集仅用于保证回测数据可用。
+- 验证：`tests/test_mysql_store.py tests/test_api_routes.py` → **43 passed**；全量（排除旧 Streamlit 测试）→ **212 passed / 84 subtests**；真实 MySQL 5 个池全部 `storage=mysql`。

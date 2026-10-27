@@ -11,14 +11,15 @@
           └─ FastAPI（custom_backtester/api，:8000，GET + POST）
                  ├─ 数据总览 / 数据字段 / 股票列表 / 股票池候选 → api/live_db.py
                  │        └─ ClickHouse HTTP（<公司ClickHouse地址>:8123，dws.ll_stock_daily_sharing + dim.stock_main_info_fd，实时）
-                 ├─ 操作符 / 股票池 / 因子运行 / 回测结果 → 复用 custom_bt 现有函数 + 直接读本地文件
-                 │        data_cache/pools/、factor_runs/、outputs/saved_backtests/
+                 ├─ 股票池 → MySQL `pools` / `pool_codes` 优先，连不上回退 data_cache/pools/
+                 ├─ 操作符 / 因子运行 / 回测结果 → 复用 custom_bt 现有函数 + 直接读本地文件
+                 │        factor_runs/、outputs/saved_backtests/
                  └─ POST /api/pools、POST /api/factor-backtests
                           → create_platform_job + api/job_runner.py 子进程
                           outputs/jobs/<job_id>/ → create_pool / backtest_accepted_factors
 ```
 
-- **数据总览 / 数据字段 / 股票列表 / 股票池候选是实时查询**：直接查公司 ClickHouse（只读 HTTP，见 §2.7），数值随数据库当天更新；其余端点读本地文件，不依赖数据库。
+- **数据总览 / 数据字段 / 股票列表 / 股票池候选是实时查询**：直接查公司 ClickHouse（只读 HTTP，见 §2.7），数值随数据库当天更新。股票池列表/详情优先读 MySQL，未配置或连不上时回退本地 `data_cache/pools/`；因子运行与回测结果仍读本地文件。
 - **回测链路仍用本地主缓存**：`data_cache/master`（`prepare-master` 导入的快照）依旧是因子生成 / 股票池数据 / 回测的唯一数据源。股票池候选由公司库决定，但建池前会与本地缓存取交集，池内数据与回测链路不变；两边日期口径不同，页面上均有标注。
 - **写操作有 `POST /api/pools`、`POST /api/factor-backtests`**：都只创建后台任务（202 + job_id），由子进程执行，不在 API 进程内同步运行；因子生成 / 因子组合的提交端点仍未接入（见 §6）。
 - **因子回测结果按批次版本化**：`outputs/saved_backtests/factor/<pool_id>/<run_id>/<backtest_id>/<factor_id>/`，`backtest_id` 即平台任务 job_id；同一因子运行用不同参数重复回测不会覆盖历史批次（§2.9）。
@@ -35,10 +36,10 @@
 | `GET /api/universe/options` | 股票池筛选 | **ClickHouse 实时**（行情聚合 + dim 行业/上市信息） | 行业/市场/板块分布、可建池与自动排除统计 |
 | `GET /api/universe/stocks` | 股票池预览 | **ClickHouse 实时**（同一份快照，Python 过滤 + 分页） | 候选清单 + 排除示例 + 本地可建池标记 |
 | `GET /api/universe/codes` | 股票池预览（全选/反选） | **ClickHouse 实时**（同一份快照，仅返回代码） | 当前筛选下全部可建池代码（跨页勾选） |
-| `POST /api/pools` | 股票池提交 | 候选来自 ClickHouse，建池读本地 `data_cache/master` | 202 + `job_id`（后台任务） |
+| `POST /api/pools` | 股票池提交 | 候选来自 ClickHouse，建池读本地 `data_cache/master`，成功后写 MySQL | 202 + `job_id`（后台任务） |
 | `GET /api/jobs/{job_id}` | 建池任务状态 | `outputs/jobs/<job_id>/status.json` | queued / running / finished / failed |
 | `GET /api/operators` | 操作符 | `expressions.list_operators()` + `operator_registry` | 80 个算子（中文分类/说明） |
-| `GET /api/pools` `/{pool_id}` | 因子股票池 | `data_cache/pools/*/manifest.json` + `codes.txt` | 1 个股票池（500 只成分） |
+| `GET /api/pools` `/{pool_id}` | 因子股票池 | **MySQL 优先**（`pools.manifest` + `pool_codes`），回退 `data_cache/pools/*/manifest.json` + `codes.txt` | 5 个股票池；响应带 `storage` 标记 |
 | `GET /api/factor-runs` `/{run_id}` | 因子回测（运行选择） | `factor_runs/<run_id>/factor_run.json` + `accepted_factors.jsonl` | 合格因子清单与生成指标 |
 | `POST /api/factor-backtests` | 因子回测（提交） | 复用 `backtest_accepted_factors`，读本地 master / pool | 202 + `job_id`（后台任务） |
 | `GET /api/factor-backtests` `/{backtest_id}` `/.../files/{file}` | 因子回测（批次结果） | `outputs/saved_backtests/factor/<pool>/<run>/<backtest_id>/` | 批次汇总行、失败明细与 CSV 下载 |
@@ -345,7 +346,7 @@ tail -f outputs/logs/api_access_$(date +%F).log   # 想看实时请求流
 
 ### 5.2 MySQL 集中存储（2026-10-25 起）
 
-本地文件仍是主存储，MySQL 只做集中存档，便于跨机器/跨会话查询。写入是**尽力而为**：未配置或连接失败只记 warning，不影响建池与回测。
+股票池以 MySQL 为主存储：列表/详情优先读 `pools` / `pool_codes`，未配置或连接失败时回退本地 `data_cache/pools`。因子运行与回测结果仍以本地文件为主，MySQL 只做集中存档。写入是**尽力而为**：失败只记 warning，不影响建池与回测。
 
 配置优先级：`QL_MYSQL_*` 环境变量 > `configs/mysql.local.env`（已被根 `.gitignore` 的 `**/*.local.env` 忽略）。模板见 `configs/mysql.env.example`；驱动为 `PyMySQL`（已加入 `requirements.txt`）。
 

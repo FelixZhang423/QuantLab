@@ -80,7 +80,7 @@ py -3 -m custom_bt.mysql_store schema
 py -3 -m custom_bt.mysql_store check
 ```
 
-`QL_MYSQL_DATABASE` 填 `QuantLab`。不配置时股票池/因子/回测仍以本地文件为准，只是不镜像到 MySQL。
+`QL_MYSQL_DATABASE` 填 `QuantLab`。配置后股票池列表/详情优先读 MySQL；未配置或连不上时自动回退本地 `data_cache/pools/`。因子与回测结果仍以本地文件为准，只做尽力镜像。
 
 ### 启动后端（终端 1）
 
@@ -146,7 +146,7 @@ FastAPI（custom_backtester/api，默认 http://127.0.0.1:8000）
               py -3 -m custom_bt.cli run-platform-job --job-dir <job_dir>
               状态写到 outputs/jobs/<job_id>/status.json
 
-MySQL `QuantLab`：股票池 / 因子 / 回测的尽力而为镜像（API 不读 MySQL）
+MySQL `QuantLab`：股票池以 MySQL 为主、本地文件兜底；因子 / 回测为尽力镜像
 ```
 
 两条数据链要区分清楚：
@@ -238,14 +238,14 @@ py -3 -m api
 | `api/live_db.py` | 公司 ClickHouse 只读 HTTP 客户端；SQL 走 `guard_readonly`；行业/市场/板块筛选；300s universe 快照缓存 |
 | `api/job_runner.py` | 用子进程执行平台任务，日志写 `outputs/jobs/<job_id>/runner.log` |
 | `api/logging_setup.py` | 控制台 + 文件日志配置 |
-| `custom_bt/pools.py` | 建池、候选过滤、`strict_top_n`、provenance、MySQL 镜像 |
+| `custom_bt/pools.py` | 建池、候选过滤、`strict_top_n`、provenance、建池后写 MySQL |
 | `custom_bt/factor_generation.py` | 因子生成流程（PPO 生成 + 质量筛选） |
 | `custom_bt/factor_backtest.py` | 已合格因子的批量回测、版本化输出、MySQL 镜像 |
 | `custom_bt/results.py` | 本地回测结果扫描与详情 |
 | `custom_bt/expressions.py` | 转发 `quantops` 的表达式求值；兼容旧接口 |
 | `custom_bt/operator_registry.py` | 转发 22 个 canonical 定义；AlphaGen 类加载留在本仓库 |
 | `custom_bt/docs.py` | `/api/operators` 的唯一生产者；**被测试锁住，不要修改** |
-| `custom_bt/mysql_store.py` | MySQL `QuantLab` 镜像，schema v3，14 张表 |
+| `custom_bt/mysql_store.py` | MySQL `QuantLab` 读写层（股票池优先读），schema v3，14 张表 |
 | `custom_bt/platform_jobs.py` | 平台任务目录、`status.json`、进度 |
 | `configs/` | YAML 配置 + `*.local.env`（本地凭据，已 gitignore）+ `*.env.example` |
 | `tests/` | 后端单元/集成测试 |
@@ -273,10 +273,12 @@ py -3 -m api
 - 后台任务：`outputs/jobs/<job_id>/status.json`，前端 `useJobPolling` 每 1.5s 轮询。
 - 因子生成配置 `configs/factor_generation.yaml` 的 `factor_runs_root` 必须是 `../../factor_runs`，与 API / `mysql_store.sync_all` 的口径一致。
 
-### 4.5 MySQL 镜像
+### 4.5 MySQL（股票池主存储）
 
 - 库：`QuantLab`，schema 版本 **3**，14 张表：`pools`、`pool_codes`、`pool_candidates`、`pool_stats`、`factor_runs`、`factors`、`factor_backtest_runs`、`backtests`、`backtest_components`、`backtest_daily`、`backtest_annual`、`backtest_trades`、`backtest_positions`、`ql_schema_meta`。
-- 写入是**尽力而为**：未配置或连不上 MySQL 时返回 `False`，不阻塞主流程；API 不读 MySQL，页面仍以本地文件为准。
+- **股票池读取**：`GET /api/pools`、`GET /api/pools/{pool_id}` 优先查 MySQL 的 `pools` / `pool_codes`（完整 manifest 存在 `pools.manifest`）；未配置、连不上或池只存在于本地时，回退 `data_cache/pools/*/manifest.json`。响应里的 `storage` 会标 `mysql` / `mysql+local` / `local`。
+- **股票池写入**：建池仍先写本地文件（回测必须），成功后再调 `persist_pool` 写 MySQL；写失败只记 warning，不阻塞建池，本地池仍会在列表里出现，可随后用 `mysql-sync` 补录。
+- 因子运行与回测结果的 MySQL 写入仍是**尽力而为**：未配置或连不上时返回 `False`，不阻塞主流程；这两类数据 API 仍只读本地文件。
 - 本地配置：复制 `configs/mysql.env.example` 为 `configs/mysql.local.env`（已 gitignore）后填写。常用命令：
 
 ```powershell
@@ -333,7 +335,7 @@ py -3 -m quantops describe ts_mean
 | 股票池候选筛选 | ✅ | 行业 / 市场 / 板块 / 关键词 / 上市天数 / 库内原始编码 |
 | 候选预览与勾选 | ✅ | 服务端分页、全选 / 反选 / 部分勾选、本地可建池标记 |
 | 真实建池 | ✅ | `POST /api/pools` → 后台任务 → 进度轮询 → manifest 带 provenance |
-| 股票池列表/详情 | ✅ | 本地文件为主，MySQL 尽力镜像 |
+| 股票池列表/详情 | ✅ | 优先读 MySQL，连不上回退本地 manifest |
 | 操作符目录 | ✅ | `/api/operators`，与 `quantops` 元数据逐字段对齐 |
 | 因子运行列表/详情 | ✅ | 扫描 `factor_runs/`，展示合格因子 |
 | 批量因子回测 | ✅ | 真实运行、逐因子结果、进度轮询、批次版本化、MySQL 汇总 |
@@ -342,7 +344,7 @@ py -3 -m quantops describe ts_mean
 | 因子生成核心/CLI | ✅ | `custom_bt.factor_generation` + CLI；Web 提交页仍是 mock |
 | 手动回测核心/Streamlit | ✅ | 原 Streamlit 工作台仍可运行；React 页仍是 mock |
 | 因子组合核心/Streamlit | ✅ | 同上 |
-| MySQL `QuantLab` 镜像 | ✅ | schema v3、14 表、尽力而为 |
+| MySQL `QuantLab` | ✅ | 股票池读写（MySQL 优先）；因子/回测尽力镜像；schema v3、14 表 |
 | 登录 / 权限 / 任务中心 / 审计 | ❌ | 前端 mock，无真实鉴权 |
 | 一键部署 / CI | ❌ | 目前是本地手动启动，无 GitHub Actions / Docker |
 
@@ -356,7 +358,7 @@ py -3 -m quantops describe ts_mean
 
 ### P1（功能与工程质量）
 
-4. **MySQL 镜像没有重试/补偿队列**：写失败只返回 `False`；需要时手动跑 `mysql-sync`。可考虑后台重试或定时同步。
+4. **MySQL 写入没有重试/补偿队列**：建池、因子、回测写失败只记 warning；股票池读取会自动回退本地文件，之后可手动跑 `mysql-sync` 补录。可考虑后台重试或定时同步。
 5. **演示因子运行不是 PPO 输出**：`factor_runs/demo_liquid_300_20261025/` 是联调用的真实本地评估结果（`demo: true`、`quality_mode: demo-relaxed`），9 个因子，**不是投资结论**；它已在 `.gitignore` 中，不会上传，也不在 MySQL `factor_runs` 表里（批次有镜像）。是否保留/删除需要明确。
 6. **数据体积**：`data_cache/master` 约 810 MB 已进 Git；`factor_runs/`、`outputs/` 会持续增长。建议 Git LFS、外部对象存储或定期清理。
 7. **没有 CI**。建议加 GitHub Actions：`quantops` 跑 `pytest`，`custom_backtester` 跑现有测试，前端跑 `pnpm exec tsc --noEmit && pnpm build`。

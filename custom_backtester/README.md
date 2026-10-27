@@ -286,8 +286,9 @@ The `平台任务` tab can submit the master-cache import. The `股票池` tab c
 
 ## MySQL 集中存储（股票池 / 因子 / 回测）
 
-本地文件仍是主存储（`data_cache/pools`、`factor_runs`、`outputs/saved_backtests`），
-MySQL 是集中存档：建池、因子生成、回测保存后自动同步，重复同步幂等。
+股票池以 MySQL 为主存储：`GET /api/pools` / `GET /api/pools/{pool_id}` 优先读 MySQL，
+连不上或未配置时回退本地 `data_cache/pools`；建池成功后自动写入 MySQL，重复同步幂等。
+因子运行与回测结果仍以本地文件（`factor_runs`、`outputs/saved_backtests`）为准，MySQL 只做集中存档。
 
 连接配置（环境变量优先，其次本地文件）：
 
@@ -326,7 +327,7 @@ py -3 -m custom_bt.mysql_store check    # 连接自检 + 各表行数
 py -3 -m custom_bt.cli mysql-sync       # 把现有本地结果补录到 MySQL
 ```
 
-说明：MySQL 未配置或连不上时只记录 warning，不影响本地建池/回测；密码不会进入日志、响应或 manifest。
+说明：MySQL 未配置或连不上时，股票池接口自动回退本地文件，建池/回测也不受影响；密码不会进入日志、响应或 manifest。
 
 ## Web API（React 原型用）
 
