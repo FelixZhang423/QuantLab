@@ -31,6 +31,8 @@ custom_backtester/data_cache/sample_200k.csv
 custom_backtester/factor_runs/
 custom_backtester/outputs/
 custom_backtester/jobs/
+# 仓库根 factor_runs/ 是 API / CLI / MySQL 统一使用的因子运行根目录
+/factor_runs/
 
 # single_factor 生成的数据/缓存/运行产物
 single_factor/data/
@@ -53,6 +55,8 @@ _qa_research_8_25_run2/
 .env.*
 !.env.example
 **/config.local.yaml
+# 本地环境变量文件（如 configs/clickhouse.local.env：数据库密码）
+**/*.local.env
 
 # ===== 大文件 / 数据二进制（主缓存 parquet 已显式保留）=====
 *.npy
