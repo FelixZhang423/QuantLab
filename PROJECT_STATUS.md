@@ -1,9 +1,10 @@
 # QuantLab 项目结构与现状
 
-> 更新日期：2026-10-25
-> 对应提交：`6143fda`（React 前端 + FastAPI 后端）、`d25666e`（quantops 算子库）
+> 更新日期：2026-10-27
+> 对应提交：`6143fda`（React 前端 + FastAPI 后端）、`d25666e`（quantops 算子库）及后续文档/配置提交
 > 仓库：<https://github.com/FelixZhang423/QuantLab>
 > 范围：本文只描述本次上传的 `原型/`、`custom_backtester/`、`quantops/`。仓库顶层的 `single_factor/`、`research_pipeline/`、`docs/` 等目录属于早期或周边代码，不在本文范围内。
+> 想直接运行：见下方「快速启动」。
 
 ## 1. 仓库里有什么
 
@@ -18,6 +19,114 @@
 | `custom_backtester/data_cache/pools/`、`factor_runtime/` | 股票池、因子运行时缓存 | **未上传**（`.gitignore`） |
 
 > 注意：`custom_backtester/data_cache/master/` 体积很大（约 810 MB），克隆仓库会比较慢。后续建议改用 Git LFS 或把数据放到外部存储，仓库里只保留下载/准备脚本。
+
+## 快速启动
+
+以下步骤假设 Windows + PowerShell，仓库克隆到 `D:\QuantLab`；Linux/macOS 把 `py -3` 换成 `python3`、反斜杠换成 `/`。
+
+### 准备环境
+
+- Python 3.12，命令统一用 `py -3`（不要用 `python`，可能是应用商店占位程序）。
+- Node.js ≥ 22、pnpm ≥ 10；没有 pnpm 时先执行 `corepack enable`。
+- 公司内网 / VPN（ClickHouse 在内网，凭据向仓库维护者私下索取）。
+- MySQL 可选，不配也能跑。
+
+### 克隆并安装后端依赖
+
+```powershell
+git clone https://github.com/FelixZhang423/QuantLab.git
+cd D:\QuantLab\custom_backtester
+py -3 -m pip install -r requirements.txt
+
+# 可选：把算子库装成 editable 包（不装时后端会自动挂 ../quantops）
+py -3 -m pip install -e ..\quantops
+```
+
+克隆体积约 1 GB，主要来自 `data_cache/master`，首次会比较慢。
+
+### 配置 ClickHouse
+
+```powershell
+cd D:\QuantLab\custom_backtester
+Copy-Item configs\clickhouse.env.example configs\clickhouse.local.env
+notepad configs\clickhouse.local.env
+```
+
+在文件里填真实值（不要加引号）：
+
+```ini
+QL_CH_HOST=<公司ClickHouse地址>
+QL_CH_PORT=8123
+QL_CH_USER=<用户名>
+QL_CH_PASSWORD=<密码>
+```
+
+也可以不建文件，在启动后端的同一个 PowerShell 窗口里设环境变量：
+
+```powershell
+$env:QL_CH_HOST="<公司ClickHouse地址>"
+$env:QL_CH_USER="<用户名>"
+$env:QL_CH_PASSWORD="<密码>"
+```
+
+`configs/clickhouse.local.env` 已被 `.gitignore` 忽略，不要提交；仓库里只有占位模板。
+
+### （可选）配置 MySQL
+
+```powershell
+Copy-Item configs\mysql.env.example configs\mysql.local.env
+notepad configs\mysql.local.env
+py -3 -m custom_bt.mysql_store schema
+py -3 -m custom_bt.mysql_store check
+```
+
+`QL_MYSQL_DATABASE` 填 `QuantLab`。不配置时股票池/因子/回测仍以本地文件为准，只是不镜像到 MySQL。
+
+### 启动后端（终端 1）
+
+```powershell
+cd D:\QuantLab\custom_backtester
+py -3 -m api
+```
+
+默认监听 `http://127.0.0.1:8000`。另开浏览器访问 `http://127.0.0.1:8000/api/health`，返回 JSON 即正常。保持这个窗口不要关。
+
+### 启动前端（终端 2）
+
+```powershell
+cd D:\QuantLab\原型
+pnpm install
+pnpm dev
+```
+
+浏览器打开 `http://localhost:8443`。`pnpm install` 只有第一次需要；前端通过 Vite 把 `/api` 代理到 `127.0.0.1:8000`。
+
+### 确认启动成功
+
+- **数据总览**：能看到股票数、行数、日期区间 → ClickHouse 已连通；
+- **股票池**：能按行业/板块筛选并预览 → 公司库和本地主缓存都正常；
+- **操作符**：能看到 80 个算子；
+- **因子回测**：本地没有 `factor_runs/` 时为空是正常的。
+
+### 端口冲突
+
+```powershell
+# 后端改到 8010
+$env:QL_API_PORT="8010"; py -3 -m api
+
+# 前端改到 8517，并指向新后端
+$env:PORT="8517"; $env:QL_API_TARGET="http://127.0.0.1:8010"; pnpm dev
+```
+
+### 常见启动问题
+
+| 现象 | 原因 / 处理 |
+| --- | --- |
+| `/api/data/*`、`/api/universe/*` 返回 503 | 没配密码、不在公司网络，或 ClickHouse 不可达 |
+| 建池页行业/板块为空 | 同上，候选数据依赖公司库 |
+| `python -m api` 退出码 49 | `python` 是应用商店占位程序，改用 `py -3 -m api` |
+| 仓库根执行 `import quantops` 报没有 `OPERATORS` | 同名目录被当成 namespace 包；进 `quantops/` 目录或安装 editable 包 |
+| 因子回测页为空 | 仓库不带 `factor_runs/`；先生成因子，或把已有的 run 目录放到仓库根 `factor_runs/` |
 
 ## 2. 架构总览
 
@@ -266,47 +375,33 @@ py -3 -m quantops describe ts_mean
 16. 日志轮转、监控、任务失败告警。
 17. 回测结果的权限隔离与多用户隔离。
 
-## 8. 运行与验证
+## 8. 测试与验证
 
-### 8.1 依赖
-
-- Python 3.12（必须用 `py -3`，不要用 `python`）
-- Node.js ≥ 22、pnpm ≥ 10
-- 公司网络 + ClickHouse 凭据（实时数据相关页面）
-- MySQL（可选，镜像功能）
-
-### 8.2 ClickHouse 凭据
-
-二选一：
-
-- 环境变量：`QL_CH_PASSWORD`（必需），可选 `QL_CH_HOST` / `QL_CH_PORT` / `QL_CH_USER`；
-- 或复制 `custom_backtester/configs/clickhouse.env.example` 为 `clickhouse.local.env`（已 gitignore）后填写真实值。
-
-**不要把密码写进任何提交文件、文档、响应或日志。** 没有密码或不在公司网络时，实时端点返回 503 中文原因，其余页面正常。
-
-### 8.3 验证命令
+启动步骤见「快速启动」。测试命令如下（路径按实际克隆位置调整）：
 
 ```powershell
 # 算子库
-cd D:\1\QuantLab\quantops
+cd D:\QuantLab\quantops
 py -3 -m pytest -q
 # 148 passed
 
 # 后端：实时库 + API 路由
-cd D:\1\QuantLab\custom_backtester
+cd D:\QuantLab\custom_backtester
 py -3 -m pytest -q tests/test_live_db.py tests/test_api_routes.py
 # 48 passed
 
 # 后端：quantops 集成
-cd D:\1\QuantLab\custom_backtester
+cd D:\QuantLab\custom_backtester
 py -3 -m pytest -q tests/test_quantops_boot.py tests/test_quantops_metadata_parity.py
 # 9 passed
 
 # 前端
-cd D:\1\QuantLab\原型
+cd D:\QuantLab\原型
 pnpm exec tsc --noEmit
 pnpm build
 ```
+
+已知失败测试见「待完善与已知问题」的 P1：pandas 3.0 下旧 Streamlit 测试 `test_saved_runs_table_keeps_topk_arrow_compatible` 会失败，不影响 FastAPI/React。
 
 ## 9. 安全与上传注意事项
 
