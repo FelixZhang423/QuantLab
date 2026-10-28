@@ -20,17 +20,18 @@ htmlcov/
 *.swp
 
 # ===== 数据缓存与生成产物 =====
-# 数据缓存：只保留主缓存 master，其余（旧缓存/样本/运行时/股票池）均忽略
-custom_backtester/data_cache/stock_daily/
-custom_backtester/data_cache/sample_store/
-custom_backtester/data_cache/factor_runtime/
-custom_backtester/data_cache/pools/
-custom_backtester/data_cache/sample_200k.csv
+# 数据缓存不入库：master 由 prepare-master 从原始 CSV 重建，其余为运行产物
+backend/data_cache/master/
+backend/data_cache/stock_daily/
+backend/data_cache/sample_store/
+backend/data_cache/factor_runtime/
+backend/data_cache/pools/
+backend/data_cache/sample_200k.csv
 
 # 历史因子、组合与回测结果不入库
-custom_backtester/factor_runs/
-custom_backtester/outputs/
-custom_backtester/jobs/
+backend/factor_runs/
+backend/outputs/
+backend/jobs/
 # 仓库根 factor_runs/ 是 API / CLI / MySQL 统一使用的因子运行根目录
 /factor_runs/
 

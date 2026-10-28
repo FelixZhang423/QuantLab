@@ -1,0 +1,15 @@
+pandas
+numpy
+pyarrow
+pyyaml
+matplotlib
+streamlit
+plotly
+fastapi
+uvicorn
+PyMySQL
+
+# 算子库 quantops 在本仓库内（../quantops），不装也能跑：
+# custom_bt/_quantops_boot.py 会自动把 ../quantops 挂到 sys.path。
+# 想在别处（notebook / 其它项目）也能 import quantops，就在 backend 目录下执行：
+#   py -3 -m pip install -e ../quantops

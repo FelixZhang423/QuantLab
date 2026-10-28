@@ -1,0 +1,12 @@
+{
+  "title": "QuantLab 量化研究平台",
+  "description": "量化因子研究、股票池管理、回测与结果分析平台。",
+  "language": "zh-CN",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

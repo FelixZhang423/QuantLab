@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantlab-backend"
+version = "0.1.0"
+description = "QuantLab 后端：因子生成、股票池、TopK 回测、FastAPI Web API 与 Streamlit 工作台"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "numpy",
+    "pyarrow",
+    "pyyaml",
+    "matplotlib",
+    "streamlit",
+    "plotly",
+    "fastapi",
+    "uvicorn",
+    "PyMySQL",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["custom_bt*", "api*"]
+
+[tool.setuptools.package-data]
+custom_bt = ["**/*.yaml", "**/*.json"]
