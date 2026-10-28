@@ -1,1 +1,0 @@
-"""Independent research pipeline package."""
