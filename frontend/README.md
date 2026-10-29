@@ -4,8 +4,8 @@
 
 数据来源分两类：
 
-- **真实数据（走 `backend` 的 FastAPI，`/api/*` 经 vite 代理）**：数据总览 / 数据字段 / 股票列表、股票池（候选筛选预览 + 真实建池 + 列表/详情/删除）、手动回测（选池 + 表达式 + 后台任务 + 结果预览）、因子生成（运行与合格因子浏览 + 类别筛选 + 生成总结）、因子回测（类别筛选 + 批量提交 + 结果总结）、回测结果；股票池、因子面板与回测全部直接读公司 ClickHouse；
-- **仍是 mock**：任务中心、用户与权限、审计日志、因子组合；因子生成的提交仍走 CLI。
+- **真实数据（走 `backend` 的 FastAPI，`/api/*` 经 vite 代理）**：数据总览 / 数据字段 / 股票列表、股票池（候选筛选预览 + 真实建池 + 列表/详情/删除）、手动回测（选池 + 表达式 + 后台任务 + 结果预览）、因子回测、回测结果；股票池、因子面板与回测全部直接读公司 ClickHouse；
+- **仍是 mock**：任务中心、用户与权限、审计日志，以及因子生成/因子组合的提交表单。
 
 后端启动方式与各端点的真实数据来源见 `backend/docs/web_api.md`。
 
@@ -51,16 +51,11 @@ pnpm build        # 生产构建，产物在 dist/
 src/
 ├── App.tsx              # 入口：登录 + 布局 + 侧边菜单 + 页面路由
 ├── Charts.tsx           # ECharts 图表（净值/回撤、年度收益）
-├── factorInsights.ts    # 因子分类规则 + 生成/批次总结
 ├── mockData.ts          # 任务/结果数据 + 状态模拟调度
 ├── mockExtended.ts      # 字段/股票/池/因子/组合/用户/审计数据
-├── components/
-│   └── FactorCategoryChips.tsx  # 因子类别筛选 chips
 └── pages/
     ├── DataPages.tsx        # 数据总览 / 数据字段 / 股票列表 / 操作符
-    ├── PoolsPage.tsx        # 股票池（候选筛选 / 建池 / 列表 / 详情）
-    ├── FactorGenerationPage.tsx  # 因子生成（运行 / 分类 / 总结）
-    ├── FactorBacktestPage.tsx    # 因子回测（类别筛选 / 批量 / 结果总结）
+    ├── ResearchPages.tsx    # 股票池 / 因子生成 / 因子回测
     ├── ManualBacktestPage.tsx  # 手动回测（真实股票池 + 后台任务 + 结果预览）
     ├── CompositionPage.tsx  # 因子组合
     └── SystemPages.tsx      # 用户与权限 / 审计日志
@@ -81,7 +76,5 @@ src/
 手动回测页也已接真实后端：选择股票池（公司库池优先，旧本地池会提示走本地缓存）→ 填 Alpha 表达式 / 区间 / TopK 与交易参数 → `POST /api/manual-backtests` → 轮询 `GET /api/jobs/{job_id}`（loading_panel → evaluating → running → finished）→ 右侧直接用 `run_key` 拉取真实指标、净值、年度表与文件下载；「完整结果」跳到结果详情页。
 
 结果详情页只读 `GET /api/results` 的真实结果：下拉按 `run_key` 切换、默认最新一条，兼容手动（`config.backtest` 嵌套）与因子（扁平 `config`）两种参数结构，展示数据源标签、真实指标/净值/年度与 manifest 白名单文件下载；研究备注仅存本机 `localStorage`，不再有 mock 任务或假下载。
-
-因子生成页与回测页共享前端分类：后端没有类别字段，页面按表达式中的字段与算子把合格因子归为量价、波动、趋势、横截面、条件、算术、其他。生成页可点击类别筛选，并把类别带到回测页；回测完成后结果卡会给出成功数、年化/夏普/回撤中位数、最佳/最差因子与表现最好的类别。
 
 > 说明：任务中心与用户/审计页面仍是 mock；接入真实平台时，把对应 `src/pages/*` 里的 mock 数据替换为 API 调用即可，任务推演控制器与"状态演示"切换器届时移除。

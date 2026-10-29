@@ -15,10 +15,8 @@ import dayjs from "dayjs";
 import { EquityChart, YearlyChart } from "./Charts";
 import { initialTasks, nowStamp, type Task, type TaskStatus, type YearlyDatum } from "./mockData";
 import { api, resultFileUrl, useApiData, type ResultDetail, type ResultSummary } from "./api/client";
-import { DataOverviewPage, FieldsPage, OperatorsPage, StocksPage, type PageNav, type PageNavContext, type TaskAdder } from "./pages/DataPages";
-import { PoolsPage } from "./pages/PoolsPage";
-import { FactorGenerationPage } from "./pages/FactorGenerationPage";
-import { FactorBacktestPage } from "./pages/FactorBacktestPage";
+import { DataOverviewPage, FieldsPage, OperatorsPage, StocksPage, type PageNav, type TaskAdder } from "./pages/DataPages";
+import { FactorBacktestPage, FactorGenerationPage, PoolsPage } from "./pages/ResearchPages";
 import { ManualBacktestPage } from "./pages/ManualBacktestPage";
 import { CompositionPage } from "./pages/CompositionPage";
 import { AuditPage, UsersPage } from "./pages/SystemPages";
@@ -500,15 +498,13 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
   const [page, setPage] = useState<Page>("dashboard");
   const [selectedTaskId, setSelectedTaskId] = useState<number | undefined>();
   const [selectedRunKey, setSelectedRunKey] = useState<string | undefined>();
-  const [navContext, setNavContext] = useState<PageNavContext | undefined>();
   const [tasks, setTasks] = useState(initialTasks);
   const [notifRead, setNotifRead] = useState(false);
   const [demoState, setDemoState] = useState<"normal" | "loading" | "empty" | "error" | "forbidden">("normal");
-  const navigate = (target: Page, id?: number, runKey?: string, context?: PageNavContext) => {
+  const navigate = (target: Page, id?: number, runKey?: string) => {
     setPage(target);
     setSelectedTaskId(id);
     setSelectedRunKey(runKey);
-    setNavContext(context);
     window.scrollTo(0, 0);
   };
   // 任务调度模拟：queued 自动进入 running，running 按节奏推进（新提交的 #1034 加速演示）
@@ -610,7 +606,7 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
       ))}
     </Space>
   </div>;
-  const navigatePages: PageNav = (target, id, runKey, context) => navigate(target as Page, id, runKey, context);
+  const navigatePages: PageNav = (target, id, runKey) => navigate(target as Page, id, runKey);
   const pageMap: Record<Exclude<Page, "login">, React.ReactNode> = {
     dashboard: <Dashboard tasks={tasks} navigate={navigate} />,
     tasks: <TaskCenter tasks={tasks} setTasks={setTasks} focusedId={selectedTaskId} navigate={navigate} />,
@@ -620,15 +616,9 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
     fields: <FieldsPage />,
     stocks: <StocksPage />,
     operators: <OperatorsPage />,
-    pools: <PoolsPage />,
-    factor_generation: <FactorGenerationPage navigate={navigatePages} />,
-    factor_backtest: (
-      <FactorBacktestPage
-        navigate={navigatePages}
-        initialRunId={navContext?.runId}
-        initialCategory={navContext?.category}
-      />
-    ),
+    pools: <PoolsPage addTask={addTask} navigate={navigatePages} />,
+    factor_generation: <FactorGenerationPage addTask={addTask} navigate={navigatePages} />,
+    factor_backtest: <FactorBacktestPage navigate={navigatePages} />,
     composition: <CompositionPage addTask={addTask} navigate={navigatePages} />,
     users: <UsersPage role={role} />,
     audit: <AuditPage role={role} />,

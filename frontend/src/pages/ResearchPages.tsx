@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert, Button, Card, Col, Collapse, DatePicker, Descriptions, Divider, Drawer, Flex, Form, Input, InputNumber, message, Popconfirm, Row, Select, Skeleton, Space, Spin, Statistic, Switch, Table, Tag, Typography,
+  Alert, Button, Card, Col, Collapse, DatePicker, Descriptions, Divider, Drawer, Flex, Form, Input, InputNumber, message, Popconfirm, Progress, Row, Select, Skeleton, Space, Spin, Statistic, Steps, Switch, Table, Tag, Typography,
 } from "antd";
 import type { TableColumnsType, TableProps } from "antd";
-import { CopyOutlined, DeleteOutlined, FilterOutlined, PlusOutlined, PlayCircleOutlined, ReloadOutlined, TeamOutlined } from "@ant-design/icons";
+import { CloudDownloadOutlined, CopyOutlined, DeleteOutlined, ExperimentOutlined, FilterOutlined, PlusOutlined, PlayCircleOutlined, ReloadOutlined, RobotOutlined, TeamOutlined } from "@ant-design/icons";
 const { Text } = Typography;
 import dayjs from "dayjs";
-import { LoadGate } from "./DataPages";
+import { nowStamp } from "../mockData";
+import { acceptedFactors, fieldsData, generationSummary, type FactorItem } from "../mockExtended";
+import { LoadGate, type PageNav, type TaskAdder } from "./DataPages";
 import {
-  api, ApiError, useApiData, useJobPolling,
-  type PoolCreateRequest, type PoolInfo, type UniverseQuery, type UniverseStock, type UniverseStocks,
+  api, ApiError, factorBacktestFileUrl, useApiData, useJobPolling,
+  type AcceptedFactor, type FactorBacktestBatch, type FactorBacktestRequest, type FactorBacktestRow,
+  type PoolCreateRequest, type PoolInfo, type PoolProvenance, type UniverseQuery, type UniverseStock, type UniverseStocks,
 } from "../api/client";
 
 /* ============ 股票池 ============ */
@@ -78,7 +81,7 @@ function describeFilters(filters?: Record<string, unknown>): string {
   return parts.length > 0 ? parts.join("；") : "全市场（无筛选）";
 }
 
-export function PoolsPage() {
+export function PoolsPage({ addTask, navigate }: { addTask: TaskAdder; navigate: PageNav }) {
   const [form] = Form.useForm<PoolFormValues>();
   const [submitting, setSubmitting] = useState(false);
   const [openPool, setOpenPool] = useState<PoolInfo | null>(null);
@@ -650,6 +653,509 @@ export function PoolsPage() {
               </Drawer>
             </Card>
           </LoadGate>
+        </Space>
+      </Col>
+    </Row>
+  );
+}
+
+/* ============ 因子回测 ============ */
+
+type FactorBacktestFormValues = {
+  dates: DateRangeValue;
+  topK: number;
+  initialCash: number;
+  buyCost: number;
+  sellCost: number;
+  slippage: number;
+  minCost: number;
+  maxWeight: number;
+};
+
+const metricNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
+  return null;
+};
+
+const formatFraction = (value: unknown, digits = 2): string => {
+  const number = metricNumber(value);
+  return number == null ? "—" : `${(number * 100).toFixed(digits)}%`;
+};
+
+export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
+  const [form] = Form.useForm<FactorBacktestFormValues>();
+  const runsApi = useApiData(api.factorRuns);
+  const runs = useMemo(() => runsApi.data?.runs ?? [], [runsApi.data]);
+  const [runId, setRunId] = useState<string | undefined>();
+  const [selected, setSelected] = useState<React.Key[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [batchId, setBatchId] = useState<string | undefined>();
+  const pendingBatchRef = useRef<string | null>(null);
+  const { job, error: jobError, polling } = useJobPolling(jobId);
+
+  useEffect(() => {
+    if (runs.length === 0) {
+      setRunId(undefined);
+      return;
+    }
+    if (!runId || !runs.some((run) => run.run_id === runId)) setRunId(runs[0].run_id);
+  }, [runs, runId]);
+
+  const runDetailApi = useApiData(
+    () => (runId ? api.factorRun(runId) : Promise.resolve(null)),
+    [runId],
+  );
+  const runDetail = runDetailApi.data?.run_id === runId ? runDetailApi.data : null;
+  const factors = useMemo(() => runDetail?.accepted_factors ?? [], [runDetail]);
+  useEffect(() => {
+    // 切换运行/首次加载后默认全选；用户取消勾选不会被轮询覆盖
+    setSelected(factors.map((factor) => factor.factor_id));
+  }, [factors]);
+  const selectedIds = selected.map(String);
+  const allSelected = factors.length > 0 && selectedIds.length === factors.length;
+
+  const batchesApi = useApiData(
+    () => (runId ? api.factorBacktests(runId) : Promise.resolve(null)),
+    [runId],
+  );
+  const batches = useMemo(
+    () => (batchesApi.data?.batches ?? []).filter((batch) => !runId || batch.factor_run_id === runId),
+    [batchesApi.data, runId],
+  );
+  useEffect(() => {
+    if (batches.length === 0) {
+      if (!pendingBatchRef.current) setBatchId(undefined);
+      return;
+    }
+    const pending = pendingBatchRef.current;
+    if (pending && batches.some((batch) => batch.backtest_id === pending)) {
+      // 新任务完成、批次列表刷新后自动选中刚提交的批次
+      pendingBatchRef.current = null;
+      if (batchId !== pending) setBatchId(pending);
+      return;
+    }
+    if (pending && batchId === pending) return; // 列表尚未刷新，别回退到旧批次
+    if (!batchId || !batches.some((batch) => batch.backtest_id === batchId)) {
+      setBatchId(batches[0].backtest_id);
+    }
+  }, [batches, batchId]);
+
+  const batchApi = useApiData(
+    () => (runId && batchId ? api.factorBacktest(runId, batchId) : Promise.resolve(null)),
+    [runId, batchId],
+  );
+  const batchDetail =
+    batchApi.data?.batch.backtest_id === batchId && batchApi.data?.batch.factor_run_id === runId
+      ? batchApi.data
+      : null;
+  const batch = batchDetail?.batch ?? null;
+
+  const finishedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jobId || job?.status !== "finished" || finishedRef.current === jobId) return;
+    finishedRef.current = jobId;
+    const resultBatch = job.result && typeof job.result.backtest_id === "string" ? job.result.backtest_id : null;
+    if (resultBatch) {
+      pendingBatchRef.current = resultBatch;
+      setBatchId(resultBatch);
+    }
+    batchesApi.reload();
+    runsApi.reload();
+  }, [jobId, job?.status, job?.result, batchesApi.reload, runsApi.reload]);
+
+  const submit = async (values: FactorBacktestFormValues) => {
+    if (!runId) {
+      message.error("请选择因子运行");
+      return;
+    }
+    if (selectedIds.length === 0) {
+      message.error("请至少选择一个合格因子");
+      return;
+    }
+    const range = values.dates;
+    if (!range?.[0] || !range?.[1]) {
+      message.error("请选择回测区间");
+      return;
+    }
+    const payload: FactorBacktestRequest = {
+      factor_run_id: runId,
+      factor_ids: allSelected ? undefined : selectedIds,
+      start_date: range[0].format("YYYY-MM-DD"),
+      end_date: range[1].format("YYYY-MM-DD"),
+      top_k: values.topK,
+      initial_cash: values.initialCash,
+      buy_cost: values.buyCost,
+      sell_cost: values.sellCost,
+      slippage: values.slippage,
+      min_cost: values.minCost,
+      max_weight_per_stock: values.maxWeight,
+    };
+    setSubmitting(true);
+    setWarnings([]);
+    try {
+      const response = await api.createFactorBacktest(payload);
+      setJobId(response.job_id);
+      setWarnings(response.warnings);
+      message.info(`因子回测任务已提交：${response.job_id}（${response.selected_total} 个因子）`);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const progress = (job?.progress ?? {}) as Record<string, unknown>;
+  const processed = metricNumber(progress.processed) ?? 0;
+  const progressTotal = metricNumber(progress.selected_count) ?? 0;
+  const progressPercent = job?.status === "finished"
+    ? 100
+    : progressTotal > 0
+      ? Math.min(100, Math.round((processed / progressTotal) * 100))
+      : 0;
+  const jobType = jobError || job?.status === "failed" ? "error" : job?.status === "finished" ? "success" : "info";
+  const jobMessage = !job
+    ? (jobError ? "因子回测任务状态查询失败" : "因子回测任务已提交，等待状态…")
+    : job.status === "queued" ? `因子回测排队中（${jobId}）`
+      : job.status === "running" ? "因子回测运行中"
+        : job.status === "finished" ? "因子回测完成"
+          : job.status === "failed" ? "因子回测失败"
+            : `任务状态：${job.status}`;
+
+  const downloadBatchFile = (fileName: string) => {
+    if (!runId || !batch) return;
+    window.location.href = factorBacktestFileUrl(runId, batch.backtest_id, fileName);
+  };
+
+  const factorColumns: TableColumnsType<AcceptedFactor> = [
+    { title: "因子 ID", dataIndex: "factor_id", width: 200, render: (v) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
+    { title: "表达式", dataIndex: "expression", ellipsis: true, render: (v) => <Text code>{v}</Text> },
+    { title: "IC", dataIndex: "ic", align: "right", width: 82, sorter: (a, b) => (a.ic ?? -Infinity) - (b.ic ?? -Infinity), render: (v) => metricNumber(v)?.toFixed(4) ?? "—" },
+    { title: "RankIC", dataIndex: "rank_ic", align: "right", width: 88, sorter: (a, b) => (a.rank_ic ?? -Infinity) - (b.rank_ic ?? -Infinity), render: (v) => metricNumber(v)?.toFixed(4) ?? "—" },
+    { title: "ICIR", dataIndex: "icir", align: "right", width: 82, sorter: (a, b) => (a.icir ?? -Infinity) - (b.icir ?? -Infinity), render: (v) => metricNumber(v)?.toFixed(2) ?? "—" },
+    { title: "覆盖率", dataIndex: "coverage", align: "right", width: 88, render: (v) => formatFraction(v, 1) },
+    { title: "Score", dataIndex: "score", align: "right", width: 82, sorter: (a, b) => (a.score ?? -Infinity) - (b.score ?? -Infinity), render: (v) => metricNumber(v)?.toFixed(2) ?? "—" },
+  ];
+
+  const batchColumns: TableColumnsType<FactorBacktestRow> = [
+    { title: "因子 ID", dataIndex: "factor_id", width: 200, render: (v) => <Text code style={{ whiteSpace: "nowrap" }}>{String(v ?? "—")}</Text> },
+    { title: "表达式", dataIndex: "expression", ellipsis: true, render: (v) => <Text code>{String(v ?? "—")}</Text> },
+    {
+      title: "年化收益", key: "annual", align: "right", width: 100,
+      sorter: (a, b) => (metricNumber(a.backtest_annual_return) ?? -Infinity) - (metricNumber(b.backtest_annual_return) ?? -Infinity),
+      render: (_, row) => {
+        const value = metricNumber(row.backtest_annual_return);
+        return <Text type={value != null && value < 0 ? "danger" : "success"}>{formatFraction(value)}</Text>;
+      },
+    },
+    { title: "夏普", key: "sharpe", align: "right", width: 78, sorter: (a, b) => (metricNumber(a.backtest_sharpe) ?? -Infinity) - (metricNumber(b.backtest_sharpe) ?? -Infinity), render: (_, row) => metricNumber(row.backtest_sharpe)?.toFixed(2) ?? "—" },
+    { title: "最大回撤", key: "drawdown", align: "right", width: 92, render: (_, row) => <Text type="danger">{formatFraction(row.backtest_max_drawdown)}</Text> },
+    { title: "换手率", key: "turnover", align: "right", width: 88, render: (_, row) => formatFraction(row.backtest_average_turnover) },
+    { title: "成本", key: "cost", align: "right", width: 78, render: (_, row) => formatFraction(row.backtest_total_cost) },
+    { title: "胜率", key: "win_rate", align: "right", width: 78, render: (_, row) => formatFraction(row.backtest_win_rate) },
+    {
+      title: "操作", key: "action", width: 76, align: "right",
+      render: (_, row) => (
+        <Button type="link" size="small" disabled={!row.run_key} onClick={() => navigate("result", undefined, String(row.run_key))}>
+          结果
+        </Button>
+      ),
+    },
+  ];
+
+  const batchOptions = batches.map((item) => ({
+    value: item.backtest_id,
+    label: `${item.backtest_id} · 成功 ${item.completed ?? "—"}/${item.selected_count ?? "—"}${item.created_at ? ` · ${String(item.created_at).replace("T", " ").slice(0, 16)}` : ""}`,
+  }));
+
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Card className="filter-card">
+        <Flex justify="space-between" gap={16} wrap align="center">
+          <Space wrap>
+            <Text strong><ExperimentOutlined /> 因子运行</Text>
+            <Select
+              value={runId}
+              onChange={(value) => {
+                pendingBatchRef.current = null;
+                setRunId(value);
+              }}
+              className="factor-run-select"
+              loading={runsApi.loading}
+              showSearch optionFilterProp="label"
+              placeholder={runsApi.error ? "因子运行目录不可读" : "选择已生成的因子运行"}
+              options={runs.map((run) => ({
+                value: run.run_id,
+                label: `${run.run_id} · ${run.pool_id ?? "未知池"} · ${run.accepted_count} 个合格因子`,
+              }))}
+            />
+            <Button size="small" icon={<ReloadOutlined />} onClick={runsApi.reload} loading={runsApi.loading}>刷新</Button>
+            {runDetail && <Tag color="blue">{factors.length} 个合格因子</Tag>}
+            {runDetail?.pool_id && <Tag>股票池 {runDetail.pool_id}</Tag>}
+            {runDetail?.created_at && <Text type="secondary">生成于 {String(runDetail.created_at).replace("T", " ")}</Text>}
+          </Space>
+          <Text type="secondary">批次结果按任务 ID 版本化保存，不会覆盖历史回测</Text>
+        </Flex>
+      </Card>
+
+      {runsApi.error && (
+        <Alert
+          type="error" showIcon message="无法读取因子运行列表" description={runsApi.error}
+          action={<Button size="small" icon={<ReloadOutlined />} onClick={runsApi.reload}>重试</Button>}
+        />
+      )}
+      {!runsApi.loading && !runsApi.error && runs.length === 0 && (
+        <Alert
+          type="info" showIcon message="还没有可回测的因子运行"
+          description="请先在「因子生成」页生成因子，或用 CLI 生成 factor_runs/<run_id>/accepted_factors.jsonl；本页只回测生成阶段已合格的因子。"
+        />
+      )}
+
+      {runId && (
+        <Row gutter={16} className="backtest-layout">
+          <Col span={10}>
+            <Card title={<Space><PlayCircleOutlined />批量回测参数</Space>} className="form-card">
+              {runDetailApi.error && (
+                <Alert
+                  type="error" showIcon style={{ marginBottom: 16 }} message="因子运行详情加载失败"
+                  description={runDetailApi.error}
+                  action={<Button size="small" onClick={runDetailApi.reload}>重试</Button>}
+                />
+              )}
+              {runDetailApi.loading && !runDetail && <Skeleton active paragraph={{ rows: 6 }} />}
+              <Form
+                form={form} layout="vertical" onFinish={submit}
+                initialValues={{
+                  dates: [dayjs("2021-06-18"), dayjs("2026-06-16")],
+                  topK: 50, initialCash: 100000000, buyCost: 0.0015, sellCost: 0.0015,
+                  slippage: 0.0005, minCost: 5, maxWeight: 0.02,
+                }}
+              >
+                <Form.Item label="回测区间" name="dates" rules={[{ required: true, message: "请选择回测区间" }]}>
+                  <DatePicker.RangePicker className="full-width" />
+                </Form.Item>
+                <Row gutter={12}>
+                  <Col span={12}><Form.Item label="持仓数量 TopK" name="topK" rules={[{ type: "number", min: 1, max: 1000, message: "范围 1–1000" }]}><InputNumber className="full-width" min={1} max={1000} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="初始资金" name="initialCash"><InputNumber className="full-width" min={1} addonAfter="元" /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="买入费率" name="buyCost"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="卖出费率" name="sellCost"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="滑点" name="slippage"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="最低手续费" name="minCost"><InputNumber className="full-width" min={0} addonAfter="元" /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="单票权重上限" name="maxWeight"><InputNumber className="full-width" min={0.001} max={1} step={0.01} /></Form.Item></Col>
+                </Row>
+                <Button
+                  size="large" block type="primary" htmlType="submit" icon={<PlayCircleOutlined />}
+                  loading={submitting} disabled={!runDetail || factors.length === 0 || selectedIds.length === 0 || polling}
+                >
+                  回测 {selectedIds.length} 个合格因子
+                </Button>
+              </Form>
+              {warnings.length > 0 && (
+                <Alert
+                  style={{ marginTop: 16 }} type="warning" showIcon message="回测提示"
+                  description={<Space direction="vertical" size={2}>{warnings.map((item) => <Text key={item}>{item}</Text>)}</Space>}
+                />
+              )}
+              {jobId && (
+                <Alert
+                  style={{ marginTop: 16 }} showIcon type={jobType}
+                  icon={polling ? <Spin size="small" /> : undefined}
+                  message={jobMessage}
+                  description={<Space direction="vertical" size={4} className="full-width">
+                    {jobError && <Text>{jobError}</Text>}
+                    {job?.message && job.status === "running" && <Text type="secondary">{job.message}</Text>}
+                    {job?.status === "failed" && job.message && <Text>{job.message}</Text>}
+                    {(job?.status === "running" || job?.status === "finished") && (
+                      <Progress percent={progressPercent} size="small" status={job.status === "finished" ? "success" : "active"} />
+                    )}
+                    {job?.status === "finished" && (
+                      <Text>{`成功 ${String(progress.completed ?? "—")} 个，失败 ${String(progress.failed ?? "—")} 个；批次 ${String(progress.backtest_id ?? job.result?.backtest_id ?? "—")}`}</Text>
+                    )}
+                    {polling && <Text type="secondary">任务在后台运行，完成后自动刷新批次结果。</Text>}
+                  </Space>}
+                />
+              )}
+            </Card>
+          </Col>
+          <Col span={14}>
+            <Card
+              title="合格因子清单（生成阶段通过阈值筛选）"
+              extra={<Text type="secondary">已选 {selectedIds.length} / {factors.length}</Text>}
+              className="data-card"
+            >
+              <Table
+                rowKey="factor_id" size="middle" columns={factorColumns} dataSource={factors}
+                loading={runDetailApi.loading} pagination={false} scroll={{ x: 760, y: 420 }}
+                rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys) }}
+                locale={{ emptyText: runDetail && factors.length === 0 ? "该运行没有合格因子" : "请选择因子运行" }}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {runId && (
+        <Card
+          title={<Space><ExperimentOutlined />批量回测结果</Space>}
+          className="data-card"
+          extra={<Space wrap>
+            <Select
+              size="small" value={batchId} onChange={setBatchId} options={batchOptions}
+              placeholder="暂无批次" style={{ minWidth: 320 }} loading={batchesApi.loading}
+            />
+            <Button size="small" icon={<ReloadOutlined />} onClick={batchesApi.reload}>刷新</Button>
+            <Button size="small" icon={<CloudDownloadOutlined />} disabled={!batch || !batch.completed} onClick={() => downloadBatchFile("factor_backtest_summary.csv")}>下载汇总</Button>
+            <Button size="small" icon={<CloudDownloadOutlined />} disabled={!batch || !batch.failed} onClick={() => downloadBatchFile("factor_backtest_failures.csv")}>下载失败明细</Button>
+          </Space>}
+        >
+          {batchesApi.error && (
+            <Alert type="error" showIcon message="批次列表加载失败" description={batchesApi.error}
+              action={<Button size="small" onClick={batchesApi.reload}>重试</Button>} />
+          )}
+          {!batchesApi.loading && !batchesApi.error && batches.length === 0 && (
+            <Alert type="info" showIcon message="该因子运行还没有批量回测记录" description="选好因子和参数后提交，批次结果会出现在这里。" />
+          )}
+          {batchApi.error && <Alert type="error" showIcon message="批次详情加载失败" description={batchApi.error} style={{ marginBottom: 12 }} />}
+          {batch && (
+            <Space direction="vertical" size={12} className="full-width">
+              <Space wrap size={6}>
+                <Tag color="blue">批次 {batch.backtest_id}</Tag>
+                <Tag>区间 {batch.start_date ?? "—"} ~ {batch.end_date ?? "—"}</Tag>
+                <Tag>TopK {batch.top_k ?? "—"}</Tag>
+                <Tag>合格 {batch.accepted_count ?? "—"}</Tag>
+                <Tag>本次 {batch.selected_count ?? "—"}</Tag>
+                <Tag color="success">成功 {batch.completed ?? "—"}</Tag>
+                {!!batch.failed && <Tag color="error">失败 {batch.failed}</Tag>}
+              </Space>
+              <Table
+                rowKey={(row) => String(row.factor_id ?? row.run_key ?? row.expression)}
+                size="small" columns={batchColumns} dataSource={batchDetail?.rows ?? []}
+                loading={batchApi.loading} pagination={false} scroll={{ x: 1020 }}
+              />
+              {batchDetail && batchDetail.failures.length > 0 && (
+                <Alert
+                  type="warning" showIcon message={`${batchDetail.failures.length} 个因子回测失败`}
+                  description={<Space direction="vertical" size={2}>
+                    {batchDetail.failures.slice(0, 6).map((item) => (
+                      <Text key={`${item.factor_id}-${item.expression ?? ""}`}>
+                        {item.factor_id} · {item.expression ?? "—"}：{item.error ?? "未知错误"}
+                      </Text>
+                    ))}
+                    {batchDetail.failures.length > 6 && <Text type="secondary">仅显示前 6 条，完整明细请下载失败 CSV。</Text>}
+                  </Space>}
+                />
+              )}
+            </Space>
+          )}
+        </Card>
+      )}
+    </Space>
+  );
+}
+
+/* ============ 因子生成（PPO） ============ */
+
+export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder; navigate: PageNav }) {
+  const [form] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
+  const masterFields = fieldsData.filter((f) => f.source === "master 精选").map((f) => f.name);
+  const defaultFields = ["open", "close", "high", "low", "volume", "amount", "ChangePCT", "TurnoverRate", "ma5", "ma20", "ema12", "macd"];
+  const toRange = (v: unknown) => (v as unknown as { format: (f: string) => string }[] | undefined)?.map((d) => d.format("YYYY-MM-DD"));
+  const selectedFields = Form.useWatch("fields", form) as string[] | undefined;
+  const submit = (values: Record<string, unknown>) => {
+    setSubmitting(true);
+    setTimeout(() => {
+      const id = addTask({
+        type: "generate_factors", typeLabel: "因子生成", name: String(values.name), status: "queued", progress: 0,
+        submittedAt: "刚刚", duration: "—", owner: "林研究员",
+        logs: [`[${nowStamp()}] PPO 训练环境初始化（device=${values.device}）`, `[${nowStamp()}] 已进入任务队列`],
+        params: {
+          pool: values.pool, fields_count: (values.fields as string[]).length, target_horizon: values.targetHorizon,
+          max_backtrack_days: values.maxBacktrackDays, target_factor_count: values.targetFactorCount,
+          max_attempts: values.maxAttempts, rollout_timesteps: values.rolloutTimesteps, seed: values.seed, device: values.device,
+          splits: { train: toRange(values.train), valid: toRange(values.valid), test: toRange(values.test) },
+          quality: { min_coverage: values.minCoverage, min_train_ic: values.minTrainIc, min_valid_ic: values.minValidIc, min_icir: values.minIcir },
+        },
+      });
+      setSubmitting(false);
+      message.success(`因子生成任务 #${id} 已提交`);
+      navigate("tasks", id);
+    }, 750);
+  };
+  const previewColumns: TableColumnsType<FactorItem> = [
+    { title: "因子 ID", dataIndex: "id", width: 84, render: (v) => <Text code>{v}</Text> },
+    { title: "表达式", dataIndex: "expression", render: (v) => <Text code>{v}</Text> },
+    { title: "ICIR", dataIndex: "icir", align: "right", width: 76 },
+    { title: "Score", dataIndex: "score", align: "right", width: 76 },
+  ];
+  return (
+    <Row gutter={16} className="backtest-layout">
+      <Col span={10}>
+        <Card title={<Space><RobotOutlined />PPO 生成参数</Space>} className="form-card">
+          <Form form={form} layout="vertical" onFinish={submit} initialValues={{
+            name: "ppo_run_102", pool: "liquid_500", fields: defaultFields,
+            train: [dayjs("2022-01-14"), dayjs("2024-07-26")], valid: [dayjs("2024-01-25"), dayjs("2025-07-28")], test: [dayjs("2025-01-27"), dayjs("2026-06-12")],
+            targetHorizon: 20, maxBacktrackDays: 100, targetFactorCount: 50, maxAttempts: 100000, rolloutTimesteps: 2048, seed: 0, device: "cpu",
+            minCoverage: 0.9, minTrainIc: 0.05, minValidIc: 0.04, minIcir: 0.5,
+          }}>
+            <Row gutter={12}>
+              <Col span={12}><Form.Item label="股票池" name="pool" rules={[{ required: true }]}><Select options={[{ value: "liquid_500", label: "liquid_500 · 500只" }]} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="运行名称" name="name" rules={[{ required: true, message: "请输入运行名称" }]}><Input /></Form.Item></Col>
+            </Row>
+            <Form.Item label={`可用字段（已选 ${(selectedFields || []).length} / ${masterFields.length}）`} name="fields" rules={[{ required: true, message: "至少选择一个字段" }]}>
+              <Select mode="multiple" allowClear showSearch options={masterFields.map((f) => ({ value: f, label: f }))} placeholder="选择参与搜索的字段" maxTagCount={6} />
+            </Form.Item>
+            <Divider orientation="left" plain>数据切分</Divider>
+            <Form.Item label="训练段 train" name="train" rules={[{ required: true }]}><DatePicker.RangePicker className="full-width" /></Form.Item>
+            <Form.Item label="验证段 valid" name="valid" rules={[{ required: true }]}><DatePicker.RangePicker className="full-width" /></Form.Item>
+            <Form.Item label="测试段 test" name="test" rules={[{ required: true }]}><DatePicker.RangePicker className="full-width" /></Form.Item>
+            <Divider orientation="left" plain>搜索与训练</Divider>
+            <Row gutter={12}>
+              <Col span={12}><Form.Item label="目标持有期 horizon" name="targetHorizon" rules={[{ type: "number", min: 1, max: 60 }]}><InputNumber className="full-width" min={1} max={60} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="最大回溯天数" name="maxBacktrackDays"><InputNumber className="full-width" min={10} max={250} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="目标因子数" name="targetFactorCount"><InputNumber className="full-width" min={1} max={200} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="最大尝试次数" name="maxAttempts"><InputNumber className="full-width" min={1000} step={10000} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="Rollout 步数" name="rolloutTimesteps"><InputNumber className="full-width" min={512} step={512} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="随机种子" name="seed"><InputNumber className="full-width" min={0} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="计算设备" name="device"><Select options={[{ value: "cpu", label: "CPU" }, { value: "cuda", label: "CUDA (GPU)" }]} /></Form.Item></Col>
+            </Row>
+            <Divider orientation="left" plain>质量阈值</Divider>
+            <Row gutter={12}>
+              <Col span={12}><Form.Item label="最低覆盖率" name="minCoverage" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.05} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="最低训练 IC" name="minTrainIc" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.01} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="最低验证 IC" name="minValidIc" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.01} /></Form.Item></Col>
+              <Col span={12}><Form.Item label="最低 ICIR" name="minIcir" rules={[{ type: "number", min: 0, max: 3 }]}><InputNumber className="full-width" min={0} max={3} step={0.1} /></Form.Item></Col>
+            </Row>
+            <Button size="large" block type="primary" htmlType="submit" loading={submitting} icon={<PlayCircleOutlined />}>启动 PPO 因子生成</Button>
+          </Form>
+        </Card>
+      </Col>
+      <Col span={14}>
+        <Space direction="vertical" size={16} className="full-width">
+          <Card size="small" title="生成流程">
+            <Steps size="small" current={4} items={[
+              { title: "导出池内面板", description: "按 pool_id 导出行情" },
+              { title: "构造训练数据", description: "train / valid / test 切分" },
+              { title: "PPO 搜索表达式", description: "在算子空间内组合" },
+              { title: "质量筛选", description: "IC / RankIC / ICIR / 覆盖率" },
+            ]} />
+          </Card>
+          <Card title={`最近一次生成运行（${generationSummary.runId} · #${generationSummary.taskId}）`} className="data-card"
+            extra={<Button type="link" onClick={() => navigate("tasks", generationSummary.taskId)}>查看任务</Button>}>
+            <Row gutter={12}>
+              <Col span={6}><Statistic title="尝试次数" value={generationSummary.attempts} /></Col>
+              <Col span={6}><Statistic title="合格因子" value={generationSummary.accepted} suffix="个" /></Col>
+              <Col span={6}><Statistic title="最佳 ICIR" value={generationSummary.bestIcir} precision={2} /></Col>
+              <Col span={6}><Statistic title="最佳 Score" value={generationSummary.bestScore} precision={2} /></Col>
+            </Row>
+            <Divider />
+            <Table rowKey="id" size="small" columns={previewColumns} dataSource={acceptedFactors.slice(0, 6)} pagination={false} />
+            <Flex justify="flex-end" className="note-action">
+              <Button type="link" onClick={() => navigate("factor_backtest")}>在因子回测页查看全部 {generationSummary.accepted} 个合格因子</Button>
+            </Flex>
+          </Card>
         </Space>
       </Col>
     </Row>

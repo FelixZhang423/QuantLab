@@ -39,8 +39,7 @@
 - **`custom_backtester/`** 是主平台"大脑"，但它**不自己实现 PPO**——`factor_generation.py` 通过 `sys.path` 定位到根目录后 `from single_factor...` 调用生成核心；
 - **`single_factor/`** 是独立可部署的 PPO 生成器，内置 vendored 的 AlphaGen 原语，自带 `runtime.json` 和 `run_server.ps1` 守护脚本，脱离主平台也能单独跑；
 - **`research_pipeline/`** 是另一套独立的研究流水线（因子分类、表达式引擎、选股、评估、导出），与主平台无关；
-- **`custom_bt/ai_research/`** 是用 DeepSeek LLM 驱动的量化研究 agent（`提示词合集/` 里的提示词为其服务）；
-- **`quantops/`** 是把 80 个算子（Alpha101 / BRAIN 风格表达式原语）与表达式引擎抽出来的**独立算子库**，只依赖 numpy + pandas、可 `pip install -e` 单独使用；主平台的 `custom_bt/expressions.py` 已改为转发它，**算子的唯一实现就在 `quantops/`**，详见 [quantops/README.md](quantops/README.md)。
+- **`custom_bt/ai_research/`** 是用 DeepSeek LLM 驱动的量化研究 agent（`提示词合集/` 里的提示词为其服务）。
 
 ### 核心设计原则
 
@@ -61,7 +60,6 @@
 │   ├── data_cache/                 #   数据缓存（master 已入库；stock_daily/sample/pools/factor_runtime 不入库）
 │   ├── factor_runs/                #   PPO 生成结果（不入库）
 │   └── outputs/                    #   回测 / 组合结果（不入库）
-├── quantops/                       # 独立算子库：80 个算子 + 表达式引擎（numpy + pandas，可单独安装）
 ├── single_factor/                  # 独立 PPO 生成器（含 _vendor/alphagen 原语）
 ├── research_pipeline/              # 独立研究流水线（research_system/）
 ├── research_data/                  # 研究数据产物（快照不入库）
@@ -141,19 +139,6 @@ python -m custom_bt.cli backtest-factors --pool <pool_id> --factor-run <run_id> 
 # ⑤ 因子组合
 python -m custom_bt.cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml --sweep-sizes 10,20,30
 ```
-
-### 只用算子库 `quantops`
-
-不跑回测、只想用那 80 个算子时（任意 Python 项目都行，只依赖 numpy + pandas）：
-
-```powershell
-py -3 -m pip install -e quantops            # 可选：装成真包。不装时 custom_backtester 会自动把库目录加进 sys.path
-
-py -3 -m quantops list --category time_series
-py -3 -c "import quantops as qo; print(qo.describe('ts_mean'))"
-```
-
-用法（函数式 / `series.qo.xxx()` 方法式 / 表达式字符串三选一）见 [quantops/README.md](quantops/README.md)。
 
 ### 独立 PPO 生成器（服务器守护，自动重启）
 
