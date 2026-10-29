@@ -113,8 +113,24 @@ def backtest_accepted_factors(
 
     codes = load_pool_codes(pools_root, pool_id)
     if source == "clickhouse":
+        # 因子运行里用到的财务/估值字段要一起加载，否则表达式解析不到。
+        run_fields = [str(field) for field in (run_manifest.get("fields") or [])]
+        fund_fields = [
+            field[len(company_source.FUNDAMENTAL_PREFIX):]
+            for field in run_fields
+            if field.startswith(company_source.FUNDAMENTAL_PREFIX)
+        ]
+        val_fields = [
+            field[len(company_source.VALUATION_PREFIX):]
+            for field in run_fields
+            if field.startswith(company_source.VALUATION_PREFIX)
+        ]
         panel = company_source.load_panel(
-            codes, backtest_config.get("start_date"), backtest_config.get("end_date")
+            codes,
+            backtest_config.get("start_date"),
+            backtest_config.get("end_date"),
+            fundamentals=fund_fields or None,
+            valuation=val_fields or None,
         )
     else:
         panel = load_pool_panel(master_store, codes, backtest_config.get("start_date"), backtest_config.get("end_date"))

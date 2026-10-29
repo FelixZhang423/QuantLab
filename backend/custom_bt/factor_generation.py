@@ -311,6 +311,7 @@ def run_factor_generation(
         "data_source": runtime.get("data_source"),
         "source_signature": runtime["source_signature"],
         "runtime_id": runtime_id,
+        "fields": runtime.get("fields"),
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "accepted_count": int(getattr(runner, "accepted_count", 0)),
         "attempts": int(getattr(runner, "attempts", 0)),

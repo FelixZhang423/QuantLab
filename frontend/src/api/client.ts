@@ -31,6 +31,8 @@ export type FieldInfo = {
   description: string;
   /** 该字段能否在因子 / 回测面板（公司库）中使用 */
   panel?: boolean;
+  /** 能否直接作为因子表达式的操作数（数值字段） */
+  expression?: boolean;
 };
 
 export type StockInfo = {
@@ -461,7 +463,8 @@ async function readResponse<T>(response: Response, path: string): Promise<T> {
 }
 
 async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { Accept: "application/json" } });
+  // 后端改了响应结构时，避免浏览器拿旧的 GET 缓存（HMR 不会重新触发已挂载的请求）。
+  const response = await fetch(path, { headers: { Accept: "application/json" }, cache: "no-store" });
   return readResponse<T>(response, path);
 }
 

@@ -52,11 +52,85 @@ DEFAULT_PANEL_FIELDS: Tuple[str, ...] = (
     "open", "close", "high", "low", "ycp", "volume", "amount", "ChangePCT",
     "RangePCT", "TurnoverRate", "Ifsuspend", "if_up", "if_flat", "if_down",
     "RisingUpDays", "FallingDownDays", "MaxRisingUpDays", "MaxFallingDownDays",
-    "HighestPrice", "LowestPrice", "ema12", "ema26", "dif", "dea", "macd",
+    "FallOnDebut", "FallOnNAPS",
+    "HighestPrice", "LowestPrice", "LimitBoard", "SurgedLimit", "DeclineLimit",
+    "HighestPriceRW", "LowestPriceRW", "HighestPriceTW", "LowestPriceTW",
+    "HighestPriceRM", "LowestPriceRM", "HighestPriceTM", "LowestPriceTM",
+    "HighestPriceRMThree", "LowestPriceRMThree",
+    "HighestPriceRMSix", "LowestPriceRMSix",
+    "HighestPriceRY", "LowestPriceRY", "HighestPriceYTD", "LowestPriceYTD",
+    "ema12", "ema26", "dif", "dea", "macd",
     "max_high_9", "min_low_9", "RSV", "kdj_k", "kdj_d", "kdj_j", "ma4", "ma5",
     "ma8", "ma12", "ma16", "ma20", "ma47", "market_code", "category",
     "StockBoard", "ListedDate", "ListedSector", "ListedState", "vwap",
 )
+
+# 财务原始字段：公司库按 CompanyCode 存，需先经 dwd.secumain 映射到证券代码。
+FUNDAMENTAL_TABLE = "ods_dps_target.lc_maindatanew"
+FUNDAMENTAL_CODE_TABLE = "dwd.secumain"
+# 只保留合并报表（Mark=2）的定期报告（BulletinType=20），避免母公司报表/业绩快报混入。
+FUNDAMENTAL_MARK = 2
+FUNDAMENTAL_BULLETIN = "20"
+FUNDAMENTAL_LOOKBACK_DAYS = 550
+FUNDAMENTAL_PREFIX = "fund_"
+# 30 个核心财务原始字段；衍生指标（idx_*）不在这一批，见后续阶段。
+FUNDAMENTAL_FIELDS: Tuple[str, ...] = (
+    "BasicEPS", "DilutedEPS", "EPS", "ROEByReport", "ROE", "ROECut",
+    "WROE", "WROECut", "OperatingReenue", "NPFromParentCompanyOwners",
+    "NetProfitCut", "NetProfit", "OperatingProfit", "TotalProfit",
+    "IncomeTaxCost", "FairValueChangeIncome", "RetainedProfit",
+    "NetOperateCashFlow", "NetInvestCashFlow", "NetFinanceCashFlow",
+    "TotalAssets", "TotalCurrentAssets", "TotalNonCurrentAssets",
+    "TotalLiability", "TotalCurrentLiability", "TotalNonCurrentLiability",
+    "SEWithoutMI", "TotalShareholderEquity", "Inventories", "AccountReceivables",
+)
+
+# 每日估值字段：SecuCode + data_time 直接对齐日频，无披露日问题。
+VALUATION_TABLE = "dws.f10_finance_index_fd"
+VALUATION_PREFIX = "val_"
+VALUATION_FIELDS: Tuple[str, ...] = (
+    "PB", "PSTTM", "PCFTTM", "DividendRatioLYR", "TotalMV",
+)
+# 字段页展示用中文名，与 441 字段说明表保持一致。
+FUNDAMENTAL_LABELS: Dict[str, str] = {
+    "BasicEPS": "基本每股收益",
+    "DilutedEPS": "稀释每股收益",
+    "EPS": "每股收益",
+    "ROEByReport": "净资产收益率(报告值)",
+    "ROE": "净资产收益率(摊薄)",
+    "ROECut": "净资产收益率(摊薄-扣除)",
+    "WROE": "加权净资产收益率",
+    "WROECut": "加权净资产收益率(扣除)",
+    "OperatingReenue": "营业收入",
+    "NPFromParentCompanyOwners": "归母净利润",
+    "NetProfitCut": "扣非净利润",
+    "NetProfit": "净利润",
+    "OperatingProfit": "营业利润",
+    "TotalProfit": "利润总额",
+    "IncomeTaxCost": "所得税费用",
+    "FairValueChangeIncome": "公允价值变动收益",
+    "RetainedProfit": "未分配利润",
+    "NetOperateCashFlow": "经营活动现金流净额",
+    "NetInvestCashFlow": "投资活动现金流净额",
+    "NetFinanceCashFlow": "筹资活动现金流净额",
+    "TotalAssets": "总资产",
+    "TotalCurrentAssets": "流动资产合计",
+    "TotalNonCurrentAssets": "非流动资产合计",
+    "TotalLiability": "总负债",
+    "TotalCurrentLiability": "流动负债合计",
+    "TotalNonCurrentLiability": "非流动负债合计",
+    "SEWithoutMI": "归母所有者权益",
+    "TotalShareholderEquity": "股东权益合计",
+    "Inventories": "存货",
+    "AccountReceivables": "应收账款",
+}
+VALUATION_LABELS: Dict[str, str] = {
+    "PB": "市净率",
+    "PSTTM": "市销率(TTM)",
+    "PCFTTM": "市现率(TTM)",
+    "DividendRatioLYR": "股息率(LYR)",
+    "TotalMV": "总市值",
+}
 
 _IDENTIFIER_FIELDS = {"date", "code"}
 _DIM_FIELDS = {"ListedDate", "ListedSector", "ListedState"}
@@ -262,6 +336,21 @@ def panel_field_names() -> set[str]:
     return {"date", "code", *DEFAULT_PANEL_FIELDS}
 
 
+# 文本 / 日期列不能直接进数值表达式（分类字段可做分组，但不是表达式操作数）。
+_EXPRESSION_EXCLUDED = {
+    "date", "code", "ListedDate", "ListedSector", "ListedState", "ChiNameAbbr",
+    *_TEXT_FIELDS,
+}
+
+
+def is_expression_field(name: str) -> bool:
+    """字段能否作为因子表达式的操作数：必须是可加载的数值列。"""
+    field = live_db.panel_alias(str(name).strip())
+    if field in _EXPRESSION_EXCLUDED:
+        return False
+    return _loadable(field)
+
+
 def available_panel_fields(
     settings: Optional[live_db.LiveDBSettings] = None,
     client: Optional[live_db.ClickHouseHTTPClient] = None,
@@ -414,8 +503,16 @@ def load_panel(
     *,
     settings: Optional[live_db.LiveDBSettings] = None,
     client: Optional[live_db.ClickHouseHTTPClient] = None,
+    fundamentals: Optional[Sequence[str]] = None,
+    valuation: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
-    """从公司库加载股票池面板（与本地 ``load_pool_panel`` 等价的字段集合）。"""
+    """从公司库加载股票池面板（与本地 ``load_pool_panel`` 等价的字段集合）。
+
+    ``fundamentals`` 非空时，按 InfoPublDate as-of 合并财务字段，列名加 ``fund_`` 前缀；
+    ``valuation`` 非空时按交易日合并估值字段，列名加 ``val_`` 前缀。两者都不进
+    ``DEFAULT_PANEL_FIELDS``，由调用方显式请求，避免默认回测变慢。
+    """
+    codes = [normalize_code(code) for code in codes]
     selected = list(
         dict.fromkeys(
             _panel_name(field)
@@ -444,7 +541,237 @@ def load_panel(
         )
     finally:
         temp_path.unlink(missing_ok=True)
-    return _normalize_panel(frame, selected)
+    panel = _normalize_panel(frame, selected)
+    if fundamentals:
+        if start_date is None or end_date is None:
+            raise ValueError("fundamentals requires start_date and end_date")
+        fund = load_fundamentals(codes, start_date, end_date, fundamentals, settings=settings, client=client)
+        panel = attach_fundamentals(panel, fund)
+    if valuation:
+        if start_date is None or end_date is None:
+            raise ValueError("valuation requires start_date and end_date")
+        values = load_valuation(codes, start_date, end_date, valuation, settings=settings, client=client)
+        panel = attach_valuation(panel, values)
+    return panel
+
+
+def build_company_codes_sql(codes: Iterable[str]) -> str:
+    """证券代码 → 公司代码（财务表按 CompanyCode 存）。"""
+    return (
+        "SELECT toString(SecuCode) AS code, toString(CompanyCode) AS company_code "
+        f"FROM {FUNDAMENTAL_CODE_TABLE} WHERE SecuCode IN {_code_list_sql(codes)}"
+    )
+
+
+def build_fundamentals_sql(
+    company_codes: Iterable[str],
+    fields: Iterable[str],
+    start_date: Any,
+    end_date: Any,
+    lookback_days: int = FUNDAMENTAL_LOOKBACK_DAYS,
+) -> str:
+    """财务面板 SQL：只取合并报表的定期报告，日期按 InfoPublDate 截断。"""
+    codes = ",".join(str(int(str(code).strip())) for code in company_codes)
+    selected = [field for field in fields]
+    unknown = [field for field in selected if field not in FUNDAMENTAL_FIELDS]
+    if unknown:
+        raise ValueError(f"unsupported fundamental fields: {unknown}")
+    selects = [
+        "toString(f.CompanyCode) AS company_code",
+        "toDate(f.EndDate) AS end_date",
+        "toDate(f.InfoPublDate) AS info_date",
+        *[f"toFloat64OrNull(toString(f.{field})) AS {field}" for field in selected],
+    ]
+    start = _quote(_ymd(start_date, "start_date"))
+    end = _quote(_ymd(end_date, "end_date"))
+    return (
+        f"SELECT {', '.join(selects)} FROM {FUNDAMENTAL_TABLE} AS f "
+        f"WHERE f.CompanyCode IN ({codes}) "
+        f"AND f.Mark = {FUNDAMENTAL_MARK} AND f.BulletinType = '{FUNDAMENTAL_BULLETIN}' "
+        f"AND f.InfoPublDate <= toDate({end}) "
+        f"AND f.InfoPublDate >= toDate({start}) - INTERVAL {int(lookback_days)} DAY "
+        "ORDER BY f.CompanyCode, f.InfoPublDate"
+    )
+
+
+def load_fundamentals(
+    codes: Iterable[str],
+    start_date: Any,
+    end_date: Any,
+    fields: Optional[Sequence[str]] = None,
+    *,
+    settings: Optional[live_db.LiveDBSettings] = None,
+    client: Optional[live_db.ClickHouseHTTPClient] = None,
+    lookback_days: int = FUNDAMENTAL_LOOKBACK_DAYS,
+) -> pd.DataFrame:
+    """按证券代码取财务原始字段，返回 [code, info_date, end_date, *fields]。"""
+    codes = [normalize_code(code) for code in codes]
+    selected = list(dict.fromkeys(fields or FUNDAMENTAL_FIELDS))
+    unknown = [field for field in selected if field not in FUNDAMENTAL_FIELDS]
+    if unknown:
+        raise ValueError(f"unsupported fundamental fields: {unknown}")
+    columns = ["code", "info_date", "end_date", *selected]
+    if not codes:
+        return pd.DataFrame(columns=columns)
+    settings = settings or live_db.resolve_settings()
+    client = live_db._client(settings, client)
+
+    by_company: Dict[str, List[str]] = {}
+    for row in client.query(build_company_codes_sql(codes)):
+        code = normalize_code(row.get("code", ""))
+        company = str(row.get("company_code", "")).strip()
+        if code and company:
+            by_company.setdefault(company, []).append(code)
+    if not by_company:
+        return pd.DataFrame(columns=columns)
+
+    sql = build_fundamentals_sql(by_company, selected, start_date, end_date, lookback_days)
+    handle = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+    temp_path = Path(handle.name)
+    handle.close()
+    try:
+        client.query_to_file(
+            sql,
+            temp_path,
+            timeout=settings.panel_timeout,
+            max_execution_time=settings.panel_max_execution_time,
+            max_memory_usage=settings.panel_max_memory,
+        )
+        frame = pd.read_parquet(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    if frame.empty:
+        return pd.DataFrame(columns=columns)
+
+    frame["company_code"] = frame["company_code"].astype(str)
+    frame["info_date"] = _date_column(frame["info_date"])
+    frame["end_date"] = _date_column(frame["end_date"])
+    for field in selected:
+        frame[field] = pd.to_numeric(frame[field], errors="coerce")
+
+    # 一个公司可能对应多个证券代码（A/B 股等），按映射展开。
+    parts = []
+    for company, group in frame.groupby("company_code", sort=False):
+        for code in by_company.get(company, []):
+            part = group.copy()
+            part["code"] = code
+            parts.append(part)
+    if not parts:
+        return pd.DataFrame(columns=columns)
+    merged = pd.concat(parts, ignore_index=True).dropna(subset=["info_date"])
+    merged = merged.sort_values(["code", "info_date", "end_date"])
+    merged = merged.drop_duplicates(["code", "info_date", "end_date"], keep="last")
+    return merged[columns].reset_index(drop=True)
+
+
+def attach_fundamentals(panel: pd.DataFrame, fundamentals: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """按 InfoPublDate 做 as-of 合并：每日只取当日已披露的最新一期，避免未来函数。"""
+    if fundamentals is None or fundamentals.empty:
+        return panel
+    left = panel.copy()
+    left["code"] = left["code"].astype(str)
+    left["date"] = pd.to_datetime(left["date"]).astype("datetime64[ns]")
+    right = fundamentals.copy()
+    right["code"] = right["code"].astype(str)
+    right["info_date"] = pd.to_datetime(right["info_date"]).astype("datetime64[ns]")
+    right["end_date"] = pd.to_datetime(right["end_date"])
+    rename = {field: f"{FUNDAMENTAL_PREFIX}{field}" for field in right.columns if field not in {"code", "info_date", "end_date"}}
+    rename["info_date"] = f"{FUNDAMENTAL_PREFIX}info_date"
+    rename["end_date"] = f"{FUNDAMENTAL_PREFIX}end_date"
+    right = right.rename(columns=rename)
+    right_key = f"{FUNDAMENTAL_PREFIX}info_date"
+    left = left.sort_values(["date", "code"])
+    right = right.sort_values([right_key, "code"])
+    merged = pd.merge_asof(
+        left, right, left_on="date", right_on=right_key, by="code", direction="backward"
+    )
+    return merged.reset_index(drop=True)
+
+
+def build_valuation_sql(
+    codes: Iterable[str], fields: Iterable[str], start_date: Any, end_date: Any
+) -> str:
+    """每日估值面板 SQL（按交易日直接对齐，不做 as-of）。"""
+    selected = [field for field in fields]
+    unknown = [field for field in selected if field not in VALUATION_FIELDS]
+    if unknown:
+        raise ValueError(f"unsupported valuation fields: {unknown}")
+    selects = [
+        "toString(SecuCode) AS code",
+        "toDate(data_time) AS date",
+        *[f"toFloat64OrNull(toString({field})) AS {field}" for field in selected],
+    ]
+    start = _quote(_ymd(start_date, "start_date"))
+    end = _quote(_ymd(end_date, "end_date"))
+    return (
+        f"SELECT {', '.join(selects)} FROM {VALUATION_TABLE} "
+        f"WHERE SecuCode IN {_code_list_sql(codes)} "
+        f"AND data_time >= toDate({start}) AND data_time <= toDate({end})"
+    )
+
+
+def load_valuation(
+    codes: Iterable[str],
+    start_date: Any,
+    end_date: Any,
+    fields: Optional[Sequence[str]] = None,
+    *,
+    settings: Optional[live_db.LiveDBSettings] = None,
+    client: Optional[live_db.ClickHouseHTTPClient] = None,
+) -> pd.DataFrame:
+    """按代码和交易日取估值字段，返回 [code, date, *fields]。"""
+    codes = [normalize_code(code) for code in codes]
+    selected = list(dict.fromkeys(fields or VALUATION_FIELDS))
+    unknown = [field for field in selected if field not in VALUATION_FIELDS]
+    if unknown:
+        raise ValueError(f"unsupported valuation fields: {unknown}")
+    columns = ["code", "date", *selected]
+    if not codes:
+        return pd.DataFrame(columns=columns)
+    settings = settings or live_db.resolve_settings()
+    client = live_db._client(settings, client)
+    handle = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+    temp_path = Path(handle.name)
+    handle.close()
+    try:
+        client.query_to_file(
+            build_valuation_sql(codes, selected, start_date, end_date),
+            temp_path,
+            timeout=settings.panel_timeout,
+            max_execution_time=settings.panel_max_execution_time,
+            max_memory_usage=settings.panel_max_memory,
+        )
+        frame = pd.read_parquet(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    if frame.empty:
+        return pd.DataFrame(columns=columns)
+    frame["code"] = frame["code"].astype(str)
+    frame["date"] = _date_column(frame["date"])
+    for field in selected:
+        frame[field] = pd.to_numeric(frame[field], errors="coerce")
+    frame = frame.dropna(subset=["date", "code"])
+    frame = frame.drop_duplicates(["code", "date"], keep="last")
+    return frame[columns].sort_values(["code", "date"]).reset_index(drop=True)
+
+
+def attach_valuation(panel: pd.DataFrame, valuation: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """按交易日合并估值字段（左连接，缺失保留 NaN）。"""
+    if valuation is None or valuation.empty:
+        return panel
+    left = panel.copy()
+    left["code"] = left["code"].astype(str)
+    left["date"] = pd.to_datetime(left["date"]).astype("datetime64[ns]")
+    right = valuation.copy()
+    right["code"] = right["code"].astype(str)
+    right["date"] = pd.to_datetime(right["date"]).astype("datetime64[ns]")
+    rename = {
+        field: f"{VALUATION_PREFIX}{field}"
+        for field in right.columns
+        if field not in {"code", "date"}
+    }
+    right = right.rename(columns=rename)
+    return left.merge(right, on=["date", "code"], how="left")
 
 
 def _rewrite_dates(raw_path: Path, final_path: Path) -> None:
@@ -491,11 +818,39 @@ def write_pool_panel(
     settings: Optional[live_db.LiveDBSettings] = None,
     client: Optional[live_db.ClickHouseHTTPClient] = None,
 ) -> Dict[str, Any]:
-    """生成因子运行用的 ``panel.parquet``（直接由公司库流式写入）。"""
+    """生成因子运行用的 ``panel.parquet``（直接由公司库流式写入）。
+
+    ``fields`` 里带 ``fund_`` 前缀的字段会按 InfoPublDate as-of 合并进来，
+    其余字段走日频面板 SQL；这样因子生成和回测能共用同一份字段空间。
+    """
+    codes = [normalize_code(code) for code in codes]
     selected = list(dict.fromkeys(_panel_name(field) for field in fields))
     if not selected:
         raise ValueError("fields must contain at least one field")
-    _validate_fields(selected)
+    fund_fields = [
+        field[len(FUNDAMENTAL_PREFIX):]
+        for field in selected
+        if field.startswith(FUNDAMENTAL_PREFIX)
+    ]
+    val_fields = [
+        field[len(VALUATION_PREFIX):]
+        for field in selected
+        if field.startswith(VALUATION_PREFIX)
+    ]
+    daily_fields = [
+        field
+        for field in selected
+        if not field.startswith((FUNDAMENTAL_PREFIX, VALUATION_PREFIX))
+    ]
+    if not daily_fields:
+        raise ValueError("panel fields must contain at least one daily field")
+    _validate_fields(daily_fields)
+    unknown = [field for field in fund_fields if field not in FUNDAMENTAL_FIELDS]
+    if unknown:
+        raise ValueError(f"unsupported fundamental fields: {unknown}")
+    unknown = [field for field in val_fields if field not in VALUATION_FIELDS]
+    if unknown:
+        raise ValueError(f"unsupported valuation fields: {unknown}")
     settings = settings or live_db.resolve_settings()
     client = live_db._client(settings, client)
     panel_path = Path(output_path).expanduser().resolve()
@@ -506,13 +861,24 @@ def write_pool_panel(
     written = False
     try:
         client.query_to_file(
-            build_panel_sql(codes, selected, start_date, end_date),
+            build_panel_sql(codes, daily_fields, start_date, end_date),
             raw_path,
             timeout=settings.panel_timeout,
             max_execution_time=settings.panel_max_execution_time,
             max_memory_usage=settings.panel_max_memory,
         )
         _rewrite_dates(raw_path, panel_path)
+        if fund_fields or val_fields:
+            if start_date is None or end_date is None:
+                raise ValueError("fundamental/valuation fields require start_date and end_date")
+            frame = pd.read_parquet(panel_path)
+            if fund_fields:
+                fund = load_fundamentals(codes, start_date, end_date, fund_fields, settings=settings, client=client)
+                frame = attach_fundamentals(frame, fund)
+            if val_fields:
+                valuation = load_valuation(codes, start_date, end_date, val_fields, settings=settings, client=client)
+                frame = attach_valuation(frame, valuation)
+            frame.to_parquet(panel_path, index=False)
         table = pq.read_table(panel_path, columns=["date", "code"])
         rows = table.num_rows
         if rows == 0:

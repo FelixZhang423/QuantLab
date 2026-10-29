@@ -260,13 +260,40 @@ def get_fields() -> Dict[str, Any]:
             description = entry["comment"]  # 文档没写时用库内注释兜底
         if entry["name"] == "vol":
             description = f"{description}（回测面板中名为 volume）"
+        panel = live_db.panel_alias(entry["name"]) in panel_fields
         fields.append(
             {
                 "name": item["name"],
                 "dtype": item["dtype"],
                 "source": live_db.source_label(item["source"], entry["table"]),
                 "description": description,
-                "panel": live_db.panel_alias(entry["name"]) in panel_fields,
+                "panel": panel,
+                "expression": company_source.is_expression_field(item["name"]),
+            }
+        )
+    # 财务 / 估值字段不在日频表目录里，单独补充：前缀是它们在面板里的实际列名。
+    for name, label in company_source.FUNDAMENTAL_LABELS.items():
+        full = f"{company_source.FUNDAMENTAL_PREFIX}{name}"
+        fields.append(
+            {
+                "name": full,
+                "dtype": "float64",
+                "source": company_source.FUNDAMENTAL_TABLE,
+                "description": label,
+                "panel": False,
+                "expression": True,
+            }
+        )
+    for name, label in company_source.VALUATION_LABELS.items():
+        full = f"{company_source.VALUATION_PREFIX}{name}"
+        fields.append(
+            {
+                "name": full,
+                "dtype": "float64",
+                "source": company_source.VALUATION_TABLE,
+                "description": label,
+                "panel": False,
+                "expression": True,
             }
         )
     return _sanitize(

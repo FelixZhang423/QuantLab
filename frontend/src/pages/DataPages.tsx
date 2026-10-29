@@ -126,37 +126,115 @@ function FilterChips<T extends string>({ items, value, onChange }: { items: { ke
 
 /* ============ 数据字段 ============ */
 
+const FIELD_CATEGORY: Record<string, { label: string; color: string }> = {
+  "dws.ll_stock_daily_sharing": { label: "行情与技术", color: "blue" },
+  "ods_dps_target.lc_maindatanew": { label: "财务", color: "purple" },
+  "dws.f10_finance_index_fd": { label: "估值", color: "gold" },
+  "dim.stock_main_info_fd": { label: "证券信息", color: "cyan" },
+};
+
+function fieldCategory(field: FieldInfo) {
+  return FIELD_CATEGORY[field.source ?? ""] ?? { label: "其他", color: "default" };
+}
+
 export function FieldsPage() {
-  const [source, setSource] = useState<string>("all");
+  const [source, setSource] = useState("all");
+  const [category, setCategory] = useState("all");
+  const [usable, setUsable] = useState("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const fieldsApi = useApiData(api.fields);
   const fields = fieldsApi.data?.fields ?? [];
   const sources = [...new Set(fields.map((f) => f.source).filter(Boolean))];
-  const filtered = fields.filter((f) => (source === "all" || f.source === source) && `${f.name}${f.description}${f.source}`.toLowerCase().includes(search.toLowerCase()));
-  const chips = [{ key: "all", label: "全部来源", count: fields.length }, ...sources.map((s) => ({ key: s, label: s, count: fields.filter((f) => f.source === s).length }))];
+  const categories = [...new Set(fields.map((f) => fieldCategory(f).label))];
+  const pageSize = 15;
+
+  const filtered = fields.filter((f) => {
+    if (source !== "all" && f.source !== source) return false;
+    if (category !== "all" && fieldCategory(f).label !== category) return false;
+    if (usable === "yes" && !f.expression) return false;
+    if (usable === "no" && f.expression) return false;
+    return `${f.name}${f.description}${f.source}`.toLowerCase().includes(search.toLowerCase());
+  });
+  const active = source !== "all" || category !== "all" || usable !== "all" || search !== "";
+  const reset = () => {
+    setSource("all"); setCategory("all"); setUsable("all"); setSearch(""); setPage(1);
+  };
+
   const columns: TableColumnsType<FieldInfo> = [
-    { title: "字段名", dataIndex: "name", width: 180, render: (v) => <Text code>{v}</Text> },
+    { title: "字段名", dataIndex: "name", width: 190, render: (v) => <Text code>{v}</Text> },
     { title: "说明", dataIndex: "description", ellipsis: true },
-    { title: "类型", dataIndex: "dtype", width: 200, render: (v) => <Tag>{v || "—"}</Tag> },
-    { title: "面板", dataIndex: "panel", width: 110, render: (v) => (v ? <Tag color="green">面板可用</Tag> : <Tag>仅数据库</Tag>) },
-    { title: "来源", dataIndex: "source", width: 220, render: (v) => <Tag color="blue">{v || "未知"}</Tag> },
+    {
+      title: "类别",
+      key: "category",
+      width: 110,
+      render: (_, record) => {
+        const cat = fieldCategory(record);
+        return <Tag color={cat.color}>{cat.label}</Tag>;
+      },
+    },
+    {
+      title: "因子表达式",
+      dataIndex: "expression",
+      width: 110,
+      render: (v) => (v ? <Tag color="green">可用</Tag> : <Tag>不可用</Tag>),
+    },
+    { title: "类型", dataIndex: "dtype", width: 150, ellipsis: true, render: (v) => <Tag>{v || "—"}</Tag> },
+    { title: "来源", dataIndex: "source", width: 220, ellipsis: true, render: (v) => <Text type="secondary">{v || "未知"}</Text> },
   ];
   return (
     <Space direction="vertical" size={16} className="page-stack">
       <Card className="filter-card">
-        <Flex vertical gap={12}>
-          <FilterChips items={chips} value={source} onChange={(key) => { setSource(key); setPage(1); }} />
+        <Flex vertical gap={10}>
+          <Flex gap={12} align="center" wrap>
+            <Text type="secondary" style={{ width: 48 }}>类别</Text>
+            <FilterChips
+              items={[
+                { key: "all", label: "全部", count: fields.length },
+                ...categories.map((c) => ({ key: c, label: c, count: fields.filter((f) => fieldCategory(f).label === c).length })),
+              ]}
+              value={category}
+              onChange={(key) => { setCategory(key); setPage(1); }}
+            />
+          </Flex>
+          <Flex gap={12} align="center" wrap>
+            <Text type="secondary" style={{ width: 48 }}>表达式</Text>
+            <FilterChips
+              items={[
+                { key: "all", label: "全部", count: fields.length },
+                { key: "yes", label: "可用", count: fields.filter((f) => f.expression).length },
+                { key: "no", label: "不可用", count: fields.filter((f) => !f.expression).length },
+              ]}
+              value={usable}
+              onChange={(key) => { setUsable(key); setPage(1); }}
+            />
+          </Flex>
+          <Flex gap={12} align="center" wrap>
+            <Text type="secondary" style={{ width: 48 }}>来源</Text>
+            <FilterChips
+              items={[
+                { key: "all", label: "全部", count: fields.length },
+                ...sources.map((s) => ({ key: s, label: s, count: fields.filter((f) => f.source === s).length })),
+              ]}
+              value={source}
+              onChange={(key) => { setSource(key); setPage(1); }}
+            />
+          </Flex>
           <Flex justify="space-between" gap={16} wrap align="center">
-            <Input.Search allowClear value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="搜索字段名 / 说明" className="task-search" />
-            <Text type="secondary">共 {fieldsApi.data?.total ?? 0} 个字段（不含 code / timestamps）· 来自 dws.ll_stock_daily_sharing 实时表结构</Text>
+            <Input.Search allowClear value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="搜索字段名 / 说明 / 来源" className="task-search" />
+            <Flex gap={12} align="center" wrap>
+              <Text type="secondary">显示 {filtered.length} / {fieldsApi.data?.total ?? 0} 个字段 · 可用 = 数值字段，可直接写进因子表达式</Text>
+              {active ? <Button size="small" icon={<ReloadOutlined />} onClick={reset}>重置筛选</Button> : null}
+            </Flex>
           </Flex>
         </Flex>
       </Card>
       <LoadGate state={fieldsApi} hint={LIVE_HINT}>
         <Card className="data-card">
-          <Table rowKey="name" size="middle" columns={columns} dataSource={filtered.slice((page - 1) * 10, page * 10)} pagination={false} />
-          <Flex justify="flex-end" className="table-pagination"><Pagination current={page} pageSize={10} total={filtered.length} showSizeChanger={false} onChange={setPage} /></Flex>
+          <Table rowKey="name" size="middle" columns={columns} dataSource={filtered.slice((page - 1) * pageSize, page * pageSize)} pagination={false} />
+          <Flex justify="flex-end" className="table-pagination">
+            <Pagination current={page} pageSize={pageSize} total={filtered.length} showSizeChanger={false} showTotal={(total) => `共 ${total} 条`} onChange={setPage} />
+          </Flex>
         </Card>
       </LoadGate>
     </Space>

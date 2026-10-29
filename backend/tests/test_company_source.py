@@ -54,7 +54,122 @@ def test_source_signature_and_panel_fields():
     assert company_source.source_signature() == company_source.SOURCE_SIGNATURE
     fields = company_source.panel_field_names()
     assert {"date", "code", "close", "volume", "vwap", "ListedDate"} <= fields
-    assert len(company_source.DEFAULT_PANEL_FIELDS) == 45
+    # 行情/技术表 68 列 = 原有字段 + 新增的价格位置/破发破净等标记（文本信号列不进面板）
+    assert len(company_source.DEFAULT_PANEL_FIELDS) == 66
+    assert {"FallOnDebut", "LimitBoard", "HighestPriceYTD", "LowestPriceRY"} <= fields
+    assert not {"ma_signal", "macd_signal", "kdj_signal", "strategy"} & fields
+
+
+def test_build_fundamentals_sql_is_readonly_and_filtered():
+    sql = company_source.build_fundamentals_sql(
+        ["3", "1030"], ["ROE", "TotalAssets"], "2024-01-10", "2025-01-10"
+    )
+    live_db.guard_readonly(sql)
+    assert company_source.FUNDAMENTAL_TABLE in sql
+    assert "f.CompanyCode IN (3,1030)" in sql
+    assert "f.Mark = 2" in sql
+    assert "f.BulletinType = '20'" in sql
+    assert "INTERVAL 550 DAY" in sql
+
+
+def test_build_fundamentals_sql_rejects_unknown_fields():
+    with pytest.raises(ValueError):
+        company_source.build_fundamentals_sql(
+            ["3"], ["NotAField"], "2024-01-01", "2024-12-31"
+        )
+
+
+def test_build_valuation_sql_is_readonly_and_filtered():
+    sql = company_source.build_valuation_sql(
+        ["000001", "600000"], ["PB", "TotalMV"], "2024-01-01", "2024-12-31"
+    )
+    live_db.guard_readonly(sql)
+    assert company_source.VALUATION_TABLE in sql
+    assert "toDate(data_time) AS date" in sql
+    assert "SecuCode IN ('000001','600000')" in sql
+
+
+def test_build_valuation_sql_rejects_unknown_fields():
+    with pytest.raises(ValueError):
+        company_source.build_valuation_sql(
+            ["000001"], ["NotAValuation"], "2024-01-01", "2024-12-31"
+        )
+
+
+def test_attach_valuation_merges_on_trading_day():
+    panel = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+            "code": ["000001", "000001"],
+            "close": [10.0, 11.0],
+        }
+    )
+    valuation = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-02"]),
+            "code": ["000001"],
+            "PB": [0.8],
+        }
+    )
+    out = company_source.attach_valuation(panel, valuation)
+    assert out.loc[0, "val_PB"] == 0.8
+    assert pd.isna(out.loc[1, "val_PB"])
+
+
+def test_write_pool_panel_rejects_unknown_valuation(tmp_path):
+    with pytest.raises(ValueError):
+        company_source.write_pool_panel(
+            ["000001"],
+            ["close", "val_NotAField"],
+            tmp_path / "panel.parquet",
+            "2024-01-01",
+            "2024-12-31",
+        )
+
+
+def test_write_pool_panel_rejects_unknown_fundamental(tmp_path):
+    with pytest.raises(ValueError):
+        company_source.write_pool_panel(
+            ["000001"],
+            ["close", "fund_NotAField"],
+            tmp_path / "panel.parquet",
+            "2024-01-01",
+            "2024-12-31",
+        )
+
+
+def test_write_pool_panel_requires_daily_field(tmp_path):
+    with pytest.raises(ValueError):
+        company_source.write_pool_panel(
+            ["000001"],
+            ["fund_ROE"],
+            tmp_path / "panel.parquet",
+            "2024-01-01",
+            "2024-12-31",
+        )
+
+
+def test_attach_fundamentals_is_asof_by_publish_date():
+    panel = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-02", "2024-01-16", "2024-04-25"]),
+            "code": ["000001"] * 3,
+            "close": [10.0, 11.0, 12.0],
+        }
+    )
+    fund = pd.DataFrame(
+        {
+            "code": ["000001", "000001"],
+            "info_date": pd.to_datetime(["2024-01-15", "2024-04-20"]),
+            "end_date": pd.to_datetime(["2023-12-31", "2024-03-31"]),
+            "ROE": [5.0, 6.0],
+        }
+    )
+    out = company_source.attach_fundamentals(panel, fund)
+    assert pd.isna(out.loc[0, "fund_ROE"])  # 披露前不可见
+    assert out.loc[1, "fund_ROE"] == 5.0
+    assert out.loc[2, "fund_ROE"] == 6.0
+    assert out.loc[1, "fund_end_date"] == pd.Timestamp("2023-12-31")
 
 
 # ---------- SQL ----------

@@ -43,15 +43,28 @@ fields:
   - ma16
   - ma20
   - ma47
+  # 财务字段：生成面板会按 InfoPublDate as-of 合并（列名保留 fund_ 前缀）。
+  # 字段列表变了 runtime_id 就会变，旧的 factor_runtime 缓存不会复用。
+  - fund_NetOperateCashFlow
+  - fund_FairValueChangeIncome
+  - fund_NetProfit
+  - fund_TotalAssets
+  # 每日估值字段：按交易日直接对齐，无披露日问题。
+  - val_PB
+  - val_PSTTM
+  - val_PCFTTM
+  - val_DividendRatioLYR
+  - val_TotalMV
+# 估值字段从 2024-01-01 才有数据，训练窗口整体后移；2022-2023 不再参与估值因子训练。
 splits:
   train:
-    cache_start: "2022-01-14"
-    cache_end: "2024-07-26"
+    cache_start: "2024-01-01"
+    cache_end: "2025-06-30"
   valid:
-    cache_start: "2024-01-25"
-    cache_end: "2025-07-28"
+    cache_start: "2025-01-25"
+    cache_end: "2026-01-28"
   test:
-    cache_start: "2025-01-27"
+    cache_start: "2025-07-27"
     cache_end: "2026-06-12"
 max_backtrack_days: 100
 target_horizon: 20

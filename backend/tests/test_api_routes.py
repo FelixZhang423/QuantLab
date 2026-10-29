@@ -85,6 +85,30 @@ def master(tmp_path, monkeypatch):
     return root
 
 
+def test_fields_endpoint_marks_expression_usable(monkeypatch):
+    catalog = _live(
+        [
+            {"name": "open", "dtype": "Decimal(20,0)", "source": "last_5years_daily",
+             "table": live_db.DAILY_TABLE, "comment": ""},
+            {"name": "ma_signal", "dtype": "String", "source": "last_5years_daily",
+             "table": live_db.DAILY_TABLE, "comment": ""},
+            {"name": "DbOnlyColumn", "dtype": "String", "source": "last_5years_daily",
+             "table": live_db.DAILY_TABLE, "comment": ""},
+        ]
+    )
+    monkeypatch.setattr(main.live_db, "live_field_catalog", lambda *a, **k: catalog)
+    payload = main.get_fields()
+    by_name = {field["name"]: field for field in payload["fields"]}
+    assert by_name["open"]["expression"] is True
+    assert by_name["ma_signal"]["expression"] is False  # 文本列
+    assert by_name["DbOnlyColumn"]["expression"] is False  # 未定义类型的列
+    assert by_name["fund_NetProfit"]["expression"] is True
+    assert by_name["fund_ROE"]["expression"] is True
+    assert by_name["val_PB"]["expression"] is True
+    assert by_name["val_PB"]["description"] == "市净率"
+    assert payload["total"] == 3 + len(company_source.FUNDAMENTAL_FIELDS) + len(company_source.VALUATION_FIELDS)
+
+
 def _stub_universe(monkeypatch, items=None):
     monkeypatch.setattr(
         main.live_db, "live_stock_rows", lambda *args, **kwargs: _live(items or _items())
