@@ -104,7 +104,7 @@ pnpm dev
 ### 确认启动成功
 
 - **数据总览**：能看到股票数、行数、日期区间 → ClickHouse 已连通；
-- **股票池**：能按行业/板块筛选并预览 → 公司库和本地主缓存都正常；
+- **股票池**：能按行业/板块筛选并预览 → 建池候选、选样与回测都直接使用公司库；
 - **操作符**：能看到 80 个算子；
 - **因子回测**：本地没有 `factor_runs/` 时为空是正常的。
 
@@ -139,9 +139,11 @@ Vite dev proxy（/api → 127.0.0.1:8000）
 FastAPI（custom_backtester/api，默认 http://127.0.0.1:8000）
    ├─ 数据总览 / 数据字段 / 股票列表 / 股票池候选
    │     └─ 公司 ClickHouse（HTTP 只读，实时查询，300s 快照缓存）
-   ├─ 操作符 / 股票池 / 因子运行 / 回测结果
-   │     └─ 本地文件：data_cache/、factor_runs/、outputs/
-   └─ POST /api/pools、POST /api/factor-backtests
+   ├─ 建池选样 / 因子生成面板 / 因子回测面板
+   │     └─ custom_bt/company_source.py → 同一 ClickHouse（只读 SQL + Parquet 流式落盘）
+   ├─ 操作符 / 因子运行 / 回测结果
+   │     └─ 本地文件：factor_runs/、outputs/
+   └─ POST /api/pools、POST /api/factor-backtests、POST /api/manual-backtests
          └─ create_platform_job → 子进程
               py -3 -m custom_bt.cli run-platform-job --job-dir <job_dir>
               状态写到 outputs/jobs/<job_id>/status.json
@@ -149,10 +151,10 @@ FastAPI（custom_backtester/api，默认 http://127.0.0.1:8000）
 MySQL `QuantLab`：股票池以 MySQL 为主、本地文件兜底；因子 / 回测为尽力镜像
 ```
 
-两条数据链要区分清楚：
+数据链：
 
-- **实时链**：公司 ClickHouse 只读查询，用于数据浏览和股票池候选筛选；没有密码或不在公司网络时返回 503，其余页面不受影响。
-- **本地链**：`data_cache/master` 是因子生成、建池、回测的唯一数据源；股票池候选会先与本地缓存取交集，本地没有的股票自动排除并提示。
+- **公司库链（唯一行情来源）**：数据浏览、股票池候选与建池选样、因子面板、回测面板全部直接读公司 ClickHouse（`api/live_db.py` + `custom_bt/company_source.py`），只读。没有密码或不在公司网络时相关端点返回 503，其余页面不受影响。
+- **本地文件链（仅结果与兼容）**：`factor_runs/`、`outputs/` 存放因子运行与回测结果；`data_cache/pools/` 是股票池文件兜底。旧池/旧因子运行的 manifest 没有 `data_source` 时仍按本地 `data_cache/master` 读取，仅用于兼容历史数据。
 
 ## 3. 前端 `原型/`
 
@@ -168,11 +170,15 @@ React 19、TypeScript 5.7、Ant Design 5、ECharts 6、Vite 8、Tailwind 4、pnp
 │  ├─ App.tsx              # 登录、布局、侧边菜单、页面路由、结果详情
 │  ├─ Charts.tsx           # ECharts 图表（净值/回撤、年度收益）
 │  ├─ api/client.ts        # API 客户端、useApiData、useJobPolling、文件 URL
+│  ├─ factorInsights.ts    # 因子分类规则 + 生成/批次总结
 │  ├─ mockData.ts          # 任务/演示结果等 mock 数据
 │  ├─ mockExtended.ts      # 字段/股票/池/因子/组合/用户/审计 mock
 │  └─ pages/
 │     ├─ DataPages.tsx     # 数据总览 / 数据字段 / 股票列表 / 操作符
-│     ├─ ResearchPages.tsx # 股票池 / 因子生成 / 因子回测
+│     ├─ PoolsPage.tsx     # 股票池
+│     ├─ FactorGenerationPage.tsx # 因子生成（运行 / 分类 / 总结）
+│     ├─ FactorBacktestPage.tsx   # 因子回测（类别筛选 / 批量 / 结果总结）
+│     ├─ ManualBacktestPage.tsx # 手动回测（真实提交 + 结果预览）
 │     ├─ CompositionPage.tsx
 │     └─ SystemPages.tsx   # 用户与权限 / 审计日志
 ├─ vite.config.ts          # 端口 8443，/api 代理到 127.0.0.1:8000
@@ -185,11 +191,11 @@ React 19、TypeScript 5.7、Ant Design 5、ECharts 6、Vite 8、Tailwind 4、pnp
 | --- | --- | --- |
 | 数据总览 / 数据字段 / 股票列表 | ClickHouse 实时 | 真实 |
 | 操作符 | 本地 `custom_bt/docs.py` + `quantops` 元数据 | 真实 |
-| 股票池（筛选预览、建池、列表、详情） | `api/universe/*`、`api/pools`、`api/jobs/*` | 真实 |
-| 因子回测（运行列表、批次、提交、进度、结果文件） | `api/factor-runs`、`api/factor-backtests`、`api/jobs/*` | 真实 |
-| 结果详情 | `api/results` 真实结果 + 本地演示任务切换 | 真实为主 |
-| 因子生成 | `setTimeout` + `addTask` | **mock** |
-| 手动回测 | `setTimeout` + mock 指标 | **mock** |
+| 股票池（筛选预览、建池、列表、详情、删除、模板新建） | `api/universe/*`、`api/pools`、`api/jobs/*` | 真实 |
+| 因子回测（运行、类别筛选、批次、提交、进度、结果文件与总结） | `api/factor-runs`、`api/factor-backtests`、`api/jobs/*` | 真实 |
+| 手动回测（选池、表达式、提交、进度、结果预览） | `api/pools`、`api/manual-backtests`、`api/jobs/*`、`api/results/detail` | 真实 |
+| 结果详情（结果切换、指标、净值、年度、文件下载） | `api/results`、`api/results/detail`、`api/results/file` | 真实 |
+| 因子生成 | `api/factor-runs`、`api/factor-runs/{run_id}`、`api/operators` | 真实（查看已有运行与合格因子；提交走 CLI） |
 | 因子组合 | `setTimeout` + `mockExtended` | **mock** |
 | 总览 Dashboard | mock 任务列表 | **mock**（部分结果数来自 API） |
 | 任务中心 / 用户与权限 / 审计日志 | mock | **mock** |
@@ -255,18 +261,19 @@ py -3 -m api
 | 分组 | 接口 |
 | --- | --- |
 | 健康检查 | `GET /api/health` |
-| 本地数据 | `GET /api/data/master`、`GET /api/data/fields`、`GET /api/data/stocks` |
+| 数据源（公司库） | `GET /api/data/master`、`GET /api/data/fields`、`GET /api/data/stocks` |
 | 公司库候选 | `GET /api/universe/options`、`GET /api/universe/stocks`、`GET /api/universe/codes` |
 | 操作符 | `GET /api/operators` |
-| 股票池 | `GET /api/pools`、`GET /api/pools/{pool_id}`、`POST /api/pools`（202 + job_id） |
+| 股票池 | `GET /api/pools`、`GET /api/pools/{pool_id}`、`POST /api/pools`（202 + job_id）、`DELETE /api/pools/{pool_id}?confirm=true` |
 | 任务 | `GET /api/jobs/{job_id}` |
 | 因子运行 | `GET /api/factor-runs`、`GET /api/factor-runs/{run_id}` |
 | 因子回测 | `POST /api/factor-backtests`（202）、`GET /api/factor-backtests`、`GET /api/factor-backtests/{backtest_id}`、`GET /api/factor-backtests/{backtest_id}/files/{file_name}` |
+| 手动回测 | `POST /api/manual-backtests`（202；股票池 + Alpha 表达式 + 交易参数） |
 | 回测结果 | `GET /api/results`、`GET /api/results/detail`、`GET /api/results/file`、`GET /api/results/{run_name}`、`GET /api/results/{run_name}/files/{file_name}` |
 
 ### 4.4 本地文件与后台任务
 
-- 主缓存：`custom_backtester/data_cache/master/`（回测唯一数据源）。
+- 主缓存：`custom_backtester/data_cache/master/`（**仅兼容旧本地池/旧因子运行**；新建池、因子生成与回测都直接读公司库）。
 - 股票池：`custom_backtester/data_cache/pools/<pool_id>/`。
 - 因子运行：仓库根 `factor_runs/<run_id>/`（API 默认 `WORKSPACE_ROOT/factor_runs`，可用 `QL_FACTOR_RUNS_ROOT` 覆盖）。
 - 回测结果：`outputs/saved_backtests/factor/<pool_id>/<run_id>/<backtest_id>/<factor_id>/`，`run_key` 即相对路径/MySQL 主键。
@@ -278,6 +285,7 @@ py -3 -m api
 - 库：`QuantLab`，schema 版本 **3**，14 张表：`pools`、`pool_codes`、`pool_candidates`、`pool_stats`、`factor_runs`、`factors`、`factor_backtest_runs`、`backtests`、`backtest_components`、`backtest_daily`、`backtest_annual`、`backtest_trades`、`backtest_positions`、`ql_schema_meta`。
 - **股票池读取**：`GET /api/pools`、`GET /api/pools/{pool_id}` 优先查 MySQL 的 `pools` / `pool_codes`（完整 manifest 存在 `pools.manifest`）；未配置、连不上或池只存在于本地时，回退 `data_cache/pools/*/manifest.json`。响应里的 `storage` 会标 `mysql` / `mysql+local` / `local`。
 - **股票池写入**：建池仍先写本地文件（回测必须），成功后再调 `persist_pool` 写 MySQL；写失败只记 warning，不阻塞建池，本地池仍会在列表里出现，可随后用 `mysql-sync` 补录。
+- **股票池删除**：`DELETE /api/pools/{pool_id}?confirm=true` 同步删除 MySQL 四张池表（`pool_stats → pool_candidates → pool_codes → pools`）与本地 `data_cache/pools/<pool_id>/`；只存在于一侧时删该侧；MySQL 删除失败返回 502 且不动本地文件。`factor_runs/` 与历史回测结果不级联删除，响应 `warnings` 会提示引用数量。
 - 因子运行与回测结果的 MySQL 写入仍是**尽力而为**：未配置或连不上时返回 `False`，不阻塞主流程；这两类数据 API 仍只读本地文件。
 - 本地配置：复制 `configs/mysql.env.example` 为 `configs/mysql.local.env`（已 gitignore）后填写。常用命令：
 
@@ -333,16 +341,18 @@ py -3 -m quantops describe ts_mean
 | --- | --- | --- |
 | 公司库实时数据浏览 | ✅ | 数据总览、字段、股票列表；ClickHouse 只读 |
 | 股票池候选筛选 | ✅ | 行业 / 市场 / 板块 / 关键词 / 上市天数 / 库内原始编码 |
-| 候选预览与勾选 | ✅ | 服务端分页、全选 / 反选 / 部分勾选、本地可建池标记 |
+| 候选预览与勾选 | ✅ | 服务端分页、全选 / 反选 / 部分勾选；候选全部可建池（不再与本地缓存取交集） |
 | 真实建池 | ✅ | `POST /api/pools` → 后台任务 → 进度轮询 → manifest 带 provenance |
-| 股票池列表/详情 | ✅ | 优先读 MySQL，连不上回退本地 manifest |
+| 股票池列表/详情 | ✅ | 优先读 MySQL，连不上回退本地 manifest；详情抽屉显示存储位置 |
+| 股票池删除 / 模板新建 | ✅ | 详情抽屉二次确认后同步删本地 + MySQL；「以此为模板新建」回填筛选条件，改名生成新池 |
 | 操作符目录 | ✅ | `/api/operators`，与 `quantops` 元数据逐字段对齐 |
 | 因子运行列表/详情 | ✅ | 扫描 `factor_runs/`，展示合格因子 |
 | 批量因子回测 | ✅ | 真实运行、逐因子结果、进度轮询、批次版本化、MySQL 汇总 |
-| 回测结果浏览/下载 | ✅ | `/api/results`，真实结果 + 演示任务切换 |
+| 回测结果浏览/下载 | ✅ | `/api/results`，真实结果下拉切换 + 真实文件下载（无 mock 任务） |
 | quantops 80 算子 | ✅ | 四种调用方式；表达式 AST 沙箱 |
-| 因子生成核心/CLI | ✅ | `custom_bt.factor_generation` + CLI；Web 提交页仍是 mock |
-| 手动回测核心/Streamlit | ✅ | 原 Streamlit 工作台仍可运行；React 页仍是 mock |
+| 因子生成核心/CLI | ✅ | `custom_bt.factor_generation` + CLI；Web 页已接真实运行数据，提交仍走 CLI |
+| 手动回测核心/Streamlit | ✅ | 原 Streamlit 工作台仍可运行 |
+| 手动回测 Web/API | ✅ | `POST /api/manual-backtests` → 后台任务 → 进度轮询 → 真实结果预览与下载 |
 | 因子组合核心/Streamlit | ✅ | 同上 |
 | MySQL `QuantLab` | ✅ | 股票池读写（MySQL 优先）；因子/回测尽力镜像；schema v3、14 表 |
 | 登录 / 权限 / 任务中心 / 审计 | ❌ | 前端 mock，无真实鉴权 |
@@ -352,21 +362,20 @@ py -3 -m quantops describe ts_mean
 
 ### P0（建议优先）
 
-1. **因子生成 Web 页面仍是 mock**（`setTimeout` + `addTask`），没有接真实后端；PPO 依赖（`gymnasium`、`stable-baselines3`、`sb3-contrib`）也未安装。
-2. **手动回测、因子组合、任务中心、用户/审计仍是 mock**，需要按 `/api/*` 的模式逐个接真实后端。
+1. **因子生成 Web 页面只读已有运行**（运行 / 合格因子 / 分类筛选 / 生成总结），发起生成仍走 CLI；PPO 依赖（`gymnasium`、`stable-baselines3`、`sb3-contrib`）也未安装。
+2. **因子组合、任务中心、用户/审计仍是 mock**，需要按 `/api/*` 的模式逐个接真实后端。
 3. **没有真实登录与权限控制**；CORS 目前是 `allow_origins=["*"]`，只适合本地/可信网络，公开部署前必须收紧。
 
 ### P1（功能与工程质量）
 
 4. **MySQL 写入没有重试/补偿队列**：建池、因子、回测写失败只记 warning；股票池读取会自动回退本地文件，之后可手动跑 `mysql-sync` 补录。可考虑后台重试或定时同步。
 5. **演示因子运行不是 PPO 输出**：`factor_runs/demo_liquid_300_20261025/` 是联调用的真实本地评估结果（`demo: true`、`quality_mode: demo-relaxed`），9 个因子，**不是投资结论**；它已在 `.gitignore` 中，不会上传，也不在 MySQL `factor_runs` 表里（批次有镜像）。是否保留/删除需要明确。
-6. **数据体积**：`data_cache/master` 约 810 MB 已进 Git；`factor_runs/`、`outputs/` 会持续增长。建议 Git LFS、外部对象存储或定期清理。
+6. **数据体积**：`data_cache/master` 约 810 MB 仍在 Git 里，但 2026-10-27 起新链路已不再依赖它（仅兼容旧本地池/旧因子运行），可考虑移出仓库；`factor_runs/`、`outputs/` 会持续增长。建议 Git LFS、外部对象存储或定期清理。
 7. **没有 CI**。建议加 GitHub Actions：`quantops` 跑 `pytest`，`custom_backtester` 跑现有测试，前端跑 `pnpm exec tsc --noEmit && pnpm build`。
 8. **已知失败测试（pandas 3.0 兼容性）**：`custom_backtester/tests/test_streamlit_app.py::StreamlitAppTests::test_saved_runs_table_keeps_topk_arrow_compatible` 断言 `dtype == object`，pandas 3.0 下实际是 `str`。属于旧 Streamlit 页面的历史问题，不影响 FastAPI/React。
 9. **文档/注释有少量过期**：
     - `custom_backtester/api/main.py` 中 `FACTOR_RUNS_ROOT` 的注释仍写 `../factor_runs`，实际配置是 `../../factor_runs`；
-    - `quantops/quantops/metadata.py` 的 docstring 提到 `quantops/tests/test_metadata.py`，实际一致性测试在 `custom_backtester/tests/test_quantops_metadata_parity.py`；
-    - `原型/README.md` 仍说“因子回测的提交表单是 mock”，实际已接真实后端。
+    - `quantops/quantops/metadata.py` 的 docstring 提到 `quantops/tests/test_metadata.py`，实际一致性测试在 `custom_backtester/tests/test_quantops_metadata_parity.py`。
 10. **`custom_bt/docs.py` 不要改**：`tests/test_docs.py` 锁住其内容；算子中文元数据以它为准，`quantops/metadata.py` 是副本，由 parity 测试保证一致。
 
 ### P2（后续可做）
