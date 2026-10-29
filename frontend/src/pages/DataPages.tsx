@@ -8,7 +8,17 @@ const { Text } = Typography;
 import { nowStamp, type Task } from "../mockData";
 import { api, useApiData, type ApiState, type FieldInfo, type OperatorInfo, type StockInfo } from "../api/client";
 
-export type PageNav = (p: string, id?: number, runKey?: string) => void;
+/** 跨页跳转时夹带的上下文（如从因子生成页带着某个运行/类别去回测） */
+export type PageNavContext = {
+  runId?: string;
+  category?: string;
+};
+export type PageNav = (
+  p: string,
+  id?: number,
+  runKey?: string,
+  context?: PageNavContext,
+) => void;
 export type TaskAdder = (task: Omit<Task, "id"> & { id?: number }) => number;
 
 const fmtInt = (value: number | null | undefined) => (value == null ? "—" : value.toLocaleString("zh-CN"));
