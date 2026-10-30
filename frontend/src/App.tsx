@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   App as AntApp, Avatar, Badge, Breadcrumb, Button, Card, Checkbox, Col, ConfigProvider, Descriptions,
   Divider, Drawer, Dropdown, Empty, Flex, Form, Input, Layout, Menu, message, Modal, Pagination,
@@ -6,8 +6,8 @@ import {
 } from "antd";
 import type { MenuProps, TableColumnsType } from "antd";
 import {
-  AreaChartOutlined, BellOutlined, CheckCircleFilled, ClockCircleOutlined, CloseCircleFilled, CloudDownloadOutlined,
-  DashboardOutlined, DatabaseOutlined, ExperimentOutlined, FileTextOutlined, LoadingOutlined,
+  ArrowLeftOutlined, AreaChartOutlined, BellOutlined, CheckCircleFilled, ClockCircleOutlined, CloseCircleFilled,
+  CloudDownloadOutlined, DashboardOutlined, DatabaseOutlined, ExperimentOutlined, FileTextOutlined, LoadingOutlined,
   LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PlayCircleOutlined, ReloadOutlined, SafetyCertificateOutlined,
   SettingOutlined, SlidersOutlined, ToolOutlined, UserOutlined,
 } from "@ant-design/icons";
@@ -15,11 +15,15 @@ import dayjs from "dayjs";
 import { EquityChart, YearlyChart } from "./Charts";
 import { initialTasks, nowStamp, type Task, type TaskStatus, type YearlyDatum } from "./mockData";
 import { api, resultFileUrl, useApiData, type ResultDetail, type ResultSummary } from "./api/client";
-import { DataOverviewPage, FieldsPage, OperatorsPage, StocksPage, type PageNav, type TaskAdder } from "./pages/DataPages";
-import { FactorBacktestPage, FactorGenerationPage, PoolsPage } from "./pages/ResearchPages";
+import { DataOverviewPage, FieldsPage, OperatorsPage, StocksPage, type PageNav, type PageNavContext, type TaskAdder } from "./pages/DataPages";
+import { PoolsPage } from "./pages/PoolsPage";
+import { FactorGenerationPage } from "./pages/FactorGenerationPage";
+import { FactorBacktestPage } from "./pages/FactorBacktestPage";
 import { ManualBacktestPage } from "./pages/ManualBacktestPage";
 import { CompositionPage } from "./pages/CompositionPage";
 import { AuditPage, UsersPage } from "./pages/SystemPages";
+import { ValidityReport } from "./components/ValidityReport";
+import { buildValidityReport } from "./factorValidity";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -284,7 +288,14 @@ function isCompanySource(source: string | null | undefined): boolean {
 
 function dataSourceLabel(source: string | null | undefined): string | null {
   if (!source) return null;
+  if (source === "prototype") return "前端原型";
   return isCompanySource(source) ? "公司库" : "本地缓存";
+}
+
+function numericValue(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 /** 手动结果把 BacktestConfig 嵌在 config.backtest；因子/组合结果直接平铺在 config */
@@ -347,18 +358,21 @@ function ResearchNote({ runKey }: { runKey: string }) {
   );
 }
 
-/** 真实回测结果视图（数据来自 /api/results/detail） */
+/** 真实 / 原型回测结果视图（真实数据来自 /api/results/detail） */
 function RealResultView({
-  detail, results, onSelect, onRefresh,
+  detail, results, onSelect, onRefresh, prototype = false, onBack,
 }: {
   detail: ResultDetail;
   results: ResultSummary[];
   onSelect: (runKey: string) => void;
   onRefresh: () => void;
+  prototype?: boolean;
+  onBack?: () => void;
 }) {
   const { config, backtest } = splitResultConfig(detail);
   const factor = config.factor;
-  const factorExpression = factor && typeof factor === "object" ? (factor as Record<string, unknown>).expression : null;
+  const factorMeta = factor && typeof factor === "object" ? factor as Record<string, unknown> : null;
+  const factorExpression = factorMeta?.expression;
   const expression = detail.canonical_expression ?? (typeof factorExpression === "string" ? factorExpression : null);
   const poolText = detail.pool_id ?? "—";
   const rangeText = backtest.start_date && backtest.end_date ? `${String(backtest.start_date)} 至 ${String(backtest.end_date)}` : "—";
@@ -367,26 +381,44 @@ function RealResultView({
   const sourceText = dataSourceLabel(detail.data_source);
   const isFactor = detail.result_type === "factor";
   const { metrics } = detail;
+  // 单因子大模型评价：生成阶段 IC 指标 + 本次回测绩效，8 项直接针对这一只因子
+  const factorValidity = useMemo(() => {
+    if (!isFactor) return null;
+    return buildValidityReport({
+      ic: numericValue(factorMeta?.ic),
+      rankIc: numericValue(factorMeta?.rank_ic),
+      icir: numericValue(factorMeta?.icir),
+      coverage: numericValue(factorMeta?.coverage),
+      annualReturn: numericValue(detail.summary?.annual_return),
+      sharpe: numericValue(detail.summary?.sharpe),
+      maxDrawdown: numericValue(detail.summary?.max_drawdown),
+      winRate: numericValue(detail.summary?.win_rate),
+      turnover: numericValue(detail.summary?.average_turnover),
+      cost: numericValue(detail.summary?.total_cost),
+    }, 60);
+  }, [detail, factorMeta, isFactor]);
   return (
     <Space direction="vertical" size={16} className="page-stack">
       <Card className="result-hero">
         <Flex justify="space-between" align="start" gap={16}>
           <div>
             <Space wrap>
-              <Tag color="green">真实结果</Tag>
+              {prototype ? <Tag color="purple">原型结果</Tag> : <Tag color="green">真实结果</Tag>}
               <Tag color="blue">{resultTypeLabel(detail.result_type)}</Tag>
               <Tag>{poolText}</Tag>
               {detail.backtest_id && <Tag color="purple">{isFactor ? "批次" : "任务"} {detail.backtest_id}</Tag>}
               {detail.factor_run_id && <Tag>运行 {detail.factor_run_id}</Tag>}
-              {sourceText && <Tag color={isCompanySource(detail.data_source) ? "cyan" : "default"}>{sourceText}</Tag>}
+              {sourceText && <Tag color={prototype ? "purple" : isCompanySource(detail.data_source) ? "cyan" : "default"}>{sourceText}</Tag>}
               <Text type="secondary">{detail.created_at?.replace("T", " ") ?? ""}</Text>
             </Space>
             <Title level={3}>{detail.run_name}</Title>
             <Text code>{expression ?? "—"}</Text>
           </div>
           <Space wrap>
-            <ResultSourceSelect value={detail.run_key} onChange={onSelect} results={results} />
-            <Button icon={<ReloadOutlined />} onClick={onRefresh}>刷新</Button>
+            {onBack
+              ? <Button icon={<ArrowLeftOutlined />} onClick={onBack}>返回因子回测</Button>
+              : <ResultSourceSelect value={detail.run_key} onChange={onSelect} results={results} />}
+            {!prototype && <Button icon={<ReloadOutlined />} onClick={onRefresh}>刷新</Button>}
           </Space>
         </Flex>
         <Divider />
@@ -409,22 +441,36 @@ function RealResultView({
         <Col span={4}><RealMetric title="交易成本" value={metrics.cost} tone="orange" /></Col>
         <Col span={4}><RealMetric title="胜率" value={metrics.winRate} tone="cyan" /></Col>
       </Row>
+      {factorValidity && (
+        // 评分规则目前由前端按 8 项指标估算，无论结果是否真实都标注为原型评价
+        <ValidityReport report={factorValidity} title="大模型单因子评价" prototype />
+      )}
       <Row gutter={16}>
-        <Col span={15}><Card title="策略净值与回撤" className="data-card">{detail.equity.length > 0 ? <EquityChart data={detail.equity} /> : <Empty description="无每日净值数据" />}</Card></Col>
-        <Col span={9}><Card title="年度收益" extra={<Text type="secondary">红涨绿跌</Text>} className="data-card">{detail.yearly.length > 0 ? <YearlyChart data={detail.yearly} /> : <Empty description="无年度指标" />}</Card></Col>
+        <Col span={15}>
+          <Card title="策略净值与回撤" extra={prototype ? <Tag color="purple">原型模拟</Tag> : undefined} className="data-card">
+            {detail.equity.length > 0 ? <EquityChart data={detail.equity} /> : <Empty description="无每日净值数据" />}
+          </Card>
+        </Col>
+        <Col span={9}>
+          <Card title="年度收益" extra={prototype ? <Tag color="purple">原型模拟</Tag> : <Text type="secondary">红涨绿跌</Text>} className="data-card">
+            {detail.yearly.length > 0 ? <YearlyChart data={detail.yearly} /> : <Empty description="无年度指标" />}
+          </Card>
+        </Col>
       </Row>
       <Card title="年度指标" className="data-card"><Table rowKey="year" size="middle" pagination={false} columns={yearlyColumns} dataSource={detail.yearly} /></Card>
       <Row gutter={16}>
         <Col span={14}><ResearchNote runKey={detail.run_key} /></Col>
         <Col span={10}>
-          <Card title="结果文件" extra={<Text type="secondary">{detail.files.length} 个文件 · 后端真实产物</Text>}>
-            <Space wrap>
-              {detail.files.map((file) => (
-                <Button key={file.name} icon={<CloudDownloadOutlined />} onClick={() => { window.location.href = resultFileUrl(detail.run_key, file.name); }}>
-                  {file.name}<Text type="secondary" style={{ marginLeft: 6 }}>{(file.size / 1024).toFixed(1)} KB</Text>
-                </Button>
-              ))}
-            </Space>
+          <Card title="结果文件" extra={<Text type="secondary">{prototype ? "前端原型不生成结果文件" : `${detail.files.length} 个文件 · 后端真实产物`}</Text>}>
+            {detail.files.length > 0 ? (
+              <Space wrap>
+                {detail.files.map((file) => (
+                  <Button key={file.name} icon={<CloudDownloadOutlined />} onClick={() => { window.location.href = resultFileUrl(detail.run_key, file.name); }}>
+                    {file.name}<Text type="secondary" style={{ marginLeft: 6 }}>{(file.size / 1024).toFixed(1)} KB</Text>
+                  </Button>
+                ))}
+              </Space>
+            ) : <Text type="secondary">暂无结果文件</Text>}
           </Card>
         </Col>
       </Row>
@@ -498,13 +544,15 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
   const [page, setPage] = useState<Page>("dashboard");
   const [selectedTaskId, setSelectedTaskId] = useState<number | undefined>();
   const [selectedRunKey, setSelectedRunKey] = useState<string | undefined>();
+  const [navContext, setNavContext] = useState<PageNavContext | undefined>();
   const [tasks, setTasks] = useState(initialTasks);
   const [notifRead, setNotifRead] = useState(false);
   const [demoState, setDemoState] = useState<"normal" | "loading" | "empty" | "error" | "forbidden">("normal");
-  const navigate = (target: Page, id?: number, runKey?: string) => {
+  const navigate = (target: Page, id?: number, runKey?: string, context?: PageNavContext) => {
     setPage(target);
     setSelectedTaskId(id);
     setSelectedRunKey(runKey);
+    setNavContext(context);
     window.scrollTo(0, 0);
   };
   // 任务调度模拟：queued 自动进入 running，running 按节奏推进（新提交的 #1034 加速演示）
@@ -564,8 +612,8 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
     backtest: { title: "手动回测", subtitle: "配置 Alpha 表达式与交易参数" },
     result: { title: "结果详情", subtitle: "指标、净值、年度表现与结果文件" },
     data_overview: { title: "数据总览", subtitle: "主缓存规模与导入任务" },
-    fields: { title: "数据字段", subtitle: "可用于因子表达式的字段" },
-    stocks: { title: "股票列表", subtitle: "缓存内全部股票概览" },
+    fields: { title: "数据字段", subtitle: "行情、财务与主信息字段全目录" },
+    stocks: { title: "股票列表", subtitle: "按行业与流动性筛选公司库股票" },
     operators: { title: "操作符", subtitle: "Brain 风格表达式算子" },
     pools: { title: "股票池", subtitle: "创建与查看命名股票池" },
     factor_generation: { title: "因子生成", subtitle: "PPO 自动搜索可解释因子表达式" },
@@ -606,19 +654,40 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
       ))}
     </Space>
   </div>;
-  const navigatePages: PageNav = (target, id, runKey) => navigate(target as Page, id, runKey);
+  const navigatePages: PageNav = (target, id, runKey, context) => navigate(target as Page, id, runKey, context);
+  const prototypeResult = navContext?.prototypeResult;
   const pageMap: Record<Exclude<Page, "login">, React.ReactNode> = {
     dashboard: <Dashboard tasks={tasks} navigate={navigate} />,
     tasks: <TaskCenter tasks={tasks} setTasks={setTasks} focusedId={selectedTaskId} navigate={navigate} />,
     backtest: <ManualBacktestPage onOpenResult={(runKey) => navigate("result", undefined, runKey)} />,
-    result: <ResultPage navigate={navigate} initialRunKey={selectedRunKey} />,
+    result: prototypeResult ? (
+      <RealResultView
+        detail={prototypeResult}
+        results={[]}
+        onSelect={() => {}}
+        onRefresh={() => {}}
+        prototype
+        onBack={() => navigate("factor_backtest", undefined, undefined, {
+          prototype: true,
+          runId: prototypeResult.factor_run_id ?? undefined,
+        })}
+      />
+    ) : <ResultPage navigate={navigate} initialRunKey={selectedRunKey} />,
     data_overview: <DataOverviewPage addTask={addTask} navigate={navigatePages} />,
     fields: <FieldsPage />,
     stocks: <StocksPage />,
     operators: <OperatorsPage />,
-    pools: <PoolsPage addTask={addTask} navigate={navigatePages} />,
-    factor_generation: <FactorGenerationPage addTask={addTask} navigate={navigatePages} />,
-    factor_backtest: <FactorBacktestPage navigate={navigatePages} />,
+    pools: <PoolsPage />,
+    factor_generation: <FactorGenerationPage navigate={navigatePages} />,
+    factor_backtest: (
+      <FactorBacktestPage
+        key={navContext?.prototype ? `prototype-${navContext.runId ?? "latest"}` : "real"}
+        navigate={navigatePages}
+        initialRunId={navContext?.runId}
+        initialCategory={navContext?.category}
+        initialPrototype={navContext?.prototype}
+      />
+    ),
     composition: <CompositionPage addTask={addTask} navigate={navigatePages} />,
     users: <UsersPage role={role} />,
     audit: <AuditPage role={role} />,

@@ -74,6 +74,63 @@ body { margin: 0; min-width: 1180px; min-height: 100vh; }
 .import-form { margin-top: 16px; }
 .pool-submit { margin-top: 16px; }
 .factor-run-select { min-width: 320px; }
+.factor-param-card .ant-form-item { margin-bottom: 14px; }
+.factor-param-card .ant-card-body { padding-bottom: 16px; }
+.factor-param-actions { margin-top: 2px; }
+.factor-category-chip { font-size: 13px; line-height: 22px; padding: 2px 11px; border: 1px solid #e7ebf0; border-radius: 999px; background: #f7f9fc; margin-inline-end: 0; user-select: none; transition: border-color .15s, background .15s, color .15s; }
+.factor-category-chip:hover { border-color: #91caff; background: #f0f7ff; }
+.factor-category-chip.ant-tag-checkable-checked, .factor-category-chip.ant-tag-checkable-checked:hover { background: #e6f4ff !important; border-color: #91caff !important; color: #0958d9 !important; font-weight: 600; }
+.factor-category-count { margin-left: 5px; font-size: 11px; opacity: .72; }
+.factor-toolbar { margin-bottom: 8px; }
+.factor-selection-toolbar { padding-top: 2px; }
+.factor-selection-hint { margin: 2px 0 10px; }
+.factor-table-hint { display: block; margin-top: 10px; }
+.factor-summary-card { border-left: 3px solid #1677ff; background: linear-gradient(110deg, #fff 55%, #f5f9ff); }
+.factor-summary-positive { border-left-color: #52c41a; background: linear-gradient(110deg, #fff 55%, #f6ffed); }
+.factor-summary-neutral { border-left-color: #faad14; background: linear-gradient(110deg, #fff 55%, #fffbe6); }
+.factor-summary-negative { border-left-color: #ff4d4f; background: linear-gradient(110deg, #fff 55%, #fff2f0); }
+.factor-summary-text { margin-bottom: 14px !important; font-size: 14px; line-height: 1.85; }
+.factor-summary-card .ant-statistic-title { font-size: 12px; color: #718096; }
+.factor-summary-card .ant-statistic-content { font-size: 20px; font-weight: 650; }
+.factor-category-meter { cursor: pointer; padding: 4px 6px; margin: -4px -6px; border-radius: 6px; transition: background .15s; }
+.factor-category-meter:hover { background: #f5f8fc; }
+.factor-category-meter .ant-progress { margin: 2px 0 0; }
+.factor-cli { margin: 12px 0 0; padding: 10px 12px; border: 1px solid #edf0f4; border-radius: 8px; background: #f6f8fb; word-break: break-all; }
+.factor-cli .ant-typography { font-size: 12px; }
+.factor-demo-note { margin-top: 12px; }
+.factor-generation-tabs > .ant-tabs-nav { margin-bottom: 16px; }
+.generation-config-card .ant-form-item { margin-bottom: 12px; }
+.generation-config-card .ant-form-item-label > label { font-weight: 600; }
+.generation-algorithm-hint { display: block; margin-top: 4px; font-size: 12px; line-height: 1.55; }
+.generation-preset-row { margin-top: -8px; margin-bottom: 16px; }
+.generation-fallback-alert { margin-bottom: 14px; }
+.generation-actions { margin-top: 2px; }
+.generation-progress { margin-top: 14px; padding: 12px 14px; border: 1px solid #e9e2f7; border-radius: 8px; background: #faf7ff; }
+.generation-progress .ant-progress { margin-bottom: 2px; }
+.prototype-result-card { border-left: 3px solid #722ed1; }
+.prototype-result-card .ant-card-head { background: linear-gradient(90deg, #fff, #faf7ff); }
+.prototype-factor-rejected td { color: #8c96a8; }
+.prototype-llm-confidence { font-size: 11px; white-space: nowrap; }
+.prototype-score-cell .ant-progress { width: 64px; margin: 0; flex: 0 0 64px; }
+.validity-card { border-left: 3px solid #722ed1; }
+.validity-summary { padding: 2px 0 10px; }
+.validity-overall { display: grid; place-items: center; }
+.validity-overall-number { display: inline-flex; align-items: baseline; gap: 2px; color: #172033; font-size: 28px; font-weight: 700; line-height: 1; }
+.validity-overall-number small { color: #718096; font-size: 12px; font-weight: 400; }
+.validity-overall-label { margin-top: 4px; color: #718096; font-size: 12px; text-align: center; }
+.validity-summary-body { flex: 1; min-width: 280px; }
+.validity-conclusion { margin: 8px 0 0 !important; color: #4a5568; font-size: 13px; line-height: 1.8; }
+.validity-item { height: 100%; min-height: 148px; padding: 12px; border: 1px solid #e7ebf0; border-radius: 8px; background: #fbfcfe; }
+.validity-item-head { margin-bottom: 6px; }
+.validity-item .ant-progress { margin: 2px 0 6px; }
+.validity-item-value { margin-bottom: 2px; font-size: 12px; }
+.validity-item-value .ant-typography { font-size: 12px; }
+.validity-item-comment { margin: 4px 0 0 !important; font-size: 12px; line-height: 1.6; }
+.validity-item-na { font-size: 11px; }
+.validity-note { display: block; font-size: 12px; line-height: 1.7; }
+.origin-card { border-left: 3px solid #1677ff; }
+.origin-card .ant-descriptions { margin-bottom: 12px; }
+.origin-text { margin-bottom: 0 !important; color: #4a5568; font-size: 13px; line-height: 1.85; }
 .composition-row { margin-top: 16px; }
 .composition-table { margin-top: 8px; }
 .notification-list { width: 320px; }

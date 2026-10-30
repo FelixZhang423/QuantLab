@@ -312,6 +312,8 @@ export type FactorRunSummary = {
   attempts_exhausted: boolean | null;
   factor_run_dir: string;
   has_accepted: boolean;
+  /** clickhouse = 公司库；local = 旧本地缓存（后端默认值） */
+  data_source?: string | null;
 };
 
 export type AcceptedFactor = {
@@ -385,6 +387,18 @@ export type FactorBacktestRow = {
   expression?: string;
   canonical_expression?: string;
   run_key?: string;
+  /** 批次 summary CSV 指标，均为小数（0.12 = 12%） */
+  backtest_total_return?: number | null;
+  backtest_annual_return?: number | null;
+  backtest_sharpe?: number | null;
+  backtest_max_drawdown?: number | null;
+  backtest_calmar?: number | null;
+  backtest_win_rate?: number | null;
+  backtest_average_turnover?: number | null;
+  backtest_total_cost?: number | null;
+  backtest_annual_cost?: number | null;
+  backtest_number_of_trades?: number | null;
+  backtest_average_holding_count?: number | null;
   [key: string]: unknown;
 };
 
