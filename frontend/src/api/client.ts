@@ -24,15 +24,23 @@ export type MasterInfo = {
   queried_at?: string | null;
 };
 
+export type FieldStatus = "usable" | "pending" | "unavailable";
+
 export type FieldInfo = {
   name: string;
-  dtype: string;
+  dtype: string | null;
   source: string;
   description: string;
   /** 该字段能否在因子 / 回测面板（公司库）中使用 */
   panel?: boolean;
-  /** 能否直接作为因子表达式的操作数（数值字段） */
+  /** 能否直接作为因子表达式的操作数（= status 为 usable） */
   expression?: boolean;
+  category?: string;
+  status?: FieldStatus;
+  /** 面板里的列名（如 fund_ROE / val_PB）；没有则为 null */
+  panel_alias?: string | null;
+  /** 库里是否能找到该列；离线时为 null */
+  found_in_db?: boolean | null;
 };
 
 export type StockInfo = {
@@ -345,6 +353,11 @@ export type FactorBacktestRequest = {
   slippage?: number;
   min_cost?: number;
   max_weight_per_stock?: number;
+  /** 以下参数后端暂未消费，先随请求透传 */
+  rebalance_freq?: string;
+  commission?: number;
+  stamp_duty?: number;
+  max_drawdown_control?: number;
 };
 
 export type FactorBacktestResponse = {
@@ -502,7 +515,13 @@ function withQuery(path: string, params: Record<string, unknown>): string {
 
 export const api = {
   master: () => apiGet<MasterInfo>("/api/data/master"),
-  fields: () => apiGet<{ total: number; fields: FieldInfo[] }>("/api/data/fields"),
+  fields: () => apiGet<{
+    total: number;
+    fields: FieldInfo[];
+    offline?: boolean;
+    metadata_error?: string | null;
+    status_counts?: Record<FieldStatus, number>;
+  }>("/api/data/fields"),
   stocks: (params: { q?: string; limit?: number; offset?: number } = {}) =>
     apiGet<{ total: number; total_rows: number; n_stocks_all: number; items: StockInfo[] }>(
       withQuery("/api/data/stocks", params),

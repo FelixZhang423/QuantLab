@@ -1,11 +1,12 @@
 import { useState } from "react";
 import {
-  Alert, Button, Card, Checkbox, Col, Descriptions, Flex, Form, Input, InputNumber, message, Pagination, Row, Skeleton, Space, Statistic, Table, Tag, Typography,
+  Alert, Button, Card, Checkbox, Col, Descriptions, Flex, Form, Input, InputNumber, message, Pagination, Row, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
 } from "antd";
 import type { TableColumnsType } from "antd";
 import { CloudUploadOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 const { Text } = Typography;
 import { nowStamp, type Task } from "../mockData";
+import { fieldCategory } from "../fieldCategories";
 import { api, useApiData, type ApiState, type FieldInfo, type OperatorInfo, type StockInfo } from "../api/client";
 
 export type PageNav = (p: string, id?: number, runKey?: string) => void;
@@ -126,115 +127,111 @@ function FilterChips<T extends string>({ items, value, onChange }: { items: { ke
 
 /* ============ 数据字段 ============ */
 
-const FIELD_CATEGORY: Record<string, { label: string; color: string }> = {
-  "dws.ll_stock_daily_sharing": { label: "行情与技术", color: "blue" },
-  "ods_dps_target.lc_maindatanew": { label: "财务", color: "purple" },
-  "dws.f10_finance_index_fd": { label: "估值", color: "gold" },
-  "dim.stock_main_info_fd": { label: "证券信息", color: "cyan" },
-};
-
-function fieldCategory(field: FieldInfo) {
-  return FIELD_CATEGORY[field.source ?? ""] ?? { label: "其他", color: "default" };
-}
-
 export function FieldsPage() {
-  const [source, setSource] = useState("all");
   const [category, setCategory] = useState("all");
-  const [usable, setUsable] = useState("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const fieldsApi = useApiData(api.fields);
   const fields = fieldsApi.data?.fields ?? [];
-  const sources = [...new Set(fields.map((f) => f.source).filter(Boolean))];
-  const categories = [...new Set(fields.map((f) => fieldCategory(f).label))];
-  const pageSize = 15;
+  const categoryOrder = ["行情与技术", "估值", "财务原始", "财务衍生", "证券信息", "其他"];
+  const categories = categoryOrder.filter((item) => fields.some((field) => fieldCategory(field).label === item));
 
-  const filtered = fields.filter((f) => {
-    if (source !== "all" && f.source !== source) return false;
-    if (category !== "all" && fieldCategory(f).label !== category) return false;
-    if (usable === "yes" && !f.expression) return false;
-    if (usable === "no" && f.expression) return false;
-    return `${f.name}${f.description}${f.source}`.toLowerCase().includes(search.toLowerCase());
-  });
-  const active = source !== "all" || category !== "all" || usable !== "all" || search !== "";
+  const filtered = fields
+    .filter((field) => {
+      if (category !== "all" && fieldCategory(field).label !== category) return false;
+      const haystack = `${field.name}${field.description}${field.panel_alias ?? ""}${field.source}`.toLowerCase();
+      return haystack.includes(search.toLowerCase());
+    })
+    .sort((a, b) => {
+      const categoryDiff = categoryOrder.indexOf(fieldCategory(a).label) - categoryOrder.indexOf(fieldCategory(b).label);
+      if (categoryDiff !== 0) return categoryDiff;
+      return a.name.localeCompare(b.name);
+    });
+
+  const active = category !== "all" || search !== "";
   const reset = () => {
-    setSource("all"); setCategory("all"); setUsable("all"); setSearch(""); setPage(1);
+    setCategory("all");
+    setSearch("");
+    setPage(1);
   };
 
   const columns: TableColumnsType<FieldInfo> = [
-    { title: "字段名", dataIndex: "name", width: 190, render: (v) => <Text code>{v}</Text> },
-    { title: "说明", dataIndex: "description", ellipsis: true },
+    { title: "字段名", dataIndex: "name", width: 200, fixed: "left", sorter: (a, b) => a.name.localeCompare(b.name), render: (v) => <Text code>{v}</Text> },
     {
-      title: "类别",
+      title: "分类",
       key: "category",
       width: 110,
       render: (_, record) => {
-        const cat = fieldCategory(record);
-        return <Tag color={cat.color}>{cat.label}</Tag>;
+        const item = fieldCategory(record);
+        return <Tag color={item.color}>{item.label}</Tag>;
       },
     },
+    { title: "状态", key: "status", width: 110, render: () => <Tag color="green">可用</Tag> },
     {
-      title: "因子表达式",
-      dataIndex: "expression",
-      width: 110,
-      render: (v) => (v ? <Tag color="green">可用</Tag> : <Tag>不可用</Tag>),
+      title: (
+        <Tooltip title="因子/回测面板里实际使用的列名；与来源列不同时会加前缀（ROE→fund_ROE、PB→val_PB、vol→volume）。“—”表示暂未接入面板。">
+          面板列
+        </Tooltip>
+      ),
+      dataIndex: "panel_alias",
+      width: 150,
+      render: (v) => (v ? <Text code>{v}</Text> : "—"),
     },
-    { title: "类型", dataIndex: "dtype", width: 150, ellipsis: true, render: (v) => <Tag>{v || "—"}</Tag> },
+    {
+      title: "类型",
+      dataIndex: "dtype",
+      width: 160,
+      ellipsis: true,
+      sorter: (a, b) => String(a.dtype ?? "").localeCompare(String(b.dtype ?? "")),
+      render: (v) => (v ? <Tag>{v}</Tag> : <Text type="secondary">—</Text>),
+    },
+    { title: "说明", dataIndex: "description", ellipsis: true },
     { title: "来源", dataIndex: "source", width: 220, ellipsis: true, render: (v) => <Text type="secondary">{v || "未知"}</Text> },
   ];
+
   return (
     <Space direction="vertical" size={16} className="page-stack">
       <Card className="filter-card">
         <Flex vertical gap={10}>
           <Flex gap={12} align="center" wrap>
-            <Text type="secondary" style={{ width: 48 }}>类别</Text>
+            <Text type="secondary" style={{ width: 48 }}>分类</Text>
             <FilterChips
-              items={[
-                { key: "all", label: "全部", count: fields.length },
-                ...categories.map((c) => ({ key: c, label: c, count: fields.filter((f) => fieldCategory(f).label === c).length })),
-              ]}
+              items={[{ key: "all", label: "全部", count: fields.length }, ...categories.map((item) => ({ key: item, label: item, count: fields.filter((field) => fieldCategory(field).label === item).length }))]}
               value={category}
               onChange={(key) => { setCategory(key); setPage(1); }}
             />
           </Flex>
-          <Flex gap={12} align="center" wrap>
-            <Text type="secondary" style={{ width: 48 }}>表达式</Text>
-            <FilterChips
-              items={[
-                { key: "all", label: "全部", count: fields.length },
-                { key: "yes", label: "可用", count: fields.filter((f) => f.expression).length },
-                { key: "no", label: "不可用", count: fields.filter((f) => !f.expression).length },
-              ]}
-              value={usable}
-              onChange={(key) => { setUsable(key); setPage(1); }}
-            />
-          </Flex>
-          <Flex gap={12} align="center" wrap>
-            <Text type="secondary" style={{ width: 48 }}>来源</Text>
-            <FilterChips
-              items={[
-                { key: "all", label: "全部", count: fields.length },
-                ...sources.map((s) => ({ key: s, label: s, count: fields.filter((f) => f.source === s).length })),
-              ]}
-              value={source}
-              onChange={(key) => { setSource(key); setPage(1); }}
-            />
-          </Flex>
           <Flex justify="space-between" gap={16} wrap align="center">
-            <Input.Search allowClear value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="搜索字段名 / 说明 / 来源" className="task-search" />
+            <Input.Search allowClear value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="搜索字段名 / 说明 / 面板列 / 来源" className="task-search" style={{ width: 380 }} />
             <Flex gap={12} align="center" wrap>
-              <Text type="secondary">显示 {filtered.length} / {fieldsApi.data?.total ?? 0} 个字段 · 可用 = 数值字段，可直接写进因子表达式</Text>
+              <Text type="secondary">共 {fieldsApi.data?.total ?? 0} 个字段</Text>
               {active ? <Button size="small" icon={<ReloadOutlined />} onClick={reset}>重置筛选</Button> : null}
             </Flex>
           </Flex>
         </Flex>
       </Card>
+      {fieldsApi.data?.offline && (
+        <Alert type="warning" showIcon message="数据库元数据暂不可用" description={fieldsApi.data?.metadata_error ?? "字段类型与库校验结果会显示为离线状态。"} />
+      )}
       <LoadGate state={fieldsApi} hint={LIVE_HINT}>
         <Card className="data-card">
-          <Table rowKey="name" size="middle" columns={columns} dataSource={filtered.slice((page - 1) * pageSize, page * pageSize)} pagination={false} />
-          <Flex justify="flex-end" className="table-pagination">
-            <Pagination current={page} pageSize={pageSize} total={filtered.length} showSizeChanger={false} showTotal={(total) => `共 ${total} 条`} onChange={setPage} />
-          </Flex>
+          <Table
+            rowKey="name" size="middle" columns={columns} dataSource={filtered}
+            pagination={{
+              current: page,
+              pageSize,
+              total: filtered.length,
+              showSizeChanger: true,
+              pageSizeOptions: [20, 50, 100],
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: (nextPage, nextSize) => {
+                setPage(nextPage);
+                if (nextSize !== pageSize) setPageSize(nextSize);
+              },
+            }}
+            scroll={{ x: 1200 }}
+          />
         </Card>
       </LoadGate>
     </Space>
@@ -297,7 +294,7 @@ export function OperatorsPage() {
   const filtered = operators.filter((o) => (category === ALL_OPERATORS || o.category_cn === category) && `${o.name}${o.description_cn}${o.example}`.toLowerCase().includes(search.toLowerCase()));
   const chips = [{ key: ALL_OPERATORS, label: "全部", count: operators.length }, ...categories.map((c) => ({ key: c, label: c, count: operators.filter((o) => o.category_cn === c).length }))];
   const columns: TableColumnsType<OperatorInfo> = [
-    { title: "算子名", dataIndex: "name", width: 220, render: (v, o) => <Space size={6}><Text code>{v}</Text>{o.generation_enabled && <Tag color="green">可生成</Tag>}</Space> },
+    { title: "算子名", dataIndex: "name", width: 220, render: (v) => <Text code>{v}</Text> },
     { title: "分类", dataIndex: "category_cn", width: 110, render: (v) => <Tag color="geekblue">{v}</Tag> },
     { title: "说明", dataIndex: "description_cn", ellipsis: true },
     { title: "示例", dataIndex: "example", width: 280, ellipsis: true, render: (v) => <Text code>{v}</Text> },

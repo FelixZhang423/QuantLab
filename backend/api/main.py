@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import sys
+from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
@@ -43,7 +44,7 @@ from api import live_db  # noqa: E402
 from api.job_runner import spawn_platform_job  # noqa: E402
 from custom_bt import company_source, mysql_store  # noqa: E402
 from custom_bt.data import load_meta, normalize_code  # noqa: E402
-from custom_bt.docs import enrich_fields, enrich_operators  # noqa: E402
+from custom_bt.docs import enrich_operators  # noqa: E402
 from custom_bt.expressions import (  # noqa: E402
     ExpressionError,
     _validate_ast,
@@ -70,6 +71,8 @@ FIELD_DOC_PATH = next(
     iter(WORKSPACE_ROOT.glob("v_stock_daily_full_*.md")),
     WORKSPACE_ROOT / "v_stock_daily_full_字段说明.md",
 )
+# 数据字段页的 446 条目录（441 条业务字段 + 5 个每日估值字段）
+FIELD_CATALOG_PATH = PROJECT_ROOT / "configs" / "field_catalog.json"
 
 logger = logging.getLogger(__name__)
 
@@ -150,9 +153,56 @@ def _live_error(exc: live_db.LiveDBError) -> HTTPException:
     return HTTPException(status_code=502, detail=str(exc))
 
 
-def _panel_field_names() -> set:
-    """公司库可直接进因子/回测面板的字段名集合。"""
-    return company_source.panel_field_names()
+_CATALOG_CACHE: Dict[str, Any] = {}
+
+
+def _field_catalog() -> List[Dict[str, Any]]:
+    """读取 446 条字段目录；文件变化时重新加载。"""
+    stat = FIELD_CATALOG_PATH.stat()
+    key = (stat.st_mtime_ns, stat.st_size)
+    if _CATALOG_CACHE.get("key") != key:
+        _CATALOG_CACHE["key"] = key
+        _CATALOG_CACHE["data"] = json.loads(FIELD_CATALOG_PATH.read_text(encoding="utf-8"))
+    return _CATALOG_CACHE["data"]
+
+
+def _field_metadata():
+    """从 system.columns 取 (表, 列) → 类型/注释；库不可用时返回 (None, 错误)。"""
+    tables = sorted({str(entry["source_table"]) for entry in _field_catalog()})
+    metadata: Dict[Any, Dict[str, str]] = {}
+    try:
+        client = live_db._client(live_db.resolve_settings())
+        for table in tables:
+            database, name = table.split(".", 1)
+            rows = client.query(
+                "SELECT name, type, comment FROM system.columns "
+                f"WHERE database = '{database}' AND table = '{name}'"
+            )
+            for row in rows:
+                metadata[(table, str(row.get("name", "")))] = {
+                    "dtype": str(row.get("type", "")),
+                    "comment": str(row.get("comment", "") or ""),
+                }
+    except (live_db.LiveDBError, OSError, ValueError) as exc:
+        return None, str(exc)
+    return metadata, None
+
+
+def _catalog_status(entry: Dict[str, Any], found: Optional[bool]) -> str:
+    """usable = 当前能写进表达式；pending = 财务待接入；unavailable = 文本/标识/库中缺失。"""
+    if found is False:
+        return "unavailable"
+    category = entry.get("category")
+    if category == "估值":
+        return "usable"
+    if category == "财务原始":
+        return "usable" if entry.get("panel_alias") else "pending"
+    if category == "财务衍生":
+        return "pending"
+    if category == "证券信息":
+        return "unavailable"
+    field = entry.get("panel_alias") or entry.get("name", "")
+    return "usable" if company_source.is_expression_field(field) else "unavailable"
 
 
 # ---------- 股票池候选 / 建池辅助 ----------
@@ -244,64 +294,38 @@ def get_master_info() -> Dict[str, Any]:
 
 @app.get("/api/data/fields")
 def get_fields() -> Dict[str, Any]:
-    try:
-        catalog = live_db.live_field_catalog()
-    except live_db.LiveDBError as exc:
-        raise _live_error(exc) from None
-    panel_fields = _panel_field_names()
-    enriched = enrich_fields(
-        [{"name": item["name"], "dtype": item["dtype"]} for item in catalog.data],
-        FIELD_DOC_PATH,
-    )
+    catalog = _field_catalog()
+    metadata, metadata_error = _field_metadata()
     fields: List[Dict[str, Any]] = []
-    for item, entry in zip(enriched, catalog.data):
-        description = item["description"]
-        if description == "暂无字段说明" and entry["comment"]:
-            description = entry["comment"]  # 文档没写时用库内注释兜底
-        if entry["name"] == "vol":
-            description = f"{description}（回测面板中名为 volume）"
-        panel = live_db.panel_alias(entry["name"]) in panel_fields
+    for entry in catalog:
+        table = str(entry.get("source_table"))
+        column = str(entry.get("column"))
+        found = None if metadata is None else (table, column) in metadata
+        meta = metadata.get((table, column), {}) if metadata is not None else {}
+        status = _catalog_status(entry, found)
+        description = str(entry.get("description") or "").strip() or str(meta.get("comment") or "").strip() or "暂无说明"
         fields.append(
             {
-                "name": item["name"],
-                "dtype": item["dtype"],
-                "source": live_db.source_label(item["source"], entry["table"]),
+                "name": entry.get("name"),
+                "dtype": meta.get("dtype") if found else None,
+                "source": table,
                 "description": description,
-                "panel": panel,
-                "expression": company_source.is_expression_field(item["name"]),
+                "panel": status == "usable",
+                "expression": status == "usable",
+                "category": entry.get("category"),
+                "status": status,
+                "panel_alias": entry.get("panel_alias"),
+                "found_in_db": found,
             }
         )
-    # 财务 / 估值字段不在日频表目录里，单独补充：前缀是它们在面板里的实际列名。
-    for name, label in company_source.FUNDAMENTAL_LABELS.items():
-        full = f"{company_source.FUNDAMENTAL_PREFIX}{name}"
-        fields.append(
-            {
-                "name": full,
-                "dtype": "float64",
-                "source": company_source.FUNDAMENTAL_TABLE,
-                "description": label,
-                "panel": False,
-                "expression": True,
-            }
-        )
-    for name, label in company_source.VALUATION_LABELS.items():
-        full = f"{company_source.VALUATION_PREFIX}{name}"
-        fields.append(
-            {
-                "name": full,
-                "dtype": "float64",
-                "source": company_source.VALUATION_TABLE,
-                "description": label,
-                "panel": False,
-                "expression": True,
-            }
-        )
+    counts = Counter(field["status"] for field in fields)
     return _sanitize(
         {
             "total": len(fields),
             "fields": fields,
-            "cached": catalog.cached,
-            "queried_at": catalog.queried_at,
+            "offline": metadata is None,
+            "metadata_error": metadata_error,
+            "status_counts": dict(counts),
         }
     )
 

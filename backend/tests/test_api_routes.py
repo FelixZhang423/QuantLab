@@ -85,28 +85,79 @@ def master(tmp_path, monkeypatch):
     return root
 
 
-def test_fields_endpoint_marks_expression_usable(monkeypatch):
-    catalog = _live(
-        [
-            {"name": "open", "dtype": "Decimal(20,0)", "source": "last_5years_daily",
-             "table": live_db.DAILY_TABLE, "comment": ""},
-            {"name": "ma_signal", "dtype": "String", "source": "last_5years_daily",
-             "table": live_db.DAILY_TABLE, "comment": ""},
-            {"name": "DbOnlyColumn", "dtype": "String", "source": "last_5years_daily",
-             "table": live_db.DAILY_TABLE, "comment": ""},
-        ]
-    )
-    monkeypatch.setattr(main.live_db, "live_field_catalog", lambda *a, **k: catalog)
+def _catalog_entry(name, category, table, column, alias=None, description="测试字段"):
+    return {
+        "name": name,
+        "category": category,
+        "source_table": table,
+        "column": column,
+        "panel_alias": alias,
+        "description": description,
+    }
+
+
+def test_fields_endpoint_merges_catalog_and_metadata(monkeypatch):
+    deriv = "dws.f10_derivative_index_fd"
+    catalog = [
+        _catalog_entry("vol", "行情与技术", live_db.DAILY_TABLE, "vol", "volume"),
+        _catalog_entry("ma_signal", "行情与技术", live_db.DAILY_TABLE, "ma_signal"),
+        _catalog_entry("ROE", "财务原始", company_source.FUNDAMENTAL_TABLE, "ROE", "fund_ROE"),
+        _catalog_entry("WROE", "财务原始", company_source.FUNDAMENTAL_TABLE, "WROE"),
+        _catalog_entry("idx_ROE", "财务衍生", deriv, "ROE"),
+        _catalog_entry("idx_InfoPublDate", "财务衍生", deriv, "InfoPublDate"),
+        _catalog_entry("ListedDate", "证券信息", "dwd.secumain", "ListedDate"),
+        _catalog_entry("PB", "估值", company_source.VALUATION_TABLE, "PB", "val_PB"),
+    ]
+    metadata = {
+        (live_db.DAILY_TABLE, "vol"): {"dtype": "Decimal(18, 2)", "comment": ""},
+        (live_db.DAILY_TABLE, "ma_signal"): {"dtype": "String", "comment": ""},
+        (company_source.FUNDAMENTAL_TABLE, "ROE"): {"dtype": "Decimal(20, 0)", "comment": ""},
+        (company_source.FUNDAMENTAL_TABLE, "WROE"): {"dtype": "Decimal(20, 0)", "comment": ""},
+        (deriv, "ROE"): {"dtype": "Decimal(38, 4)", "comment": ""},
+        ("dwd.secumain", "ListedDate"): {"dtype": "Date", "comment": ""},
+        (company_source.VALUATION_TABLE, "PB"): {"dtype": "Decimal(18, 4)", "comment": ""},
+    }
+    monkeypatch.setattr(main, "_field_catalog", lambda: catalog)
+    monkeypatch.setattr(main, "_field_metadata", lambda: (metadata, None))
     payload = main.get_fields()
     by_name = {field["name"]: field for field in payload["fields"]}
-    assert by_name["open"]["expression"] is True
-    assert by_name["ma_signal"]["expression"] is False  # 文本列
-    assert by_name["DbOnlyColumn"]["expression"] is False  # 未定义类型的列
-    assert by_name["fund_NetProfit"]["expression"] is True
-    assert by_name["fund_ROE"]["expression"] is True
-    assert by_name["val_PB"]["expression"] is True
-    assert by_name["val_PB"]["description"] == "市净率"
-    assert payload["total"] == 3 + len(company_source.FUNDAMENTAL_FIELDS) + len(company_source.VALUATION_FIELDS)
+    assert payload["total"] == 8
+    assert payload["offline"] is False
+    assert by_name["vol"]["status"] == "usable"
+    assert by_name["vol"]["panel_alias"] == "volume"
+    assert by_name["ma_signal"]["status"] == "unavailable"
+    assert by_name["ROE"]["status"] == "usable" and by_name["ROE"]["panel_alias"] == "fund_ROE"
+    assert by_name["WROE"]["status"] == "pending"
+    assert by_name["idx_ROE"]["status"] == "pending"
+    assert by_name["idx_InfoPublDate"]["status"] == "unavailable"
+    assert by_name["idx_InfoPublDate"]["found_in_db"] is False
+    assert by_name["ListedDate"]["status"] == "unavailable"
+    assert by_name["PB"]["status"] == "usable" and by_name["PB"]["dtype"] == "Decimal(18, 4)"
+    assert payload["status_counts"] == {"usable": 3, "pending": 2, "unavailable": 3}
+
+
+def test_fields_endpoint_offline_fallback(monkeypatch):
+    catalog = [
+        _catalog_entry("vol", "行情与技术", live_db.DAILY_TABLE, "vol", "volume"),
+        _catalog_entry("ROE", "财务原始", company_source.FUNDAMENTAL_TABLE, "ROE", "fund_ROE"),
+        _catalog_entry("PB", "估值", company_source.VALUATION_TABLE, "PB", "val_PB"),
+    ]
+    monkeypatch.setattr(main, "_field_catalog", lambda: catalog)
+    monkeypatch.setattr(main, "_field_metadata", lambda: (None, "ClickHouse 不可达"))
+    payload = main.get_fields()
+    assert payload["offline"] is True
+    assert payload["metadata_error"] == "ClickHouse 不可达"
+    assert all(field["found_in_db"] is None and field["dtype"] is None for field in payload["fields"])
+    assert payload["status_counts"]["usable"] == 3
+
+
+def test_field_catalog_file_has_expected_categories():
+    catalog = main._field_catalog()
+    assert len(catalog) == 446
+    counts = {}
+    for entry in catalog:
+        counts[entry["category"]] = counts.get(entry["category"], 0) + 1
+    assert counts == {"行情与技术": 68, "财务原始": 87, "财务衍生": 267, "证券信息": 19, "估值": 5}
 
 
 def _stub_universe(monkeypatch, items=None):

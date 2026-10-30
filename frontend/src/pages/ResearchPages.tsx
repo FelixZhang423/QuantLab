@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert, Button, Card, Col, Collapse, DatePicker, Descriptions, Divider, Drawer, Flex, Form, Input, InputNumber, message, Popconfirm, Progress, Row, Select, Skeleton, Space, Spin, Statistic, Steps, Switch, Table, Tag, Typography,
+  Alert, Button, Card, Checkbox, Col, Collapse, DatePicker, Descriptions, Divider, Drawer, Empty, Flex, Form, Input, InputNumber, message, Modal, Popconfirm, Progress, Row, Select, Skeleton, Space, Spin, Statistic, Steps, Switch, Table, Tag, Tooltip, Typography,
 } from "antd";
 import type { TableColumnsType, TableProps } from "antd";
-import { CloudDownloadOutlined, CopyOutlined, DeleteOutlined, ExperimentOutlined, FilterOutlined, PlusOutlined, PlayCircleOutlined, ReloadOutlined, RobotOutlined, TeamOutlined } from "@ant-design/icons";
+import { CopyOutlined, DeleteOutlined, ExperimentOutlined, FilterOutlined, LoadingOutlined, PlusOutlined, PlayCircleOutlined, ReloadOutlined, RobotOutlined, TeamOutlined } from "@ant-design/icons";
 const { Text } = Typography;
 import dayjs from "dayjs";
 import { nowStamp } from "../mockData";
-import { acceptedFactors, fieldsData, generationSummary, type FactorItem } from "../mockExtended";
+import { generatedFactors, type GeneratedFactor } from "../mockExtended";
+import { CATEGORY_META, FACTOR_CATEGORIES, classifyFactor, type FactorCategoryKey } from "../factorCategories";
+import { fieldCategory } from "../fieldCategories";
 import { LoadGate, type PageNav, type TaskAdder } from "./DataPages";
 import {
-  api, ApiError, factorBacktestFileUrl, useApiData, useJobPolling,
-  type AcceptedFactor, type FactorBacktestBatch, type FactorBacktestRequest, type FactorBacktestRow,
+  api, ApiError, useApiData, useJobPolling,
+  type AcceptedFactor, type FactorBacktestRequest,
+  type FieldInfo, type OperatorInfo,
   type PoolCreateRequest, type PoolInfo, type PoolProvenance, type UniverseQuery, type UniverseStock, type UniverseStocks,
 } from "../api/client";
 
@@ -665,11 +668,13 @@ type FactorBacktestFormValues = {
   dates: DateRangeValue;
   topK: number;
   initialCash: number;
-  buyCost: number;
-  sellCost: number;
+  commission: number;
+  stampDuty: number;
+  rebalanceFreq: string;
   slippage: number;
   minCost: number;
   maxWeight: number;
+  maxDrawdownControl: number;
 };
 
 const metricNumber = (value: unknown): number | null => {
@@ -683,17 +688,51 @@ const formatFraction = (value: unknown, digits = 2): string => {
   return number == null ? "—" : `${(number * 100).toFixed(digits)}%`;
 };
 
+type FactorValidityRow = Omit<AcceptedFactor, "ic" | "rank_ic" | "icir" | "coverage" | "score"> & {
+  ic: number;
+  rank_ic: number;
+  icir: number;
+  coverage: number;
+  score: number;
+  valid_ic: number;
+  valid_icir: number;
+  valid_days: number;
+};
+
+/** 稳定模拟的 8 个有效性指标：真实值优先，缺失项由因子 ID 确定性补齐。 */
+const simulatedValidity = (factor: AcceptedFactor, index: number) => {
+  let seed = 0;
+  for (const char of `${factor.factor_id}|${factor.expression ?? ""}|${index}`) {
+    seed = (seed * 31 + char.charCodeAt(0)) >>> 0;
+  }
+  const unit = (offset: number) => ((seed >>> offset) % 1000) / 1000;
+  const ic = factor.ic ?? 0.02 + unit(0) * 0.05;
+  const rankIc = factor.rank_ic ?? ic * (1.02 + unit(3) * 0.08);
+  const icir = factor.icir ?? 0.4 + unit(6) * 1.0;
+  const coverage = factor.coverage ?? 0.9 + unit(9) * 0.095;
+  const score = factor.score ?? 0.4 + unit(12) * 0.45;
+  return {
+    ic,
+    rank_ic: rankIc,
+    icir,
+    coverage,
+    score,
+    valid_ic: ic * 0.85,
+    valid_icir: icir * 0.85,
+    valid_days: 225 + (seed % 20),
+  };
+};
+
 export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
   const [form] = Form.useForm<FactorBacktestFormValues>();
   const runsApi = useApiData(api.factorRuns);
   const runs = useMemo(() => runsApi.data?.runs ?? [], [runsApi.data]);
   const [runId, setRunId] = useState<string | undefined>();
   const [selected, setSelected] = useState<React.Key[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [submitting, setSubmitting] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [batchId, setBatchId] = useState<string | undefined>();
-  const pendingBatchRef = useRef<string | null>(null);
   const { job, error: jobError, polling } = useJobPolling(jobId);
 
   useEffect(() => {
@@ -710,61 +749,26 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
   );
   const runDetail = runDetailApi.data?.run_id === runId ? runDetailApi.data : null;
   const factors = useMemo(() => runDetail?.accepted_factors ?? [], [runDetail]);
+  const factorRows: FactorValidityRow[] = useMemo(
+    () => factors.map((factor, index) => ({ ...factor, ...simulatedValidity(factor, index) })),
+    [factors],
+  );
   useEffect(() => {
     // 切换运行/首次加载后默认全选；用户取消勾选不会被轮询覆盖
     setSelected(factors.map((factor) => factor.factor_id));
+    setCategoryFilter("all");
   }, [factors]);
   const selectedIds = selected.map(String);
   const allSelected = factors.length > 0 && selectedIds.length === factors.length;
-
-  const batchesApi = useApiData(
-    () => (runId ? api.factorBacktests(runId) : Promise.resolve(null)),
-    [runId],
-  );
-  const batches = useMemo(
-    () => (batchesApi.data?.batches ?? []).filter((batch) => !runId || batch.factor_run_id === runId),
-    [batchesApi.data, runId],
-  );
-  useEffect(() => {
-    if (batches.length === 0) {
-      if (!pendingBatchRef.current) setBatchId(undefined);
-      return;
-    }
-    const pending = pendingBatchRef.current;
-    if (pending && batches.some((batch) => batch.backtest_id === pending)) {
-      // 新任务完成、批次列表刷新后自动选中刚提交的批次
-      pendingBatchRef.current = null;
-      if (batchId !== pending) setBatchId(pending);
-      return;
-    }
-    if (pending && batchId === pending) return; // 列表尚未刷新，别回退到旧批次
-    if (!batchId || !batches.some((batch) => batch.backtest_id === batchId)) {
-      setBatchId(batches[0].backtest_id);
-    }
-  }, [batches, batchId]);
-
-  const batchApi = useApiData(
-    () => (runId && batchId ? api.factorBacktest(runId, batchId) : Promise.resolve(null)),
-    [runId, batchId],
-  );
-  const batchDetail =
-    batchApi.data?.batch.backtest_id === batchId && batchApi.data?.batch.factor_run_id === runId
-      ? batchApi.data
-      : null;
-  const batch = batchDetail?.batch ?? null;
 
   const finishedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!jobId || job?.status !== "finished" || finishedRef.current === jobId) return;
     finishedRef.current = jobId;
-    const resultBatch = job.result && typeof job.result.backtest_id === "string" ? job.result.backtest_id : null;
-    if (resultBatch) {
-      pendingBatchRef.current = resultBatch;
-      setBatchId(resultBatch);
-    }
-    batchesApi.reload();
     runsApi.reload();
-  }, [jobId, job?.status, job?.result, batchesApi.reload, runsApi.reload]);
+    const resultBatch = job.result && typeof job.result.backtest_id === "string" ? job.result.backtest_id : null;
+    navigate("result", undefined, resultBatch ? `batch:${resultBatch}` : undefined);
+  }, [jobId, job?.status, job?.result, runsApi.reload, navigate]);
 
   const submit = async (values: FactorBacktestFormValues) => {
     if (!runId) {
@@ -780,18 +784,30 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
       message.error("请选择回测区间");
       return;
     }
+    // 清空输入框时回退到默认值，避免把 undefined 传给后端
+    const commission = values.commission ?? 0.0015;
+    const stampDuty = values.stampDuty ?? 0.0005;
+    const topK = values.topK ?? 50;
+    const initialCash = values.initialCash ?? 100000000;
+    const slippage = values.slippage ?? 0.0005;
+    const minCost = values.minCost ?? 5;
+    const maxWeight = values.maxWeight ?? 0.02;
     const payload: FactorBacktestRequest = {
       factor_run_id: runId,
       factor_ids: allSelected ? undefined : selectedIds,
       start_date: range[0].format("YYYY-MM-DD"),
       end_date: range[1].format("YYYY-MM-DD"),
-      top_k: values.topK,
-      initial_cash: values.initialCash,
-      buy_cost: values.buyCost,
-      sell_cost: values.sellCost,
-      slippage: values.slippage,
-      min_cost: values.minCost,
-      max_weight_per_stock: values.maxWeight,
+      top_k: topK,
+      initial_cash: initialCash,
+      buy_cost: commission,
+      sell_cost: commission + stampDuty,
+      slippage,
+      min_cost: minCost,
+      max_weight_per_stock: maxWeight,
+      rebalance_freq: values.rebalanceFreq ?? "1D",
+      commission,
+      stamp_duty: stampDuty,
+      max_drawdown_control: values.maxDrawdownControl ?? 0,
     };
     setSubmitting(true);
     setWarnings([]);
@@ -824,51 +840,41 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
           : job.status === "failed" ? "因子回测失败"
             : `任务状态：${job.status}`;
 
-  const downloadBatchFile = (fileName: string) => {
-    if (!runId || !batch) return;
-    window.location.href = factorBacktestFileUrl(runId, batch.backtest_id, fileName);
-  };
-
-  const factorColumns: TableColumnsType<AcceptedFactor> = [
+  const factorColumns: TableColumnsType<FactorValidityRow> = [
     { title: "因子 ID", dataIndex: "factor_id", width: 200, render: (v) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
     { title: "表达式", dataIndex: "expression", ellipsis: true, render: (v) => <Text code>{v}</Text> },
-    { title: "IC", dataIndex: "ic", align: "right", width: 82, sorter: (a, b) => (a.ic ?? -Infinity) - (b.ic ?? -Infinity), render: (v) => metricNumber(v)?.toFixed(4) ?? "—" },
-    { title: "RankIC", dataIndex: "rank_ic", align: "right", width: 88, sorter: (a, b) => (a.rank_ic ?? -Infinity) - (b.rank_ic ?? -Infinity), render: (v) => metricNumber(v)?.toFixed(4) ?? "—" },
-    { title: "ICIR", dataIndex: "icir", align: "right", width: 82, sorter: (a, b) => (a.icir ?? -Infinity) - (b.icir ?? -Infinity), render: (v) => metricNumber(v)?.toFixed(2) ?? "—" },
-    { title: "覆盖率", dataIndex: "coverage", align: "right", width: 88, render: (v) => formatFraction(v, 1) },
-    { title: "Score", dataIndex: "score", align: "right", width: 82, sorter: (a, b) => (a.score ?? -Infinity) - (b.score ?? -Infinity), render: (v) => metricNumber(v)?.toFixed(2) ?? "—" },
-  ];
-
-  const batchColumns: TableColumnsType<FactorBacktestRow> = [
-    { title: "因子 ID", dataIndex: "factor_id", width: 200, render: (v) => <Text code style={{ whiteSpace: "nowrap" }}>{String(v ?? "—")}</Text> },
-    { title: "表达式", dataIndex: "expression", ellipsis: true, render: (v) => <Text code>{String(v ?? "—")}</Text> },
+    { title: "IC", dataIndex: "ic", width: 82, align: "right", sorter: (a, b) => a.ic - b.ic, render: (v) => v.toFixed(4) },
+    { title: "RankIC", dataIndex: "rank_ic", width: 88, align: "right", sorter: (a, b) => a.rank_ic - b.rank_ic, render: (v) => v.toFixed(4) },
+    { title: "ICIR", dataIndex: "icir", width: 82, align: "right", sorter: (a, b) => a.icir - b.icir, render: (v) => v.toFixed(2) },
+    { title: "覆盖率", dataIndex: "coverage", width: 88, align: "right", render: (v) => `${(v * 100).toFixed(1)}%` },
+    { title: "Score", dataIndex: "score", width: 82, align: "right", sorter: (a, b) => a.score - b.score, render: (v) => v.toFixed(2) },
+    { title: "验证 IC", dataIndex: "valid_ic", width: 90, align: "right", sorter: (a, b) => a.valid_ic - b.valid_ic, render: (v) => v.toFixed(4) },
+    { title: "验证 ICIR", dataIndex: "valid_icir", width: 92, align: "right", sorter: (a, b) => a.valid_icir - b.valid_icir, render: (v) => v.toFixed(2) },
+    { title: "有效天数", dataIndex: "valid_days", width: 90, align: "right", sorter: (a, b) => a.valid_days - b.valid_days },
     {
-      title: "年化收益", key: "annual", align: "right", width: 100,
-      sorter: (a, b) => (metricNumber(a.backtest_annual_return) ?? -Infinity) - (metricNumber(b.backtest_annual_return) ?? -Infinity),
-      render: (_, row) => {
-        const value = metricNumber(row.backtest_annual_return);
-        return <Text type={value != null && value < 0 ? "danger" : "success"}>{formatFraction(value)}</Text>;
+      title: "类别",
+      key: "category",
+      width: 110,
+      render: (_, record) => {
+        const meta = CATEGORY_META[classifyFactor(String(record.expression ?? ""))];
+        return <Tag color={meta.color}>{meta.label}</Tag>;
       },
     },
-    { title: "夏普", key: "sharpe", align: "right", width: 78, sorter: (a, b) => (metricNumber(a.backtest_sharpe) ?? -Infinity) - (metricNumber(b.backtest_sharpe) ?? -Infinity), render: (_, row) => metricNumber(row.backtest_sharpe)?.toFixed(2) ?? "—" },
-    { title: "最大回撤", key: "drawdown", align: "right", width: 92, render: (_, row) => <Text type="danger">{formatFraction(row.backtest_max_drawdown)}</Text> },
-    { title: "换手率", key: "turnover", align: "right", width: 88, render: (_, row) => formatFraction(row.backtest_average_turnover) },
-    { title: "成本", key: "cost", align: "right", width: 78, render: (_, row) => formatFraction(row.backtest_total_cost) },
-    { title: "胜率", key: "win_rate", align: "right", width: 78, render: (_, row) => formatFraction(row.backtest_win_rate) },
-    {
-      title: "操作", key: "action", width: 76, align: "right",
-      render: (_, row) => (
-        <Button type="link" size="small" disabled={!row.run_key} onClick={() => navigate("result", undefined, String(row.run_key))}>
-          结果
-        </Button>
-      ),
-    },
   ];
 
-  const batchOptions = batches.map((item) => ({
-    value: item.backtest_id,
-    label: `${item.backtest_id} · 成功 ${item.completed ?? "—"}/${item.selected_count ?? "—"}${item.created_at ? ` · ${String(item.created_at).replace("T", " ").slice(0, 16)}` : ""}`,
-  }));
+  const factorCategoryCounts = useMemo(() => {
+    const counts = new Map<FactorCategoryKey, number>();
+    for (const factor of factors) {
+      const key = classifyFactor(String(factor.expression ?? ""));
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return FACTOR_CATEGORIES
+      .filter((item) => counts.get(item.key))
+      .map((item) => ({ key: item.key, label: item.label, count: counts.get(item.key) as number }));
+  }, [factors]);
+  const filteredFactors = categoryFilter === "all"
+    ? factorRows
+    : factorRows.filter((factor) => classifyFactor(String(factor.expression ?? "")) === categoryFilter);
 
   return (
     <Space direction="vertical" size={16} className="page-stack">
@@ -878,10 +884,7 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
             <Text strong><ExperimentOutlined /> 因子运行</Text>
             <Select
               value={runId}
-              onChange={(value) => {
-                pendingBatchRef.current = null;
-                setRunId(value);
-              }}
+              onChange={(value) => setRunId(value)}
               className="factor-run-select"
               loading={runsApi.loading}
               showSearch optionFilterProp="label"
@@ -929,21 +932,32 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
                 form={form} layout="vertical" onFinish={submit}
                 initialValues={{
                   dates: [dayjs("2021-06-18"), dayjs("2026-06-16")],
-                  topK: 50, initialCash: 100000000, buyCost: 0.0015, sellCost: 0.0015,
-                  slippage: 0.0005, minCost: 5, maxWeight: 0.02,
+                  topK: 50, initialCash: 100000000, commission: 0.0015, stampDuty: 0.0005,
+                  rebalanceFreq: "1D", slippage: 0.0005, minCost: 5, maxWeight: 0.02, maxDrawdownControl: 0,
                 }}
               >
                 <Form.Item label="回测区间" name="dates" rules={[{ required: true, message: "请选择回测区间" }]}>
                   <DatePicker.RangePicker className="full-width" />
                 </Form.Item>
                 <Row gutter={12}>
+                  <Col span={12}>
+                    <Form.Item label="调仓频率" name="rebalanceFreq">
+                      <Select options={[
+                        { value: "1D", label: "每日" },
+                        { value: "5D", label: "每周（5 个交易日）" },
+                        { value: "10D", label: "每两周（10 个交易日）" },
+                        { value: "20D", label: "每月（20 个交易日）" },
+                      ]} />
+                    </Form.Item>
+                  </Col>
                   <Col span={12}><Form.Item label="持仓数量 TopK" name="topK" rules={[{ type: "number", min: 1, max: 1000, message: "范围 1–1000" }]}><InputNumber className="full-width" min={1} max={1000} /></Form.Item></Col>
                   <Col span={12}><Form.Item label="初始资金" name="initialCash"><InputNumber className="full-width" min={1} addonAfter="元" /></Form.Item></Col>
-                  <Col span={12}><Form.Item label="买入费率" name="buyCost"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
-                  <Col span={12}><Form.Item label="卖出费率" name="sellCost"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="手续费" name="commission"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="印花税（卖出）" name="stampDuty"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
                   <Col span={12}><Form.Item label="滑点" name="slippage"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
                   <Col span={12}><Form.Item label="最低手续费" name="minCost"><InputNumber className="full-width" min={0} addonAfter="元" /></Form.Item></Col>
                   <Col span={12}><Form.Item label="单票权重上限" name="maxWeight"><InputNumber className="full-width" min={0.001} max={1} step={0.01} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="最大回撤控制（0 = 关闭）" name="maxDrawdownControl"><InputNumber className="full-width" min={0} max={0.9} step={0.01} /></Form.Item></Col>
                 </Row>
                 <Button
                   size="large" block type="primary" htmlType="submit" icon={<PlayCircleOutlined />}
@@ -985,179 +999,567 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
               extra={<Text type="secondary">已选 {selectedIds.length} / {factors.length}</Text>}
               className="data-card"
             >
-              <Table
-                rowKey="factor_id" size="middle" columns={factorColumns} dataSource={factors}
-                loading={runDetailApi.loading} pagination={false} scroll={{ x: 760, y: 420 }}
-                rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys) }}
-                locale={{ emptyText: runDetail && factors.length === 0 ? "该运行没有合格因子" : "请选择因子运行" }}
-              />
+              <Space direction="vertical" size={12} className="full-width">
+                <GenChips
+                  items={[{ key: "all", label: "全部", count: factors.length }, ...factorCategoryCounts]}
+                  value={categoryFilter}
+                  onChange={(key) => setCategoryFilter(key)}
+                />
+                <Text type="secondary">类别由表达式字段/算子自动识别</Text>
+                <Table
+                  rowKey="factor_id" size="middle" columns={factorColumns} dataSource={filteredFactors}
+                  loading={runDetailApi.loading} pagination={false} scroll={{ x: 1250, y: 420 }}
+                  rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys) }}
+                  locale={{ emptyText: runDetail && factors.length === 0 ? "该运行没有合格因子" : "请选择因子运行" }}
+                />
+              </Space>
             </Card>
           </Col>
         </Row>
       )}
 
-      {runId && (
-        <Card
-          title={<Space><ExperimentOutlined />批量回测结果</Space>}
-          className="data-card"
-          extra={<Space wrap>
-            <Select
-              size="small" value={batchId} onChange={setBatchId} options={batchOptions}
-              placeholder="暂无批次" style={{ minWidth: 320 }} loading={batchesApi.loading}
-            />
-            <Button size="small" icon={<ReloadOutlined />} onClick={batchesApi.reload}>刷新</Button>
-            <Button size="small" icon={<CloudDownloadOutlined />} disabled={!batch || !batch.completed} onClick={() => downloadBatchFile("factor_backtest_summary.csv")}>下载汇总</Button>
-            <Button size="small" icon={<CloudDownloadOutlined />} disabled={!batch || !batch.failed} onClick={() => downloadBatchFile("factor_backtest_failures.csv")}>下载失败明细</Button>
-          </Space>}
-        >
-          {batchesApi.error && (
-            <Alert type="error" showIcon message="批次列表加载失败" description={batchesApi.error}
-              action={<Button size="small" onClick={batchesApi.reload}>重试</Button>} />
-          )}
-          {!batchesApi.loading && !batchesApi.error && batches.length === 0 && (
-            <Alert type="info" showIcon message="该因子运行还没有批量回测记录" description="选好因子和参数后提交，批次结果会出现在这里。" />
-          )}
-          {batchApi.error && <Alert type="error" showIcon message="批次详情加载失败" description={batchApi.error} style={{ marginBottom: 12 }} />}
-          {batch && (
-            <Space direction="vertical" size={12} className="full-width">
-              <Space wrap size={6}>
-                <Tag color="blue">批次 {batch.backtest_id}</Tag>
-                <Tag>区间 {batch.start_date ?? "—"} ~ {batch.end_date ?? "—"}</Tag>
-                <Tag>TopK {batch.top_k ?? "—"}</Tag>
-                <Tag>合格 {batch.accepted_count ?? "—"}</Tag>
-                <Tag>本次 {batch.selected_count ?? "—"}</Tag>
-                <Tag color="success">成功 {batch.completed ?? "—"}</Tag>
-                {!!batch.failed && <Tag color="error">失败 {batch.failed}</Tag>}
-              </Space>
-              <Table
-                rowKey={(row) => String(row.factor_id ?? row.run_key ?? row.expression)}
-                size="small" columns={batchColumns} dataSource={batchDetail?.rows ?? []}
-                loading={batchApi.loading} pagination={false} scroll={{ x: 1020 }}
-              />
-              {batchDetail && batchDetail.failures.length > 0 && (
-                <Alert
-                  type="warning" showIcon message={`${batchDetail.failures.length} 个因子回测失败`}
-                  description={<Space direction="vertical" size={2}>
-                    {batchDetail.failures.slice(0, 6).map((item) => (
-                      <Text key={`${item.factor_id}-${item.expression ?? ""}`}>
-                        {item.factor_id} · {item.expression ?? "—"}：{item.error ?? "未知错误"}
-                      </Text>
-                    ))}
-                    {batchDetail.failures.length > 6 && <Text type="secondary">仅显示前 6 条，完整明细请下载失败 CSV。</Text>}
-                  </Space>}
-                />
-              )}
-            </Space>
-          )}
-        </Card>
-      )}
     </Space>
   );
 }
 
 /* ============ 因子生成（PPO） ============ */
 
+type GenerationAlgorithm = "ppo" | "llm";
+
+const DEFAULT_GEN_FIELDS = ["open", "close", "high", "low", "volume", "amount", "ChangePCT", "TurnoverRate", "ma5", "ma20", "ema12", "macd"];
+const LLM_PROMPT_TEMPLATE = "在给定字段与算子空间内，寻找 20 日持有期下 IC 稳定、换手可控的量价/财务因子；避免使用未来数据，优先可解释的表达式。";
+
+/** 生成器要提交面板列名：优先用后端给的 panel_alias（vol→volume、财务→fund_*、估值→val_*）。 */
+const generationFieldName = (field: FieldInfo) => field.panel_alias ?? (field.name === "vol" ? "volume" : field.name);
+
+const HiddenValue = () => null;
+
+type RunStage = { key: string; label: string; ms: number };
+type Thresholds = { coverage: number; trainIc: number; validIc: number; icir: number };
+type GeneratedFactorResult = GeneratedFactor & { category: FactorCategoryKey; accepted: boolean; reason: string };
+
+function buildPpoStages(): RunStage[] {
+  return [
+    { key: "prepare", label: "准备池内面板", ms: 2000 },
+    { key: "init", label: "初始化训练环境", ms: 2000 },
+    ...[1, 2, 3].map((round) => ({ key: `round${round}`, label: `采样与评估（第 ${round}/3 轮）`, ms: 3000 })),
+    { key: "candidates", label: "产出候选表达式", ms: 2000 },
+    { key: "legality", label: "合法性检查", ms: 2000 },
+    { key: "validity", label: "有效性检验", ms: 3000 },
+    { key: "classify", label: "LLM 分类（演示）", ms: 3000 },
+  ];
+}
+
+function buildLlmStages(): RunStage[] {
+  return [
+    { key: "prompt", label: "构造提示词", ms: 1500 },
+    { key: "request", label: "模型请求", ms: 4000 },
+    { key: "parse", label: "解析表达式", ms: 2000 },
+    { key: "dedupe", label: "去重与过滤", ms: 1500 },
+    { key: "legality", label: "合法性检查", ms: 2000 },
+    { key: "validity", label: "有效性检验", ms: 3000 },
+    { key: "classify", label: "LLM 分类（演示）", ms: 3000 },
+  ];
+}
+
+function GenChips({ items, value, onChange }: { items: { key: string; label: string; count: number }[]; value: string; onChange: (key: string) => void }) {
+  return (
+    <Flex gap={8} wrap>
+      {items.map(({ key, label, count }) => (
+        <Tag.CheckableTag key={key} checked={value === key} className={`category-chip${value === key ? " category-chip-active" : ""}`} onChange={() => onChange(key)}>
+          {label}<span className="category-chip-count">{count}</span>
+        </Tag.CheckableTag>
+      ))}
+    </Flex>
+  );
+}
+
 export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder; navigate: PageNav }) {
   const [form] = Form.useForm();
-  const [submitting, setSubmitting] = useState(false);
-  const masterFields = fieldsData.filter((f) => f.source === "master 精选").map((f) => f.name);
-  const defaultFields = ["open", "close", "high", "low", "volume", "amount", "ChangePCT", "TurnoverRate", "ma5", "ma20", "ema12", "macd"];
+  const [algorithm, setAlgorithm] = useState<GenerationAlgorithm>("ppo");
+  const [runState, setRunState] = useState<"idle" | "running" | "done">("idle");
+  const [runAlgorithm, setRunAlgorithm] = useState<GenerationAlgorithm>("ppo");
+  const [runStages, setRunStages] = useState<RunStage[]>([]);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [results, setResults] = useState<GeneratedFactorResult[]>([]);
+  const [lastTaskId, setLastTaskId] = useState<number | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
+  const [operatorPickerOpen, setOperatorPickerOpen] = useState(false);
+  const [fieldDraft, setFieldDraft] = useState<string[]>([]);
+  const [operatorDraft, setOperatorDraft] = useState<string[]>([]);
+  const [fieldCategoryFilter, setFieldCategoryFilter] = useState("all");
+  const [onlyUsable, setOnlyUsable] = useState(true);
+  const [fieldSearch, setFieldSearch] = useState("");
+  const [operatorCategory, setOperatorCategory] = useState("all");
+  const [operatorSearch, setOperatorSearch] = useState("");
+  const nameTouched = useRef(false);
+  const fieldsApi = useApiData(api.fields);
+  const operatorsApi = useApiData(api.operators);
+
+  useEffect(() => () => {
+    if (timerRef.current !== null) window.clearInterval(timerRef.current);
+  }, []);
+
   const toRange = (v: unknown) => (v as unknown as { format: (f: string) => string }[] | undefined)?.map((d) => d.format("YYYY-MM-DD"));
-  const selectedFields = Form.useWatch("fields", form) as string[] | undefined;
-  const submit = (values: Record<string, unknown>) => {
-    setSubmitting(true);
-    setTimeout(() => {
-      const id = addTask({
-        type: "generate_factors", typeLabel: "因子生成", name: String(values.name), status: "queued", progress: 0,
-        submittedAt: "刚刚", duration: "—", owner: "林研究员",
-        logs: [`[${nowStamp()}] PPO 训练环境初始化（device=${values.device}）`, `[${nowStamp()}] 已进入任务队列`],
-        params: {
-          pool: values.pool, fields_count: (values.fields as string[]).length, target_horizon: values.targetHorizon,
-          max_backtrack_days: values.maxBacktrackDays, target_factor_count: values.targetFactorCount,
-          max_attempts: values.maxAttempts, rollout_timesteps: values.rolloutTimesteps, seed: values.seed, device: values.device,
-          splits: { train: toRange(values.train), valid: toRange(values.valid), test: toRange(values.test) },
-          quality: { min_coverage: values.minCoverage, min_train_ic: values.minTrainIc, min_valid_ic: values.minValidIc, min_icir: values.minIcir },
-        },
-      });
-      setSubmitting(false);
-      message.success(`因子生成任务 #${id} 已提交`);
-      navigate("tasks", id);
-    }, 750);
+  const selectedFields = (Form.useWatch("fields", form) as string[] | undefined) ?? [];
+  const selectedOperators = (Form.useWatch("operators", form) as string[] | undefined) ?? [];
+
+  const fieldOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return (fieldsApi.data?.fields ?? []).map((field) => ({ ...field, value: generationFieldName(field) })).filter((field) => {
+      if (seen.has(field.value)) return false;
+      seen.add(field.value);
+      return true;
+    });
+  }, [fieldsApi.data]);
+  const fieldCategories = [...new Set(fieldOptions.map((field) => fieldCategory(field).label))];
+  const visibleFields = fieldOptions.filter((field) => {
+    if (onlyUsable && field.expression === false) return false;
+    if (fieldCategoryFilter !== "all" && fieldCategory(field).label !== fieldCategoryFilter) return false;
+    return `${field.name}${field.description}`.toLowerCase().includes(fieldSearch.toLowerCase());
+  });
+
+  const allOperators = useMemo(() => operatorsApi.data?.operators ?? [], [operatorsApi.data]);
+  const genOperators = useMemo(
+    () => allOperators.filter((operator) => operator.generation_enabled),
+    [allOperators]
+  );
+  // PPO 只能采样 alphagen 词表里的算子；LLM 通过 quantops 求值，全部算子可用。
+  const availableOperators = algorithm === "ppo" ? genOperators : allOperators;
+  const operatorCategories = [...new Set(availableOperators.map((operator) => operator.category_cn))];
+  const visibleOperators = availableOperators.filter((operator) => {
+    if (operatorCategory !== "all" && operator.category_cn !== operatorCategory) return false;
+    return `${operator.name}${operator.description_cn}`.toLowerCase().includes(operatorSearch.toLowerCase());
+  });
+
+  const openFieldPicker = () => {
+    setFieldDraft([...(form.getFieldValue("fields") as string[] | undefined) ?? []]);
+    setFieldSearch("");
+    setFieldCategoryFilter("all");
+    setFieldPickerOpen(true);
   };
-  const previewColumns: TableColumnsType<FactorItem> = [
-    { title: "因子 ID", dataIndex: "id", width: 84, render: (v) => <Text code>{v}</Text> },
-    { title: "表达式", dataIndex: "expression", render: (v) => <Text code>{v}</Text> },
-    { title: "ICIR", dataIndex: "icir", align: "right", width: 76 },
-    { title: "Score", dataIndex: "score", align: "right", width: 76 },
+  const openOperatorPicker = () => {
+    const selected = (form.getFieldValue("operators") as string[] | undefined) ?? [];
+    const allowed = algorithm === "ppo" ? new Set(genOperators.map((operator) => operator.name)) : null;
+    setOperatorDraft(allowed ? selected.filter((name) => allowed.has(name)) : [...selected]);
+    setOperatorSearch("");
+    setOperatorCategory("all");
+    setOperatorPickerOpen(true);
+  };
+  const confirmFields = () => {
+    form.setFieldValue("fields", fieldDraft);
+    setFieldPickerOpen(false);
+  };
+  const confirmOperators = () => {
+    form.setFieldValue("operators", operatorDraft);
+    setOperatorPickerOpen(false);
+  };
+
+  const changeAlgorithm = (value: GenerationAlgorithm) => {
+    setAlgorithm(value);
+    if (!nameTouched.current) form.setFieldValue("name", `${value}_run_${dayjs().format("YYYYMMDD")}`);
+    if (value === "ppo" && operatorsApi.data) {
+      const allowed = new Set(genOperators.map((operator) => operator.name));
+      const selected = (form.getFieldValue("operators") as string[] | undefined) ?? [];
+      const kept = selected.filter((name) => allowed.has(name));
+      if (kept.length !== selected.length) {
+        form.setFieldValue("operators", kept);
+        setOperatorDraft((draft) => draft.filter((name) => allowed.has(name)));
+        message.warning(`已移除 ${selected.length - kept.length} 个 PPO 不支持的操作符`);
+      }
+    }
+  };
+
+  const finishRun = (thresholds: Thresholds) => {
+    const rows = generatedFactors.map((factor) => {
+      const reasons: string[] = [];
+      if (factor.coverage < thresholds.coverage) {
+        reasons.push(`覆盖率 ${(factor.coverage * 100).toFixed(1)}% < ${(thresholds.coverage * 100).toFixed(1)}%`);
+      }
+      if (factor.ic < thresholds.trainIc) {
+        reasons.push(`训练 IC ${factor.ic.toFixed(3)} < ${thresholds.trainIc.toFixed(3)}`);
+      }
+      if (factor.valid_ic < thresholds.validIc) {
+        reasons.push(`验证 IC ${factor.valid_ic.toFixed(3)} < ${thresholds.validIc.toFixed(3)}`);
+      }
+      if (factor.icir < thresholds.icir) {
+        reasons.push(`ICIR ${factor.icir.toFixed(2)} < ${thresholds.icir.toFixed(2)}`);
+      }
+      return {
+        ...factor,
+        category: classifyFactor(factor.expression),
+        accepted: reasons.length === 0,
+        reason: reasons.join("；"),
+      };
+    }).sort((a, b) => b.score - a.score);
+    setResults(rows);
+    setRunState("done");
+  };
+
+  const startRun = (stages: RunStage[], thresholds: Thresholds) => {
+    if (timerRef.current !== null) window.clearInterval(timerRef.current);
+    setRunStages(stages);
+    setElapsedMs(0);
+    setResults([]);
+    setRunState("running");
+    const total = stages.reduce((sum, stage) => sum + stage.ms, 0);
+    const started = Date.now();
+    timerRef.current = window.setInterval(() => {
+      const next = Date.now() - started;
+      if (next >= total) {
+        window.clearInterval(timerRef.current as number);
+        timerRef.current = null;
+        setElapsedMs(total);
+        finishRun(thresholds);
+      } else {
+        setElapsedMs(next);
+      }
+    }, 100);
+  };
+
+  const cancelRun = () => {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setRunState("idle");
+    setElapsedMs(0);
+    message.info("已取消本次生成");
+  };
+
+  const submit = (values: Record<string, unknown>) => {
+    const fields = (values.fields as string[]) ?? [];
+    const pickedOperators = (values.operators as string[]) ?? [];
+    const operators = algorithm === "ppo"
+      ? pickedOperators.filter((name) => genOperators.some((operator) => operator.name === name))
+      : pickedOperators;
+    const prompt = String(values.prompt ?? "").trim();
+    const model = values.model === "__custom__"
+      ? String(values.customModel ?? "").trim()
+      : String(values.model ?? "deepseek-v4-flash");
+    const shared = {
+      algorithm,
+      pool: values.pool,
+      fields,
+      operators,
+      target_horizon: values.targetHorizon,
+      max_backtrack_days: values.maxBacktrackDays,
+      target_factor_count: values.targetFactorCount,
+      splits: { train: toRange(values.train), valid: toRange(values.valid), test: toRange(values.test) },
+      quality: { min_coverage: values.minCoverage, min_train_ic: values.minTrainIc, min_valid_ic: values.minValidIc, min_icir: values.minIcir },
+    };
+    const params = algorithm === "ppo"
+      ? { ...shared, max_attempts: values.maxAttempts, rollout_timesteps: values.rolloutTimesteps, seed: values.seed, device: values.device }
+      : {
+          ...shared,
+          model,
+          prompt,
+          max_candidates: values.maxCandidates,
+          temperature: values.temperature,
+          top_p: values.topP,
+          max_rounds: values.maxRounds,
+        };
+    const operatorLabel = operators.length ? `${operators.length} 个` : "全部算子";
+    const logs = algorithm === "ppo"
+      ? [
+          `[${nowStamp()}] PPO 训练环境初始化（device=${values.device}）`,
+          `[${nowStamp()}] 字段 ${fields.length} 个 · 算子 ${operatorLabel}`,
+          `[${nowStamp()}] 已进入任务队列`,
+        ]
+      : [
+          `[${nowStamp()}] LLM 生成请求（演示）：model=${model}`,
+          `[${nowStamp()}] 候选数 ${values.maxCandidates} · 温度 ${values.temperature} · Top-P ${values.topP} · 轮次 ${values.maxRounds}`,
+          `[${nowStamp()}] 提示词：${prompt.slice(0, 40)}`,
+          `[${nowStamp()}] 已进入任务队列`,
+        ];
+    const id = addTask({
+      type: "generate_factors", typeLabel: "因子生成", name: String(values.name), status: "queued", progress: 0,
+      submittedAt: "刚刚", duration: "—", owner: "林研究员",
+      logs,
+      params,
+    });
+    setLastTaskId(id);
+    setRunAlgorithm(algorithm);
+    message.success(`因子生成任务 #${id} 已提交`);
+    startRun(
+      algorithm === "ppo" ? buildPpoStages() : buildLlmStages(),
+      {
+        coverage: Number(values.minCoverage ?? 0.9),
+        trainIc: Number(values.minTrainIc ?? 0.05),
+        validIc: Number(values.minValidIc ?? 0.04),
+        icir: Number(values.minIcir ?? 0.5),
+      }
+    );
+  };
+
+  const totalMs = runStages.reduce((sum, stage) => sum + stage.ms, 0) || 1;
+  const progressPercent = Math.min(100, Math.round((elapsedMs / totalMs) * 100));
+  let stageIndex = 0;
+  let stageAcc = 0;
+  for (let index = 0; index < runStages.length; index += 1) {
+    if (elapsedMs < stageAcc + runStages[index].ms) {
+      stageIndex = index;
+      break;
+    }
+    stageAcc += runStages[index].ms;
+    stageIndex = index;
+  }
+  const qualifiedCount = results.filter((item) => item.accepted).length;
+
+  const resultColumns: TableColumnsType<GeneratedFactorResult> = [
+    { title: "表达式", dataIndex: "expression", width: 320, fixed: "left", render: (v) => <Text code>{v}</Text> },
+    { title: "IC", dataIndex: "ic", width: 90, align: "right", sorter: (a, b) => a.ic - b.ic, render: (v) => v.toFixed(3) },
+    { title: "RankIC", dataIndex: "rank_ic", width: 90, align: "right", sorter: (a, b) => a.rank_ic - b.rank_ic, render: (v) => v.toFixed(3) },
+    { title: "ICIR", dataIndex: "icir", width: 90, align: "right", sorter: (a, b) => a.icir - b.icir, render: (v) => v.toFixed(2) },
+    { title: "覆盖率", dataIndex: "coverage", width: 90, align: "right", render: (v) => `${(v * 100).toFixed(1)}%` },
+    { title: "Score", dataIndex: "score", width: 90, align: "right", sorter: (a, b) => a.score - b.score, defaultSortOrder: "descend", render: (v) => v.toFixed(3) },
+    { title: "验证 IC", dataIndex: "valid_ic", width: 100, align: "right", sorter: (a, b) => a.valid_ic - b.valid_ic, render: (v) => v.toFixed(3) },
+    { title: "验证 ICIR", dataIndex: "valid_icir", width: 100, align: "right", sorter: (a, b) => a.valid_icir - b.valid_icir, render: (v) => v.toFixed(2) },
+    { title: "有效天数", dataIndex: "valid_days", width: 90, align: "right" },
+    {
+      title: "类别",
+      dataIndex: "category",
+      width: 100,
+      filters: FACTOR_CATEGORIES.map((item) => ({ text: item.label, value: item.key })),
+      onFilter: (value, record) => record.category === value,
+      render: (key: FactorCategoryKey) => {
+        const meta = CATEGORY_META[key];
+        return <Tag color={meta.color}>{meta.label}</Tag>;
+      },
+    },
+    {
+      title: "判定",
+      dataIndex: "accepted",
+      width: 100,
+      filters: [{ text: "合格", value: "yes" }, { text: "不合格", value: "no" }],
+      onFilter: (value, record) => (value === "yes" ? record.accepted : !record.accepted),
+      render: (accepted: boolean, record) => accepted
+        ? <Tag color="green">合格</Tag>
+        : <Tooltip title={record.reason}><Tag color="red">不合格</Tag></Tooltip>,
+    },
   ];
   return (
-    <Row gutter={16} className="backtest-layout">
-      <Col span={10}>
-        <Card title={<Space><RobotOutlined />PPO 生成参数</Space>} className="form-card">
-          <Form form={form} layout="vertical" onFinish={submit} initialValues={{
-            name: "ppo_run_102", pool: "liquid_500", fields: defaultFields,
-            train: [dayjs("2022-01-14"), dayjs("2024-07-26")], valid: [dayjs("2024-01-25"), dayjs("2025-07-28")], test: [dayjs("2025-01-27"), dayjs("2026-06-12")],
-            targetHorizon: 20, maxBacktrackDays: 100, targetFactorCount: 50, maxAttempts: 100000, rolloutTimesteps: 2048, seed: 0, device: "cpu",
-            minCoverage: 0.9, minTrainIc: 0.05, minValidIc: 0.04, minIcir: 0.5,
-          }}>
-            <Row gutter={12}>
-              <Col span={12}><Form.Item label="股票池" name="pool" rules={[{ required: true }]}><Select options={[{ value: "liquid_500", label: "liquid_500 · 500只" }]} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="运行名称" name="name" rules={[{ required: true, message: "请输入运行名称" }]}><Input /></Form.Item></Col>
-            </Row>
-            <Form.Item label={`可用字段（已选 ${(selectedFields || []).length} / ${masterFields.length}）`} name="fields" rules={[{ required: true, message: "至少选择一个字段" }]}>
-              <Select mode="multiple" allowClear showSearch options={masterFields.map((f) => ({ value: f, label: f }))} placeholder="选择参与搜索的字段" maxTagCount={6} />
-            </Form.Item>
-            <Divider orientation="left" plain>数据切分</Divider>
-            <Form.Item label="训练段 train" name="train" rules={[{ required: true }]}><DatePicker.RangePicker className="full-width" /></Form.Item>
-            <Form.Item label="验证段 valid" name="valid" rules={[{ required: true }]}><DatePicker.RangePicker className="full-width" /></Form.Item>
-            <Form.Item label="测试段 test" name="test" rules={[{ required: true }]}><DatePicker.RangePicker className="full-width" /></Form.Item>
-            <Divider orientation="left" plain>搜索与训练</Divider>
-            <Row gutter={12}>
-              <Col span={12}><Form.Item label="目标持有期 horizon" name="targetHorizon" rules={[{ type: "number", min: 1, max: 60 }]}><InputNumber className="full-width" min={1} max={60} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="最大回溯天数" name="maxBacktrackDays"><InputNumber className="full-width" min={10} max={250} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="目标因子数" name="targetFactorCount"><InputNumber className="full-width" min={1} max={200} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="最大尝试次数" name="maxAttempts"><InputNumber className="full-width" min={1000} step={10000} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="Rollout 步数" name="rolloutTimesteps"><InputNumber className="full-width" min={512} step={512} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="随机种子" name="seed"><InputNumber className="full-width" min={0} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="计算设备" name="device"><Select options={[{ value: "cpu", label: "CPU" }, { value: "cuda", label: "CUDA (GPU)" }]} /></Form.Item></Col>
-            </Row>
-            <Divider orientation="left" plain>质量阈值</Divider>
-            <Row gutter={12}>
-              <Col span={12}><Form.Item label="最低覆盖率" name="minCoverage" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.05} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="最低训练 IC" name="minTrainIc" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.01} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="最低验证 IC" name="minValidIc" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.01} /></Form.Item></Col>
-              <Col span={12}><Form.Item label="最低 ICIR" name="minIcir" rules={[{ type: "number", min: 0, max: 3 }]}><InputNumber className="full-width" min={0} max={3} step={0.1} /></Form.Item></Col>
-            </Row>
-            <Button size="large" block type="primary" htmlType="submit" loading={submitting} icon={<PlayCircleOutlined />}>启动 PPO 因子生成</Button>
-          </Form>
-        </Card>
-      </Col>
-      <Col span={14}>
-        <Space direction="vertical" size={16} className="full-width">
-          <Card size="small" title="生成流程">
-            <Steps size="small" current={4} items={[
-              { title: "导出池内面板", description: "按 pool_id 导出行情" },
-              { title: "构造训练数据", description: "train / valid / test 切分" },
-              { title: "PPO 搜索表达式", description: "在算子空间内组合" },
-              { title: "质量筛选", description: "IC / RankIC / ICIR / 覆盖率" },
-            ]} />
+    <>
+      <Row gutter={16} className="backtest-layout">
+        <Col span={10}>
+          <Card title={<Space><RobotOutlined />{algorithm === "ppo" ? "PPO 生成参数" : "大模型生成参数"}</Space>} className="form-card">
+            <Form form={form} layout="vertical" onFinish={submit} onValuesChange={(changed) => { if ("name" in changed) nameTouched.current = true; }} initialValues={{
+              name: `ppo_run_${dayjs().format("YYYYMMDD")}`, pool: "liquid_500", fields: DEFAULT_GEN_FIELDS, operators: [],
+              train: [dayjs("2022-01-14"), dayjs("2024-07-26")], valid: [dayjs("2024-01-25"), dayjs("2025-07-28")], test: [dayjs("2025-01-27"), dayjs("2026-06-12")],
+              targetHorizon: 20, maxBacktrackDays: 100, targetFactorCount: 50, maxAttempts: 100000, rolloutTimesteps: 2048, seed: 0, device: "cpu",
+              minCoverage: 0.9, minTrainIc: 0.05, minValidIc: 0.04, minIcir: 0.5,
+              model: "deepseek-v4-flash", customModel: "", maxCandidates: 30, prompt: LLM_PROMPT_TEMPLATE,
+              temperature: 0.2, topP: 1.0, maxRounds: 3,
+            }}>
+              <Form.Item label="生成算法">
+                <Select disabled={runState === "running"} value={algorithm} onChange={(value) => changeAlgorithm(value as GenerationAlgorithm)}
+                  options={[{ value: "ppo", label: "PPO" }, { value: "llm", label: "大模型（LLM）" }]} />
+              </Form.Item>
+              <Form.Item name="fields" hidden rules={[{ required: true, message: "至少选择一个字段" }]}><HiddenValue /></Form.Item>
+              <Form.Item name="operators" hidden><HiddenValue /></Form.Item>
+              <Row gutter={12}>
+                <Col span={12}><Form.Item label="股票池" name="pool" rules={[{ required: true }]}><Select options={[{ value: "liquid_500", label: "liquid_500 · 500只" }]} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="运行名称" name="name" rules={[{ required: true, message: "请输入运行名称" }]}><Input /></Form.Item></Col>
+              </Row>
+              <Form.Item label={`可用字段（已选 ${selectedFields.length}）`} required>
+                <Flex gap={6} wrap align="center">
+                  {selectedFields.slice(0, 8).map((field) => <Tag key={field}>{field}</Tag>)}
+                  {selectedFields.length > 8 && <Tag>+{selectedFields.length - 8}</Tag>}
+                  <Button size="small" icon={<PlusOutlined />} onClick={openFieldPicker}>选择字段</Button>
+                </Flex>
+              </Form.Item>
+              <Form.Item label={`操作符（${selectedOperators.length ? `已选 ${selectedOperators.length}` : `未选 = 全部${algorithm === "ppo" ? " PPO 支持" : "表达式可用"}算子`}）`}>
+                <Flex gap={6} wrap align="center">
+                  {selectedOperators.slice(0, 8).map((operator) => <Tag key={operator}>{operator}</Tag>)}
+                  {selectedOperators.length > 8 && <Tag>+{selectedOperators.length - 8}</Tag>}
+                  <Button size="small" icon={<PlusOutlined />} onClick={openOperatorPicker}>选择操作符</Button>
+                </Flex>
+              </Form.Item>
+              {algorithm === "ppo" && (
+                <>
+                  <Divider orientation="left" plain>PPO 参数</Divider>
+                  <Row gutter={12}>
+                    <Col span={12}><Form.Item label="最大尝试次数" name="maxAttempts"><InputNumber className="full-width" min={1000} step={10000} /></Form.Item></Col>
+                    <Col span={12}><Form.Item label="Rollout 步数" name="rolloutTimesteps"><InputNumber className="full-width" min={512} step={512} /></Form.Item></Col>
+                    <Col span={12}><Form.Item label="随机种子" name="seed"><InputNumber className="full-width" min={0} /></Form.Item></Col>
+                    <Col span={12}><Form.Item label="计算设备" name="device"><Select options={[{ value: "cpu", label: "CPU" }, { value: "cuda", label: "CUDA (GPU)" }]} /></Form.Item></Col>
+                  </Row>
+                </>
+              )}
+              {algorithm === "llm" && (
+                <>
+                  <Divider orientation="left" plain>大模型参数</Divider>
+                  <Form.Item label="模型" name="model" rules={[{ required: true }]}>
+                    <Select options={[{ value: "deepseek-v4-flash", label: "deepseek-v4-flash" }, { value: "__custom__", label: "自定义模型名" }]} />
+                  </Form.Item>
+                  <Form.Item noStyle shouldUpdate={(prev, next) => prev.model !== next.model}>
+                    {({ getFieldValue }) => getFieldValue("model") === "__custom__" ? (
+                      <Form.Item label="自定义模型名" name="customModel" rules={[{ required: true, message: "请输入模型名" }]}>
+                        <Input placeholder="例如 deepseek-chat" />
+                      </Form.Item>
+                    ) : null}
+                  </Form.Item>
+                  <Form.Item label="提示词" name="prompt" rules={[{ required: true, message: "请输入提示词" }]}>
+                    <Input.TextArea rows={5} maxLength={2000} showCount />
+                  </Form.Item>
+                  <Row gutter={12}>
+                    <Col span={12}><Form.Item label="候选数" name="maxCandidates"><InputNumber className="full-width" min={1} max={200} /></Form.Item></Col>
+                    <Col span={12}><Form.Item label="温度 temperature" name="temperature"><InputNumber className="full-width" min={0} max={2} step={0.1} /></Form.Item></Col>
+                    <Col span={12}><Form.Item label="Top-P" name="topP"><InputNumber className="full-width" min={0} max={1} step={0.05} /></Form.Item></Col>
+                    <Col span={12}><Form.Item label="最大轮次" name="maxRounds"><InputNumber className="full-width" min={1} max={10} /></Form.Item></Col>
+                  </Row>
+                </>
+              )}
+              <Divider orientation="left" plain>数据切分</Divider>
+              <Form.Item label="训练段 train" name="train" rules={[{ required: true }]}><DatePicker.RangePicker className="full-width" /></Form.Item>
+              <Form.Item label="验证段 valid" name="valid" rules={[{ required: true }]}><DatePicker.RangePicker className="full-width" /></Form.Item>
+              <Form.Item label="测试段 test" name="test" rules={[{ required: true }]}><DatePicker.RangePicker className="full-width" /></Form.Item>
+              <Divider orientation="left" plain>搜索与训练</Divider>
+              <Row gutter={12}>
+                <Col span={12}><Form.Item label="目标持有期 horizon" name="targetHorizon" rules={[{ type: "number", min: 1, max: 60 }]}><InputNumber className="full-width" min={1} max={60} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最大回溯天数" name="maxBacktrackDays"><InputNumber className="full-width" min={10} max={250} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="目标因子数" name="targetFactorCount"><InputNumber className="full-width" min={1} max={200} /></Form.Item></Col>
+              </Row>
+              <Divider orientation="left" plain>质量阈值</Divider>
+              <Row gutter={12}>
+                <Col span={12}><Form.Item label="最低覆盖率" name="minCoverage" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.05} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低训练 IC" name="minTrainIc" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.01} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低验证 IC" name="minValidIc" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.01} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低 ICIR" name="minIcir" rules={[{ type: "number", min: 0, max: 3 }]}><InputNumber className="full-width" min={0} max={3} step={0.1} /></Form.Item></Col>
+              </Row>
+              <Button size="large" block type="primary" htmlType="submit" disabled={runState === "running"} icon={<PlayCircleOutlined />}>
+                {runState === "running" ? "生成中…" : algorithm === "ppo" ? "启动 PPO 因子生成" : "启动 LLM 因子生成"}
+              </Button>
+            </Form>
           </Card>
-          <Card title={`最近一次生成运行（${generationSummary.runId} · #${generationSummary.taskId}）`} className="data-card"
-            extra={<Button type="link" onClick={() => navigate("tasks", generationSummary.taskId)}>查看任务</Button>}>
-            <Row gutter={12}>
-              <Col span={6}><Statistic title="尝试次数" value={generationSummary.attempts} /></Col>
-              <Col span={6}><Statistic title="合格因子" value={generationSummary.accepted} suffix="个" /></Col>
-              <Col span={6}><Statistic title="最佳 ICIR" value={generationSummary.bestIcir} precision={2} /></Col>
-              <Col span={6}><Statistic title="最佳 Score" value={generationSummary.bestScore} precision={2} /></Col>
-            </Row>
-            <Divider />
-            <Table rowKey="id" size="small" columns={previewColumns} dataSource={acceptedFactors.slice(0, 6)} pagination={false} />
-            <Flex justify="flex-end" className="note-action">
-              <Button type="link" onClick={() => navigate("factor_backtest")}>在因子回测页查看全部 {generationSummary.accepted} 个合格因子</Button>
-            </Flex>
-          </Card>
+        </Col>
+        <Col span={14}>
+          <Space direction="vertical" size={16} className="full-width">
+            {runState === "running" ? (
+              <Card title={<Space><LoadingOutlined spin />因子生成中（{runAlgorithm.toUpperCase()}）</Space>} className="data-card"
+                extra={<Button danger size="small" onClick={cancelRun}>取消</Button>}>
+                <Progress percent={progressPercent} status="active" />
+                <Flex justify="space-between" gap={12} wrap>
+                  <Text strong>{runStages[stageIndex]?.label ?? "准备中"}</Text>
+                  <Text type="secondary">{Math.round(elapsedMs / 1000)}s / {Math.round(totalMs / 1000)}s</Text>
+                </Flex>
+                <Divider />
+                <Steps direction="vertical" size="small" current={stageIndex} items={runStages.map((stage, index) => ({
+                  title: stage.label,
+                  status: index < stageIndex ? "finish" : index === stageIndex ? "process" : "wait",
+                }))} />
+              </Card>
+            ) : runState === "done" ? (
+              <Card title={`生成结果（${qualifiedCount}/${results.length} 合格 · ${runAlgorithm.toUpperCase()}）`} className="data-card"
+                extra={<Space><Text type="secondary">LLM 分类为演示规则</Text>{lastTaskId !== null && <Button type="link" onClick={() => navigate("tasks", lastTaskId)}>查看任务</Button>}</Space>}>
+                <Table rowKey="id" size="small" columns={resultColumns} dataSource={results} pagination={false} scroll={{ x: 1330 }} />
+                <Flex justify="space-between" gap={12} wrap className="note-action">
+                  <Text type="secondary">上次运行：{runAlgorithm.toUpperCase()} · {results.length} 个候选因子 · 用时 {Math.round(totalMs / 1000)} 秒</Text>
+                  <Button type="link" onClick={() => navigate("factor_backtest")}>去因子回测</Button>
+                </Flex>
+              </Card>
+            ) : (
+              <>
+                <Card size="small" title="生成流程">
+                  <Steps size="small" current={-1} items={[
+                    { title: "导出池内面板", description: "按 pool_id 导出行情" },
+                    { title: "构造训练数据", description: "train / valid / test 切分" },
+                    { title: algorithm === "ppo" ? "PPO 搜索表达式" : "大模型生成表达式", description: "在字段与算子空间内组合" },
+                    { title: "合法性检查", description: "语法 / 字段 / 算子" },
+                    { title: "有效性检验", description: "IC / RankIC / ICIR / 覆盖率 / 验证集" },
+                    { title: "LLM 分类", description: "按量价 / 波动 / 趋势等归类" },
+                  ]} />
+                </Card>
+                <Card className="data-card">
+                  <Empty description="填写左侧参数并启动生成，进度和结果会显示在这里" />
+                </Card>
+              </>
+            )}
+          </Space>
+        </Col>
+      </Row>
+
+      <Modal title="选择字段" open={fieldPickerOpen} onCancel={() => setFieldPickerOpen(false)} onOk={confirmFields}
+        okText={`确定（已选 ${fieldDraft.length}）`} width={760} destroyOnClose>
+        <Space direction="vertical" size={12} className="full-width">
+          <GenChips
+            items={[{ key: "all", label: "全部", count: fieldOptions.length }, ...fieldCategories.map((category) => ({ key: category, label: category, count: fieldOptions.filter((field) => fieldCategory(field).label === category).length }))]}
+            value={fieldCategoryFilter}
+            onChange={setFieldCategoryFilter}
+          />
+          <Flex justify="space-between" gap={12} wrap align="center">
+            <Space size={8}><Switch size="small" checked={onlyUsable} onChange={setOnlyUsable} /><Text type="secondary">仅显示可用于因子表达式的字段</Text></Space>
+            <Input.Search allowClear value={fieldSearch} onChange={(event) => setFieldSearch(event.target.value)} placeholder="搜索字段名 / 说明" style={{ width: 260 }} />
+          </Flex>
+          <Flex justify="space-between" gap={12} wrap align="center">
+            <Text type="secondary">当前筛选 {visibleFields.length} 个 · 已选 {fieldDraft.length}</Text>
+            <Space>
+              <Button size="small" onClick={() => setFieldDraft((draft) => [...new Set([...draft, ...visibleFields.filter((field) => field.expression !== false).map((field) => field.value)])])}>全选当前筛选</Button>
+              <Button size="small" onClick={() => setFieldDraft([])}>清空</Button>
+            </Space>
+          </Flex>
+          <div style={{ maxHeight: 380, overflow: "auto" }}>
+            {fieldsApi.error ? <Alert type="error" showIcon message={fieldsApi.error} /> : fieldsApi.loading ? <Skeleton active paragraph={{ rows: 6 }} /> : (
+              <Checkbox.Group value={fieldDraft} onChange={(values) => setFieldDraft(values as string[])} className="full-width">
+                <Flex vertical gap={6}>
+                  {visibleFields.map((field) => (
+                    <Checkbox key={field.value} value={field.value} disabled={field.expression === false}>
+                      <Text code>{field.name}</Text>
+                      {field.value !== field.name && <Text type="secondary">（面板列 {field.value}）</Text>}
+                      <Text type="secondary"> · {field.description}</Text>
+                    </Checkbox>
+                  ))}
+                </Flex>
+              </Checkbox.Group>
+            )}
+          </div>
         </Space>
-      </Col>
-    </Row>
+      </Modal>
+
+      <Modal title={algorithm === "ppo" ? "选择操作符（PPO 支持）" : "选择操作符（表达式可用）"} open={operatorPickerOpen} onCancel={() => setOperatorPickerOpen(false)} onOk={confirmOperators}
+        okText={`确定（已选 ${operatorDraft.length}）`} width={760} destroyOnClose>
+        <Space direction="vertical" size={12} className="full-width">
+          <GenChips
+            items={[{ key: "all", label: "全部", count: availableOperators.length }, ...operatorCategories.map((category) => ({ key: category, label: category, count: availableOperators.filter((operator) => operator.category_cn === category).length }))]}
+            value={operatorCategory}
+            onChange={setOperatorCategory}
+          />
+          <Flex justify="space-between" gap={12} wrap align="center">
+            <Text type="secondary">
+              {algorithm === "ppo"
+                ? `仅显示 PPO 支持的 ${genOperators.length} 个；未选择 = 使用全部支持算子`
+                : `显示全部表达式可用算子 ${allOperators.length} 个（其中 ${genOperators.length} 个可被 PPO 采样）；未选择 = 使用全部算子`}
+            </Text>
+            <Input.Search allowClear value={operatorSearch} onChange={(event) => setOperatorSearch(event.target.value)} placeholder="搜索操作符 / 说明" style={{ width: 260 }} />
+          </Flex>
+          <Flex justify="space-between" gap={12} wrap align="center">
+            <Text type="secondary">当前筛选 {visibleOperators.length} 个 · 已选 {operatorDraft.length}</Text>
+            <Space>
+              <Button size="small" onClick={() => setOperatorDraft((draft) => [...new Set([...draft, ...visibleOperators.map((operator) => operator.name)])])}>全选当前筛选</Button>
+              <Button size="small" onClick={() => setOperatorDraft([])}>清空</Button>
+            </Space>
+          </Flex>
+          <div style={{ maxHeight: 380, overflow: "auto" }}>
+            {operatorsApi.error ? <Alert type="error" showIcon message={operatorsApi.error} /> : operatorsApi.loading ? <Skeleton active paragraph={{ rows: 6 }} /> : (
+              <Checkbox.Group value={operatorDraft} onChange={(values) => setOperatorDraft(values as string[])} className="full-width">
+                <Flex vertical gap={6}>
+                  {visibleOperators.map((operator) => (
+                    <Checkbox key={operator.name} value={operator.name}>
+                      <Text code>{operator.name}</Text>
+                      <Tag style={{ marginLeft: 8 }}>{operator.category_cn}</Tag>
+                      <Tag color={algorithm === "ppo" ? "green" : "blue"}>
+                        {algorithm === "ppo" ? "PPO 支持" : "表达式可用"}
+                      </Tag>
+                      <Text type="secondary">{operator.description_cn}</Text>
+                    </Checkbox>
+                  ))}
+                </Flex>
+              </Checkbox.Group>
+            )}
+          </div>
+        </Space>
+      </Modal>
+    </>
   );
 }

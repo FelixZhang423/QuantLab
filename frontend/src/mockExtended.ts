@@ -101,6 +101,35 @@ export const acceptedFactors: FactorItem[] = [
   { id: "f_012", expression: "ts_quantile(close, 20, 0.25)", ic: 0.017, rank_ic: 0.02, icir: 0.42, coverage: 0.972, score: 0.38 },
 ];
 
+/** 生成页模拟结果：8 个有效性指标，判定由页面按阈值计算。 */
+export type GeneratedFactor = {
+  id: string;
+  expression: string;
+  ic: number;
+  rank_ic: number;
+  icir: number;
+  coverage: number;
+  score: number;
+  valid_ic: number;
+  valid_icir: number;
+  valid_days: number;
+};
+
+export const generatedFactors: GeneratedFactor[] = [
+  { id: "f_001", expression: "ts_rank(close, 20) - rank(TurnoverRate)", ic: 0.062, rank_ic: 0.068, icir: 1.35, coverage: 0.987, score: 0.81, valid_ic: 0.055, valid_icir: 1.12, valid_days: 242 },
+  { id: "f_002", expression: "close / ts_mean(close, 20) - 1", ic: 0.058, rank_ic: 0.063, icir: 1.22, coverage: 0.993, score: 0.77, valid_ic: 0.049, valid_icir: 1.05, valid_days: 240 },
+  { id: "f_003", expression: "ts_corr(close, volume, 10)", ic: 0.054, rank_ic: 0.059, icir: 1.11, coverage: 0.962, score: 0.71, valid_ic: 0.046, valid_icir: 0.98, valid_days: 238 },
+  { id: "f_004", expression: "ts_std_dev(ChangePCT, 20)", ic: 0.052, rank_ic: 0.056, icir: 1.03, coverage: 0.971, score: 0.66, valid_ic: 0.038, valid_icir: 0.91, valid_days: 236 },
+  { id: "f_005", expression: "rank(amount) - ts_delay(rank(amount), 5)", ic: 0.057, rank_ic: 0.061, icir: 1.08, coverage: 0.984, score: 0.69, valid_ic: 0.048, valid_icir: 0.95, valid_days: 241 },
+  { id: "f_006", expression: "ts_zscore(close, 60)", ic: 0.051, rank_ic: 0.055, icir: 0.99, coverage: 0.995, score: 0.63, valid_ic: 0.044, valid_icir: 0.88, valid_days: 235 },
+  { id: "f_007", expression: "ts_decay_linear(close, 12)", ic: 0.048, rank_ic: 0.052, icir: 0.93, coverage: 0.976, score: 0.59, valid_ic: 0.041, valid_icir: 0.83, valid_days: 234 },
+  { id: "f_008", expression: "ts_delta(volume, 5) / ts_mean(volume, 5)", ic: 0.056, rank_ic: 0.06, icir: 1.06, coverage: 0.958, score: 0.67, valid_ic: 0.047, valid_icir: 0.93, valid_days: 239 },
+  { id: "f_009", expression: "rank(ema12 - ema26)", ic: 0.053, rank_ic: 0.057, icir: 1.01, coverage: 0.989, score: 0.64, valid_ic: 0.043, valid_icir: 0.9, valid_days: 237 },
+  { id: "f_010", expression: "-rank(RisingUpDays)", ic: 0.052, rank_ic: 0.056, icir: 0.47, coverage: 0.944, score: 0.43, valid_ic: 0.042, valid_icir: 0.52, valid_days: 230 },
+  { id: "f_011", expression: "ts_corr(ChangePCT, TurnoverRate, 20)", ic: 0.051, rank_ic: 0.055, icir: 0.72, coverage: 0.965, score: 0.52, valid_ic: 0.041, valid_icir: 0.7, valid_days: 232 },
+  { id: "f_012", expression: "ts_quantile(close, 20, 0.25)", ic: 0.055, rank_ic: 0.059, icir: 1.04, coverage: 0.912, score: 0.61, valid_ic: 0.044, valid_icir: 0.86, valid_days: 228 },
+];
+
 export type FactorBtRow = { expression: string; annual: number; sharpe: number; drawdown: number; turnover: number; cost: number };
 
 export const factorBacktestSummary: FactorBtRow[] = [

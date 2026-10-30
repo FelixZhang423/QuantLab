@@ -1,10 +1,14 @@
 import unittest
 
+from custom_bt.docs import enrich_operators
+from custom_bt.expressions import list_operators
 from custom_bt.operator_registry import (
+    canonical_name,
     get_operator,
     list_operator_definitions,
     load_alphagen_operator_classes,
 )
+from quantops.registry import generation_operator_names
 
 
 class OperatorRegistryTests(unittest.TestCase):
@@ -23,6 +27,13 @@ class OperatorRegistryTests(unittest.TestCase):
         classes = load_alphagen_operator_classes()
         names = {item.__name__ for item in classes}
         self.assertTrue({"Abs", "Greater", "Less", "Ref", "Mean", "Max", "Corr"} <= names)
+
+    def test_generation_flags_match_registry_definitions(self):
+        enriched = enrich_operators(list_operators())
+        generation = {item["name"] for item in enriched if item["generation_enabled"]}
+        # 别名（add/divide/...）也标记为可生成，按 canonical 名与注册表对齐
+        self.assertEqual({canonical_name(name) for name in generation}, set(generation_operator_names()))
+        self.assertTrue(all(item["manual_enabled"] for item in enriched))
 
 
 if __name__ == "__main__":

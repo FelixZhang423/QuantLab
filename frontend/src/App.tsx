@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  App as AntApp, Avatar, Badge, Breadcrumb, Button, Card, Checkbox, Col, ConfigProvider, Descriptions,
+  Alert, App as AntApp, Avatar, Badge, Breadcrumb, Button, Card, Checkbox, Col, ConfigProvider, Descriptions,
   Divider, Drawer, Dropdown, Empty, Flex, Form, Input, Layout, Menu, message, Modal, Pagination,
-  Popover, Progress, Result, Row, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
+  Popover, Progress, Result, Row, Segmented, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
 } from "antd";
 import type { MenuProps, TableColumnsType } from "antd";
 import {
@@ -14,7 +14,11 @@ import {
 import dayjs from "dayjs";
 import { EquityChart, YearlyChart } from "./Charts";
 import { initialTasks, nowStamp, type Task, type TaskStatus, type YearlyDatum } from "./mockData";
-import { api, resultFileUrl, useApiData, type ResultDetail, type ResultSummary } from "./api/client";
+import {
+  api, resultFileUrl, useApiData,
+  type FactorBacktestBatch, type ResultDetail, type ResultSummary,
+} from "./api/client";
+import { BacktestBatchPanel, SingleResultAnalysisCard } from "./backtestAnalysis";
 import { DataOverviewPage, FieldsPage, OperatorsPage, StocksPage, type PageNav, type TaskAdder } from "./pages/DataPages";
 import { FactorBacktestPage, FactorGenerationPage, PoolsPage } from "./pages/ResearchPages";
 import { ManualBacktestPage } from "./pages/ManualBacktestPage";
@@ -32,6 +36,12 @@ const statusMeta: Record<TaskStatus, { label: string; color: string; icon: React
   finished: { label: "已完成", color: "success", icon: <CheckCircleFilled /> },
   failed: { label: "失败", color: "error", icon: <CloseCircleFilled /> },
 };
+
+function TaskAlgorithmTag({ task }: { task: Task }) {
+  const algorithm = task.params?.algorithm;
+  if (algorithm !== "ppo" && algorithm !== "llm") return <Text type="secondary">—</Text>;
+  return <Tag color={algorithm === "llm" ? "purple" : "blue"}>{algorithm === "llm" ? "LLM" : "PPO"}</Tag>;
+}
 
 function StatusTag({ status, cancelled = false }: { status: TaskStatus; cancelled?: boolean }) {
   if (cancelled) {
@@ -191,6 +201,7 @@ function TaskCenter({ tasks, setTasks, focusedId, navigate }: { tasks: Task[]; s
   const columns: TableColumnsType<Task> = [
     { title: "任务 ID", dataIndex: "id", width: 92, sorter: (a, b) => a.id - b.id, render: (v) => <Text code>#{v}</Text> },
     { title: "类型", dataIndex: "typeLabel", width: 108, filters: [...new Map(tasks.map((t) => [t.type, { text: t.typeLabel, value: t.type }])).values()], onFilter: (v, r) => r.type === v },
+    { title: "算法", key: "algorithm", width: 80, render: (_, task) => <TaskAlgorithmTag task={task} /> },
     { title: "任务名称", dataIndex: "name", ellipsis: true },
     { title: "状态", dataIndex: "status", width: 105, render: (v, r) => <StatusTag status={v} cancelled={r.cancelled} /> },
     { title: "进度", dataIndex: "progress", width: 150, render: (v, r) => <Progress percent={v} size="small" status={r.status === "failed" ? "exception" : r.status === "finished" ? "success" : "active"} /> },
@@ -238,6 +249,14 @@ function TaskCenter({ tasks, setTasks, focusedId, navigate }: { tasks: Task[]; s
         {openTask && <Space direction="vertical" size={20} className="full-width">
           <Descriptions column={1} size="small" bordered items={[
             { key: "type", label: "任务类型", children: openTask.typeLabel },
+            { key: "algorithm", label: "生成算法", children: <TaskAlgorithmTag task={openTask} /> },
+            {
+              key: "engine",
+              label: openTask.params?.algorithm === "llm" ? "模型" : "计算设备",
+              children: openTask.params?.algorithm === "llm"
+                ? String(openTask.params?.model ?? "—")
+                : openTask.params?.algorithm === "ppo" ? String(openTask.params?.device ?? "—") : "—",
+            },
             { key: "name", label: "运行名称", children: openTask.name },
             { key: "owner", label: "提交人", children: openTask.owner },
             { key: "time", label: "提交时间", children: `2026-${openTask.submittedAt}` },
@@ -252,14 +271,20 @@ function TaskCenter({ tasks, setTasks, focusedId, navigate }: { tasks: Task[]; s
   );
 }
 
+const yearlyValue = (value: number | null | undefined, suffix = "") =>
+  value == null ? "—" : `${value.toFixed(2)}${suffix}`;
+
 const yearlyColumns: TableColumnsType<YearlyDatum> = [
   { title: "年份", dataIndex: "year" },
-  { title: "收益", dataIndex: "returns", align: "right", sorter: (a, b) => a.returns - b.returns, render: (v) => <Text type={v >= 0 ? "danger" : "success"}>{v.toFixed(2)}%</Text> },
-  { title: "夏普", dataIndex: "sharpe", align: "right", render: (v) => v.toFixed(2) },
-  { title: "最大回撤", dataIndex: "drawdown", align: "right", render: (v) => `${v.toFixed(2)}%` },
-  { title: "换手率", dataIndex: "turnover", align: "right", render: (v) => `${v.toFixed(2)}%` },
-  { title: "成本", dataIndex: "cost", align: "right", render: (v) => `${v.toFixed(2)}%` },
-  { title: "胜率", dataIndex: "winRate", align: "right", render: (v) => `${v.toFixed(2)}%` },
+  {
+    title: "收益", dataIndex: "returns", align: "right", sorter: (a, b) => a.returns - b.returns,
+    render: (v) => v == null ? "—" : <Text type={v >= 0 ? "danger" : "success"}>{v.toFixed(2)}%</Text>,
+  },
+  { title: "夏普", dataIndex: "sharpe", align: "right", render: (v) => yearlyValue(v) },
+  { title: "最大回撤", dataIndex: "drawdown", align: "right", render: (v) => yearlyValue(v, "%") },
+  { title: "换手率", dataIndex: "turnover", align: "right", render: (v) => yearlyValue(v, "%") },
+  { title: "成本", dataIndex: "cost", align: "right", render: (v) => yearlyValue(v, "%") },
+  { title: "胜率", dataIndex: "winRate", align: "right", render: (v) => yearlyValue(v, "%") },
 ];
 
 function RealMetric({ title, value, suffix = "%", tone }: { title: string; value: number | null; suffix?: string; tone: string }) {
@@ -367,6 +392,11 @@ function RealResultView({
   const sourceText = dataSourceLabel(detail.data_source);
   const isFactor = detail.result_type === "factor";
   const { metrics } = detail;
+  const runApi = useApiData(
+    () => (detail.factor_run_id ? api.factorRun(detail.factor_run_id) : Promise.resolve(null)),
+    [detail.factor_run_id],
+  );
+  const algorithm = typeof runApi.data?.manifest?.algorithm === "string" ? String(runApi.data.manifest.algorithm) : "未记录";
   return (
     <Space direction="vertical" size={16} className="page-stack">
       <Card className="result-hero">
@@ -414,6 +444,7 @@ function RealResultView({
         <Col span={9}><Card title="年度收益" extra={<Text type="secondary">红涨绿跌</Text>} className="data-card">{detail.yearly.length > 0 ? <YearlyChart data={detail.yearly} /> : <Empty description="无年度指标" />}</Card></Col>
       </Row>
       <Card title="年度指标" className="data-card"><Table rowKey="year" size="middle" pagination={false} columns={yearlyColumns} dataSource={detail.yearly} /></Card>
+      <SingleResultAnalysisCard detail={detail} algorithm={algorithm} />
       <Row gutter={16}>
         <Col span={14}><ResearchNote runKey={detail.run_key} /></Col>
         <Col span={10}>
@@ -432,7 +463,7 @@ function RealResultView({
   );
 }
 
-function ResultPage({ navigate, initialRunKey }: { navigate: (p: Page, id?: number) => void; initialRunKey?: string }) {
+function SingleResultView({ navigate, initialRunKey }: { navigate: (p: Page, id?: number, runKey?: string) => void; initialRunKey?: string }) {
   const resultsApi = useApiData(api.results);
   const [selectedKey, setSelectedKey] = useState<string | null>(initialRunKey ?? null);
   // 从手动回测/因子批次带 run_key 进入时直接打开；普通导航回到最新真实结果
@@ -491,6 +522,134 @@ function ResultPage({ navigate, initialRunKey }: { navigate: (p: Page, id?: numb
     );
   }
   return <Card><Skeleton active paragraph={{ rows: 12 }} /></Card>;
+}
+
+function BatchResultView({ navigate, initialBatchId }: { navigate: (p: Page, id?: number, runKey?: string) => void; initialBatchId?: string }) {
+  const runsApi = useApiData(api.factorRuns);
+  const [entries, setEntries] = useState<{ runId: string; batch: FactorBacktestBatch }[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(true);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | undefined>(initialBatchId);
+
+  useEffect(() => {
+    let alive = true;
+    const runs = runsApi.data?.runs ?? [];
+    if (!runs.length) {
+      setEntries([]);
+      setLoadingBatches(Boolean(runsApi.loading));
+      return () => { alive = false; };
+    }
+    setLoadingBatches(true);
+    Promise.all(runs.map(async (run) => {
+      try {
+        const data = await api.factorBacktests(run.run_id);
+        return (data.batches ?? []).map((batch) => ({ runId: run.run_id, batch }));
+      } catch {
+        return [];
+      }
+    })).then((groups) => {
+      if (!alive) return;
+      const flat = groups.flat().sort((a, b) => String(b.batch.created_at ?? "").localeCompare(String(a.batch.created_at ?? "")));
+      setEntries(flat);
+      setLoadingBatches(false);
+      setSelectedBatchId((current) => (current && flat.some((entry) => entry.batch.backtest_id === current) ? current : flat[0]?.batch.backtest_id));
+    });
+    return () => { alive = false; };
+  }, [runsApi.data, runsApi.loading]);
+
+  useEffect(() => {
+    if (initialBatchId) setSelectedBatchId(initialBatchId);
+  }, [initialBatchId]);
+
+  const selected = entries.find((entry) => entry.batch.backtest_id === selectedBatchId) ?? entries[0] ?? null;
+  const batchApi = useApiData(
+    () => (selected ? api.factorBacktest(selected.runId, selected.batch.backtest_id) : Promise.resolve(null)),
+    [selected?.runId, selected?.batch.backtest_id],
+  );
+  const runDetailApi = useApiData(
+    () => (selected ? api.factorRun(selected.runId) : Promise.resolve(null)),
+    [selected?.runId],
+  );
+  const algorithm = typeof runDetailApi.data?.manifest?.algorithm === "string"
+    ? String(runDetailApi.data.manifest.algorithm)
+    : "未记录";
+  const detail = selected && batchApi.data?.batch.backtest_id === selected.batch.backtest_id ? batchApi.data : null;
+  const batch = detail?.batch ?? selected?.batch ?? null;
+
+  if (runsApi.loading || loadingBatches) {
+    return <Card><Skeleton active paragraph={{ rows: 10 }} /></Card>;
+  }
+  if (runsApi.error) {
+    return (
+      <Card>
+        <Result status="warning" title="因子运行加载失败" subTitle={runsApi.error}
+          extra={<Button onClick={runsApi.reload}>重试</Button>} />
+      </Card>
+    );
+  }
+  if (!entries.length) {
+    return (
+      <Card>
+        <Empty description="还没有批次回测记录">
+          <Button type="primary" onClick={() => navigate("factor_backtest")}>去因子回测</Button>
+        </Empty>
+      </Card>
+    );
+  }
+  return (
+    <Card
+      title={<Space><ExperimentOutlined />批次回测结果</Space>}
+      className="data-card"
+      extra={<Space wrap>
+        <Select
+          size="small"
+          value={selected?.batch.backtest_id}
+          onChange={(value) => setSelectedBatchId(value)}
+          options={entries.map((entry) => ({
+            value: entry.batch.backtest_id,
+            label: `${entry.batch.backtest_id} · ${entry.runId} · 成功 ${entry.batch.completed ?? "—"}/${entry.batch.selected_count ?? "—"}`,
+          }))}
+          style={{ minWidth: 380 }}
+        />
+        <Button size="small" icon={<ReloadOutlined />} onClick={runsApi.reload}>刷新</Button>
+      </Space>}
+    >
+      {batchApi.error && <Alert style={{ marginBottom: 12 }} type="error" showIcon message="批次详情加载失败" description={batchApi.error} />}
+      {selected && batch && (
+        <BacktestBatchPanel
+          runId={selected.runId}
+          batch={batch}
+          rows={detail?.rows ?? []}
+          failures={detail?.failures ?? []}
+          algorithm={algorithm}
+          onOpenResult={(runKey) => navigate("result", undefined, runKey)}
+        />
+      )}
+    </Card>
+  );
+}
+
+function ResultPage({ navigate, initialRunKey }: { navigate: (p: Page, id?: number, runKey?: string) => void; initialRunKey?: string }) {
+  const batchRequested = initialRunKey?.startsWith("batch:") ?? false;
+  const [view, setView] = useState<"single" | "batch">(batchRequested ? "batch" : "single");
+  useEffect(() => {
+    if (initialRunKey?.startsWith("batch:")) setView("batch");
+    else if (initialRunKey) setView("single");
+  }, [initialRunKey]);
+  const initialBatchId = initialRunKey?.startsWith("batch:") ? initialRunKey.slice("batch:".length) : undefined;
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Card className="filter-card" size="small">
+        <Segmented
+          value={view}
+          onChange={(value) => setView(value as "single" | "batch")}
+          options={[{ label: "单次结果", value: "single" }, { label: "批次回测", value: "batch" }]}
+        />
+      </Card>
+      {view === "single"
+        ? <SingleResultView navigate={navigate} initialRunKey={initialRunKey} />
+        : <BatchResultView navigate={navigate} initialBatchId={initialBatchId} />}
+    </Space>
+  );
 }
 
 function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
