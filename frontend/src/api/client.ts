@@ -223,6 +223,8 @@ export type OperatorInfo = {
   example: string;
   generation_enabled: boolean;
   manual_enabled: boolean;
+  /** 该 canonical 算子兼容的别名，例如 sub 的 subtract/Sub */
+  aliases?: string[];
 };
 
 export type PoolInfo = {

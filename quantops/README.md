@@ -1,6 +1,6 @@
 # quantops
 
-80 个 Alpha101 / BRAIN 风格横截面与时序算子 + 表达式引擎，独立成库。
+82 个 Alpha101 / BRAIN 风格横截面与时序算子 + 表达式引擎，独立成库。
 
 只依赖 **numpy + pandas**，不依赖本仓库任何其它模块 —— 可以在任何 Python 项目里 `import quantops` 直接用。
 
@@ -75,7 +75,7 @@ import quantops as qo
 
 ops = qo.OperatorSet(panel)              # 绑定面板：date / code + 若干字段列
 
-ops.rank(ops.ts_mean("close", 20))       # 80 个算子都是实例方法，字段名直接当参数
+ops.rank(ops.ts_mean("close", 20))       # 82 个算子都是实例方法，字段名直接当参数
 ops.eval("rank(ts_mean(close, 20))")     # 表达式字符串 -> DataFrame[date, code, alpha]
 ops.to_frame(ops.rank("close"))          # MultiIndex Series -> 面板 DataFrame
 
@@ -142,8 +142,8 @@ py -3 -m pytest -q
 ```
 quantops/
   core.py        # 私有 Series 助手（_as_series / _rolling / _rank / _group_* / _ts_* …）
-  operators.py   # 80 个算子实现 + OPERATORS 注册表 + register_operator
-  registry.py    # 22 个 canonical 定义（arity / alphagen 名 / 是否参与生成）
+  operators.py   # 82 个算子实现 + OPERATORS 注册表 + register_operator
+  registry.py    # 64 个 canonical 定义（arity / alphagen 名 / 是否参与生成）
   expression.py  # AST 白名单 + 表达式求值引擎
   panel.py       # 面板 <-> MultiIndex Series 互转
   metadata.py    # 中文分类 / 说明 / 示例 + catalog() / describe() / categories()
@@ -154,6 +154,6 @@ quantops/
 
 测试分五块：`test_quantops_expression.py`（从回测器原样移植的精确数值断言）、
 `test_public_api.py`（公开接口、面板互转、访问器、依赖守门、独立性）、
-`test_golden_values.py`（固定面板上的算子金标准：80 个算子各一个 sha256 摘要 + 12 个代表算子的可读切片）、
+`test_golden_values.py`（固定面板上的算子金标准：82 个算子各一个 sha256 摘要 + 12 个代表算子的可读切片）、
 `test_cli.py`（`list` / `describe` / `eval` 与同名目录报错文案）、
 `test_opset.py`（`OperatorSet` 与函数式逐值一致、字段名/字面量字符串区分、错误提示、动态注册）。

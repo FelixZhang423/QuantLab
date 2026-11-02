@@ -11,6 +11,7 @@ from ._vendor.alphagen.data.expression import (
     BinaryOperator,
     PairRollingOperator,
     RollingOperator,
+    TernaryOperator,
     UnaryOperator,
 )
 from ._vendor.alphagen.data.tokens import (
@@ -84,11 +85,13 @@ class SingleFactorEnvCore(gym.Env):
         valid_op_binary = self._builder.validate_op(BinaryOperator)
         valid_op_rolling = self._builder.validate_op(RollingOperator)
         valid_op_pair_rolling = self._builder.validate_op(PairRollingOperator)
+        valid_op_ternary = self._builder.validate_op(TernaryOperator)
         valid_op = (
             valid_op_unary
             or valid_op_binary
             or valid_op_rolling
             or valid_op_pair_rolling
+            or valid_op_ternary
         )
         return {
             "select": [
@@ -103,6 +106,7 @@ class SingleFactorEnvCore(gym.Env):
                 BinaryOperator: valid_op_binary,
                 RollingOperator: valid_op_rolling,
                 PairRollingOperator: valid_op_pair_rolling,
+                TernaryOperator: valid_op_ternary,
             },
         }
 

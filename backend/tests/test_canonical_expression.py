@@ -28,6 +28,8 @@ class CanonicalExpressionTests(unittest.TestCase):
         self.assertEqual(canonicalize_alphagen("Less($close,$open)"), "min(close,open)")
         self.assertEqual(canonicalize_alphagen("Ref($close,20d)"), "delay(close,20)")
         self.assertEqual(canonicalize_alphagen("Mean($close,20d)"), "ts_mean(close,20)")
+        self.assertEqual(canonicalize_alphagen("ZScore($close)"), "zscore(close)")
+        self.assertEqual(canonicalize_alphagen("SignedPower($close,2)"), "signed_power(close,2)")
 
     def test_canonical_max_and_time_series_max_are_distinct(self):
         self.assertEqual(canonicalize_alphagen("Greater($close,$open)"), "max(close,open)")
@@ -66,6 +68,139 @@ class CanonicalExpressionTests(unittest.TestCase):
             serialize_alphagen_expression(expression),
             "ts_mean(max(close,open),20)",
         )
+
+    def test_new_alphagen_operator_classes_serialize_to_local_names(self):
+        load_alphagen_operator_classes()
+        from single_factor.expression import NamedFeature
+        from single_factor._vendor.alphagen.data.expression import (
+            And,
+            CSRank,
+            DaysFromLastChange,
+            Equal,
+            GreaterEqual,
+            GreaterThan,
+            Hump,
+            IfElse,
+            Inverse,
+            IsNan,
+            KthElement,
+            Kurt,
+            LastDiffValue,
+            LessEqual,
+            LessThan,
+            Normalize,
+            Not,
+            NotEqual,
+            Or,
+            Pow,
+            Quantile,
+            Rank,
+            Reverse,
+            Scale,
+            Sign,
+            SignedPower,
+            Skew,
+            Sqrt,
+            TSArgMax,
+            TSArgMin,
+            TSAvDiff,
+            TSBackfill,
+            TSCountNans,
+            TSDecayLinear,
+            TSProduct,
+            TSQuantile,
+            TSRegression,
+            TSScale,
+            TSStep,
+            TSZScore,
+            Winsorize,
+            ZScore,
+        )
+
+        close = NamedFeature("close")
+        volume = NamedFeature("volume")
+        open_ = NamedFeature("open")
+        cases = [
+            (Sign(close), "sign(close)"),
+            (Pow(close, 2), "power(close,2)"),
+            (CSRank(close), "rank(close)"),
+            (Rank(close, 20), "ts_rank(close,20)"),
+            (Skew(close, 20), "ts_skew(close,20)"),
+            (Kurt(close, 20), "ts_kurt(close,20)"),
+            (Inverse(close), "inverse(close)"),
+            (Reverse(close), "reverse(close)"),
+            (Sqrt(close), "sqrt(close)"),
+            (SignedPower(close, 2), "signed_power(close,2)"),
+            (ZScore(close), "zscore(close)"),
+            (Scale(close), "scale(close)"),
+            (Winsorize(close), "winsorize(close)"),
+            (Normalize(close), "normalize(close)"),
+            (Quantile(close), "quantile(close)"),
+            (DaysFromLastChange(close), "days_from_last_change(close)"),
+            (Hump(close), "hump(close)"),
+            (TSStep(close), "ts_step(close)"),
+            (TSArgMax(close, 20), "ts_arg_max(close,20)"),
+            (TSArgMin(close, 20), "ts_arg_min(close,20)"),
+            (TSAvDiff(close, 20), "ts_av_diff(close,20)"),
+            (TSBackfill(close, 5), "ts_backfill(close,5)"),
+            (TSCountNans(close, 20), "ts_count_nans(close,20)"),
+            (TSDecayLinear(close, 10), "ts_decay_linear(close,10)"),
+            (TSProduct(close, 5), "ts_product(close,5)"),
+            (TSQuantile(close, 20), "ts_quantile(close,20)"),
+            (TSScale(close, 20), "ts_scale(close,20)"),
+            (TSZScore(close, 20), "ts_zscore(close,20)"),
+            (KthElement(close, 20), "kth_element(close,20)"),
+            (LastDiffValue(close, 20), "last_diff_value(close,20)"),
+            (TSRegression(close, volume, 20), "ts_regression(close,volume,20)"),
+            (And(close, volume), "and_(close,volume)"),
+            (Or(close, volume), "or_(close,volume)"),
+            (Not(close), "not_(close)"),
+            (Equal(close, volume), "equal(close,volume)"),
+            (NotEqual(close, volume), "not_equal(close,volume)"),
+            (GreaterThan(close, volume), "greater(close,volume)"),
+            (GreaterEqual(close, volume), "greater_equal(close,volume)"),
+            (LessThan(close, volume), "less(close,volume)"),
+            (LessEqual(close, volume), "less_equal(close,volume)"),
+            (IsNan(close), "is_nan(close)"),
+            (IfElse(close, open_, volume), "if_else(close,open,volume)"),
+        ]
+        for expression, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(serialize_alphagen_expression(expression), expected)
+
+    def test_ternary_operator_can_be_built_by_action_tokens(self):
+        load_alphagen_operator_classes()
+        from single_factor.expression import (
+            NamedFeatureToken,
+            SingleFactorExpressionBuilder,
+        )
+        from single_factor._vendor.alphagen.data.expression import IfElse
+        from single_factor._vendor.alphagen.data.tokens import OperatorToken
+
+        builder = SingleFactorExpressionBuilder()
+        for name in ("close", "open", "volume"):
+            builder.add_token(NamedFeatureToken(name))
+        self.assertTrue(builder.validate_op(IfElse))
+        builder.add_token(OperatorToken(IfElse))
+        self.assertTrue(builder.is_valid())
+        self.assertEqual(
+            serialize_alphagen_expression(builder.get_tree()),
+            "if_else(close,open,volume)",
+        )
+
+    def test_environment_action_mask_exposes_ternary_operators(self):
+        load_alphagen_operator_classes()
+        from single_factor.environment import SingleFactorEnvCore
+        from single_factor.expression import NamedFeatureToken
+        from single_factor._vendor.alphagen.data.expression import TernaryOperator
+
+        env = SingleFactorEnvCore(
+            feature_names=("close", "open", "volume"),
+            evaluator=None,
+        )
+        for name in ("close", "open", "volume"):
+            env.step(NamedFeatureToken(name))
+        self.assertTrue(env.valid_action_types()["op"][TernaryOperator])
 
 
 if __name__ == "__main__":

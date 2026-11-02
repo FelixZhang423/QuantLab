@@ -37,10 +37,28 @@ class DocsTests(unittest.TestCase):
     def test_all_registered_operators_have_chinese_descriptions(self):
         enriched = enrich_operators(list_operators())
 
-        self.assertEqual(len(enriched), len(list_operators()))
+        self.assertEqual(len(enriched), len(list_operators()) - 7)
         self.assertTrue(all(item["description_cn"] for item in enriched))
         ts_rank = next(item for item in enriched if item["name"] == "ts_rank")
         self.assertNotEqual(ts_rank["description_cn"], "Rolling percentile rank of current value per stock.")
+
+    def test_alias_operators_are_merged_into_canonical_rows(self):
+        enriched = enrich_operators(list_operators())
+        by_name = {item["name"]: item for item in enriched}
+        self.assertNotIn("subtract", by_name)
+        self.assertNotIn("multiply", by_name)
+        self.assertNotIn("divide", by_name)
+        self.assertNotIn("ts_delay", by_name)
+        self.assertNotIn("ts_delta", by_name)
+        self.assertNotIn("ts_std_dev", by_name)
+        self.assertNotIn("where", by_name)
+        self.assertIn("subtract", by_name["sub"]["aliases"])
+        self.assertIn("multiply", by_name["mul"]["aliases"])
+        self.assertIn("divide", by_name["div"]["aliases"])
+        self.assertIn("ts_delay", by_name["delay"]["aliases"])
+        self.assertIn("ts_delta", by_name["delta"]["aliases"])
+        self.assertIn("ts_std_dev", by_name["ts_std"]["aliases"])
+        self.assertIn("where", by_name["if_else"]["aliases"])
 
     def test_all_registered_operators_have_examples(self):
         enriched = enrich_operators(list_operators())

@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | `原型/` | React + TypeScript 前端工作台（数据浏览、股票池、因子回测、结果详情等） | 已上传（`6143fda`） |
 | `custom_backtester/` | FastAPI 接口层 + 回测/因子/股票池核心逻辑 + 测试 | 已上传（`6143fda`） |
-| `quantops/` | 80 个因子算子 + 表达式引擎的独立库 | 已上传（`d25666e`） |
+| `quantops/` | 82 个因子算子 + 表达式引擎的独立库 | 已上传（`d25666e`） |
 | `custom_backtester/data_cache/master/` | 本地主缓存（parquet 快照，初始提交已包含） | 已上传，约 810 MB / 5434 个文件 |
 | `factor_runs/`（仓库根） | 因子运行结果（包括本地演示运行） | **未上传**（`.gitignore`） |
 | `custom_backtester/outputs/` | 后台任务、回测结果、日志 | **未上传**（`.gitignore`） |
@@ -105,7 +105,7 @@ pnpm dev
 
 - **数据总览**：能看到股票数、行数、日期区间 → ClickHouse 已连通；
 - **股票池**：能按行业/板块筛选并预览 → 公司库和本地主缓存都正常；
-- **操作符**：能看到 80 个算子；
+- **操作符**：能看到 75 个去重算子（82 个手动名字）；
 - **因子回测**：本地没有 `factor_runs/` 时为空是正常的。
 
 ### 端口冲突
@@ -243,7 +243,7 @@ py -3 -m api
 | `custom_bt/factor_backtest.py` | 已合格因子的批量回测、版本化输出、MySQL 镜像 |
 | `custom_bt/results.py` | 本地回测结果扫描与详情 |
 | `custom_bt/expressions.py` | 转发 `quantops` 的表达式求值；兼容旧接口 |
-| `custom_bt/operator_registry.py` | 转发 22 个 canonical 定义；AlphaGen 类加载留在本仓库 |
+| `custom_bt/operator_registry.py` | 转发 64 个 canonical 定义；AlphaGen 类加载留在本仓库 |
 | `custom_bt/docs.py` | `/api/operators` 的唯一生产者；**被测试锁住，不要修改** |
 | `custom_bt/mysql_store.py` | MySQL `QuantLab` 读写层（股票池优先读），schema v3，14 张表 |
 | `custom_bt/platform_jobs.py` | 平台任务目录、`status.json`、进度 |
@@ -291,20 +291,20 @@ py -3 -m custom_bt.cli mysql-sync       # 本地结果补录到 MySQL
 
 ### 5.1 定位
 
-80 个 Alpha101 / BRAIN 风格算子 + 表达式引擎，只依赖 numpy / pandas，可独立于本项目使用。`custom_backtester/custom_bt/expressions.py` 只是转发，算子实现以 `quantops/` 为准。
+82 个 Alpha101 / BRAIN 风格算子 + 表达式引擎，只依赖 numpy / pandas，可独立于本项目使用。`custom_backtester/custom_bt/expressions.py` 只是转发，算子实现以 `quantops/` 为准。
 
 ### 5.2 结构
 
 | 文件 | 作用 |
 | --- | --- |
 | `quantops/core.py` | 底层原语：按 code 滚动、按 date 横截面、分组运算、协方差/相关/EMA 等 |
-| `quantops/operators.py` | 80 个算子的 `OPERATORS` 注册表 + `register_operator` |
-| `quantops/registry.py` | 22 个 canonical 定义（arity、AlphaGen 名、是否参与生成、别名） |
+| `quantops/operators.py` | 82 个算子的 `OPERATORS` 注册表 + `register_operator` |
+| `quantops/registry.py` | 64 个 canonical 定义（arity、AlphaGen 名、是否参与生成、别名） |
 | `quantops/expression.py` | AST 白名单沙箱，`evaluate()` |
 | `quantops/panel.py` | 长表 ↔ `MultiIndex(date, code)` Series 互转 |
 | `quantops/metadata.py` | 中文分类/说明/示例，`catalog()` 与 `/api/operators` 对齐 |
 | `quantops/accessor.py` | pandas 访问器 `Series.qo` |
-| `quantops/opset.py` | `OperatorSet` 类式入口（动态生成 80 个方法） |
+| `quantops/opset.py` | `OperatorSet` 类式入口（动态生成 82 个方法） |
 | `quantops/__main__.py` | CLI：`list` / `describe` / `eval` |
 | `quantops/tests/` | 表达式、公开 API、金标准、CLI、OperatorSet 测试 |
 

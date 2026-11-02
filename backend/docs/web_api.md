@@ -42,7 +42,7 @@
 | `GET /api/universe/codes` | 股票池预览（全选/反选） | **ClickHouse 实时**（同一份快照，仅返回代码） | 当前筛选下全部匹配代码（跨页勾选） |
 | `POST /api/pools` | 股票池提交 | 候选与选样统计直接查 ClickHouse（`create_pool_from_company`），成功后写 MySQL | 202 + `job_id`（后台任务） |
 | `GET /api/jobs/{job_id}` | 建池任务状态 | `outputs/jobs/<job_id>/status.json` | queued / running / finished / failed |
-| `GET /api/operators` | 操作符 | `expressions.list_operators()` + `operator_registry` | 80 个算子（中文分类/说明） |
+| `GET /api/operators` | 操作符 | `expressions.list_operators()` + `operator_registry` | 75 个去重算子（82 个手动名字，中文分类/说明） |
 | `GET /api/pools` `/{pool_id}` | 因子股票池 | **MySQL 优先**（`pools.manifest` + `pool_codes`），回退 `data_cache/pools/*/manifest.json` + `codes.txt` | 5 个股票池；响应带 `storage` 标记 |
 | `DELETE /api/pools/{pool_id}?confirm=true` | 股票池详情抽屉 | 同步删除 MySQL `pools/pool_codes/pool_candidates/pool_stats` + 本地池目录 | 返回 `deleted_local/deleted_mysql/warnings` |
 | `GET /api/factor-runs` `/{run_id}` | 因子回测（运行选择） | `factor_runs/<run_id>/factor_run.json` + `accepted_factors.jsonl` | 合格因子清单与生成指标 |
@@ -79,14 +79,14 @@
 - 与本地缓存口径的差异：缓存是 2021 年起、5432 只；实时是全历史（含退市），因此行数、股票数、最新日期都更大
 - 该端点与股票池候选共用 `stock_rows` 快照（默认 300s，`QL_CH_UNIVERSE_TTL` 可调）；响应里的 `cached / queried_at` 标明本次是否命中缓存。`QL_CH_CACHE_TTL=0` 不会关掉这份候选快照。
 
-### 2.4 操作符（80 个）
+### 2.4 操作符（75 个去重 / 82 个手动名字）
 
 来源：`expressions.list_operators()` 与 `operator_registry` 合并，经 `enrich_operators` 补中文分类与说明。
 
 > 2026-10-14 起，这两个函数的实现已搬到独立库 **`quantops/`**（算子唯一实现，库路径 `../quantops`）：`custom_bt/expressions.py` 与 `custom_bt/operator_registry.py` 只剩转发，`expressions.OPERATORS is quantops.operators.OPERATORS`。**本端点响应逐字节不变**（迁移前后 `/api/operators` JSON diff 为空）。改算子请去 `quantops/quantops/operators.py`；`custom_bt/docs.py` 仍是中文元数据的源头（`quantops/metadata.py` 存副本，两边由 `tests/test_quantops_metadata_parity.py` 锁死）。
 
-- 分类分布：时间序列 34、数学运算 18、逻辑判断 12、横截面 6、分组 6、信号转换 2、向量 2
-- 其中 **25 个**可进入因子生成（页面显示「可生成」标签）
+- 分类分布：时间序列 36、数学运算 18、逻辑判断 12、横截面 6、分组 6、信号转换 2、向量 2
+- 其中 **64 个**可进入因子生成（页面显示「可生成」标签）
 
 ### 2.5 股票池（1 个：liquid_500）
 

@@ -11,6 +11,7 @@ from ._vendor.alphagen.data.expression import (
     Operators,
     PairRollingOperator,
     RollingOperator,
+    TernaryOperator,
     UnaryOperator,
 )
 from ._vendor.alphagen.data.parser import ExpressionParser, ExpressionParsingError
@@ -163,6 +164,13 @@ class SingleFactorExpressionBuilder:
                 isinstance(self.stack[-1], DeltaTime)
                 and self.stack[-2].is_featured
                 and self.stack[-3].is_featured
+            )
+        if issubclass(op, TernaryOperator):
+            return (
+                (self.stack[-1].is_featured or self.stack[-2].is_featured or self.stack[-3].is_featured)
+                and not isinstance(self.stack[-1], DeltaTime)
+                and not isinstance(self.stack[-2], DeltaTime)
+                and not isinstance(self.stack[-3], DeltaTime)
             )
         return False
 

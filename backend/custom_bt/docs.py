@@ -94,8 +94,10 @@ OPERATOR_CN_DESCRIPTIONS = {
     "ts_rank": "按股票计算当前值在过去 n 天窗口内的百分位排名。",
     "ts_regression": "按股票做滚动线性回归，当前实现返回 y 对 x 的斜率。",
     "ts_scale": "按股票用滚动最小值和最大值做 0 到 1 缩放。",
+    "ts_skew": "按股票计算滚动偏度，衡量窗口内收益分布的不对称程度。",
     "ts_std": "按股票计算滚动标准差。",
     "ts_std_dev": "ts_std 的 Brain 风格别名，按股票计算滚动标准差。",
+    "ts_kurt": "按股票计算滚动超额峰度，衡量窗口内极端值出现的频率。",
     "ts_step": "按股票生成从 0 开始的时间序号。",
     "ts_sum": "按股票计算滚动求和。",
     "ts_zscore": "按股票计算滚动 zscore，衡量相对自身历史均值的偏离。",
@@ -175,8 +177,10 @@ OPERATOR_EXAMPLES = {
     "ts_rank": "ts_rank(close, 20)",
     "ts_regression": "ts_regression(close, volume, 20)",
     "ts_scale": "ts_scale(close, 20)",
+    "ts_skew": "ts_skew(close, 20)",
     "ts_std": "ts_std(close, 20)",
     "ts_std_dev": "ts_std_dev(close, 20)",
+    "ts_kurt": "ts_kurt(close, 20)",
     "ts_step": "ts_step(close)",
     "ts_sum": "ts_sum(volume, 20)",
     "ts_zscore": "ts_zscore(close, 20)",
@@ -228,30 +232,75 @@ def enrich_fields(fields: Iterable[Dict[str, str]], doc_path: str | Path) -> Lis
 
 
 def enrich_operators(operators: Iterable[Dict[str, str]]) -> List[Dict[str, str]]:
-    enriched = []
+    """合并 canonical/别名，返回去重后的算子清单。
+
+    quantops 的 OPERATORS 仍保留 82 个名字供手动表达式兼容；对外展示时
+    sub/subtract、mul/multiply、div/divide 合并为 1 个 canonical 算子。
+    """
+    grouped: Dict[str, Dict[str, object]] = {}
+    standalone: List[Dict[str, str]] = []
     for item in operators:
-        category = item.get("category", "")
         name = item["name"]
+        category = item.get("category", "")
         try:
             definition = get_operator(name)
         except KeyError:
-            definition = None
-        enriched.append(
+            standalone.append(
+                {
+                    "name": name,
+                    "category": category,
+                    "category_cn": CATEGORY_CN.get(category, category),
+                    "canonical_name": name,
+                    "description_cn": OPERATOR_CN_DESCRIPTIONS.get(
+                        name, item.get("description", "")
+                    ),
+                    "example": OPERATOR_EXAMPLES.get(name, f"{name}(close)"),
+                    "generation_enabled": False,
+                    "manual_enabled": True,
+                    "aliases": [],
+                }
+            )
+            continue
+        key = definition.canonical_name
+        group = grouped.setdefault(
+            key,
             {
-                "name": name,
+                "category": category,
+                "description": item.get("description", ""),
+                "definition": definition,
+                "names": set(),
+            },
+        )
+        if name == key:
+            group["category"] = category
+            group["description"] = item.get("description", "")
+        group["names"].add(name)
+
+    merged = list(standalone)
+    for key, group in grouped.items():
+        definition = group["definition"]
+        names = {key, *definition.aliases}
+        description = next(
+            (OPERATOR_CN_DESCRIPTIONS[name] for name in [key, *definition.aliases] if name in OPERATOR_CN_DESCRIPTIONS),
+            definition.description or str(group["description"]),
+        )
+        example = next(
+            (OPERATOR_EXAMPLES[name] for name in [key, *definition.aliases] if name in OPERATOR_EXAMPLES),
+            definition.example or f"{key}(close)",
+        )
+        category = str(group["category"])
+        merged.append(
+            {
+                "name": key,
                 "category": category,
                 "category_cn": CATEGORY_CN.get(category, category),
-                "canonical_name": definition.canonical_name if definition else name,
-                "description_cn": OPERATOR_CN_DESCRIPTIONS.get(
-                    name,
-                    definition.description if definition else item.get("description", ""),
-                ),
-                "example": OPERATOR_EXAMPLES.get(
-                    name,
-                    definition.example if definition else f"{name}(close)",
-                ),
-                "generation_enabled": bool(definition and definition.generation_enabled),
-                "manual_enabled": bool(definition.manual_enabled) if definition else True,
+                "canonical_name": key,
+                "description_cn": description,
+                "example": example,
+                "generation_enabled": bool(definition.generation_enabled),
+                "manual_enabled": bool(definition.manual_enabled),
+                "aliases": sorted(names - {key}),
             }
         )
-    return enriched
+
+    return sorted(merged, key=lambda item: (item["category"], item["name"]))

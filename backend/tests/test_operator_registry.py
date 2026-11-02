@@ -27,6 +27,72 @@ class OperatorRegistryTests(unittest.TestCase):
         classes = load_alphagen_operator_classes()
         names = {item.__name__ for item in classes}
         self.assertTrue({"Abs", "Greater", "Less", "Ref", "Mean", "Max", "Corr"} <= names)
+        self.assertTrue(
+            {
+                "Sign", "CSRank", "Pow", "Skew", "Kurt", "Rank",
+                "Inverse", "Reverse", "Sqrt", "SignedPower",
+                "ZScore", "Scale", "Winsorize", "Normalize", "Quantile",
+                "DaysFromLastChange", "Hump", "TSStep",
+                "TSArgMax", "TSArgMin", "TSAvDiff", "TSBackfill",
+                "TSCountNans", "TSDecayLinear", "TSProduct", "TSQuantile",
+                "TSScale", "TSZScore", "KthElement", "LastDiffValue",
+                "TSRegression",
+                "And", "Or", "Not", "Equal", "NotEqual",
+                "GreaterThan", "GreaterEqual", "LessThan", "LessEqual",
+                "IsNan", "IfElse",
+            } <= names
+        )
+        self.assertEqual(len(classes), 64)
+
+    def test_new_alphagen_classes_map_to_local_implementations(self):
+        expected = {
+            "Sign": "sign",
+            "CSRank": "rank",
+            "Pow": "power",
+            "Skew": "ts_skew",
+            "Kurt": "ts_kurt",
+            "Rank": "ts_rank",
+            "Inverse": "inverse",
+            "Reverse": "reverse",
+            "Sqrt": "sqrt",
+            "SignedPower": "signed_power",
+            "ZScore": "zscore",
+            "Scale": "scale",
+            "Winsorize": "winsorize",
+            "Normalize": "normalize",
+            "Quantile": "quantile",
+            "DaysFromLastChange": "days_from_last_change",
+            "Hump": "hump",
+            "TSStep": "ts_step",
+            "TSArgMax": "ts_arg_max",
+            "TSArgMin": "ts_arg_min",
+            "TSAvDiff": "ts_av_diff",
+            "TSBackfill": "ts_backfill",
+            "TSCountNans": "ts_count_nans",
+            "TSDecayLinear": "ts_decay_linear",
+            "TSProduct": "ts_product",
+            "TSQuantile": "ts_quantile",
+            "TSScale": "ts_scale",
+            "TSZScore": "ts_zscore",
+            "KthElement": "kth_element",
+            "LastDiffValue": "last_diff_value",
+            "TSRegression": "ts_regression",
+            "And": "and_",
+            "Or": "or_",
+            "Not": "not_",
+            "Equal": "equal",
+            "NotEqual": "not_equal",
+            "GreaterThan": "greater",
+            "GreaterEqual": "greater_equal",
+            "LessThan": "less",
+            "LessEqual": "less_equal",
+            "IsNan": "is_nan",
+            "IfElse": "if_else",
+        }
+        for alphagen_name, local_impl in expected.items():
+            with self.subTest(alphagen_name=alphagen_name):
+                definition = get_operator(alphagen_name)
+                self.assertEqual(definition.local_impl, local_impl)
 
     def test_generation_flags_match_registry_definitions(self):
         enriched = enrich_operators(list_operators())

@@ -222,6 +222,44 @@ class BinaryOperator(Operator):
     def is_featured(self): return self._lhs.is_featured or self._rhs.is_featured
 
 
+class TernaryOperator(Operator):
+    def __init__(self, first: _ExprOrFloat, second: _ExprOrFloat, third: _ExprOrFloat) -> None:
+        self._first = _into_expr(first)
+        self._second = _into_expr(second)
+        self._third = _into_expr(third)
+
+    @classmethod
+    def n_args(cls) -> int: return 3
+
+    @classmethod
+    def category_type(cls): return TernaryOperator
+
+    @classmethod
+    def validate_parameters(cls, *args) -> Maybe[str]:
+        return cls._check_arity(*args).or_else(
+            lambda: cls._check_exprs_featured([args[0], args[1], args[2]])
+        )
+
+    def evaluate(self, data: StockData, period: slice = slice(0, 1)) -> Tensor:
+        return self._apply(
+            self._first.evaluate(data, period),
+            self._second.evaluate(data, period),
+            self._third.evaluate(data, period),
+        )
+
+    @abstractmethod
+    def _apply(self, first: Tensor, second: Tensor, third: Tensor) -> Tensor: ...
+
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self._first},{self._second},{self._third})"
+
+    @property
+    def operands(self): return self._first, self._second, self._third
+
+    @property
+    def is_featured(self): return any(item.is_featured for item in self.operands)
+
+
 class RollingOperator(Operator):
     def __init__(self, operand: _ExprOrFloat, delta_time: _DTimeOrInt) -> None:
         self._operand = _into_expr(operand)
@@ -316,6 +354,21 @@ class Sign(UnaryOperator):
     def _apply(self, operand: Tensor) -> Tensor: return operand.sign()
 
 
+class Inverse(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        return torch.where(operand == 0, torch.full_like(operand, torch.nan), 1.0 / operand)
+
+
+class Reverse(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor: return -operand
+
+
+class Sqrt(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        result = operand.clamp_min(0).sqrt()
+        return torch.where(operand >= 0, result, torch.full_like(operand, torch.nan))
+
+
 class Log(UnaryOperator):
     def _apply(self, operand: Tensor) -> Tensor: return operand.log()
 
@@ -327,6 +380,83 @@ class CSRank(UnaryOperator):
         rank = operand.argsort().argsort() / n
         rank[nan_mask] = torch.nan
         return rank
+
+
+def _cross_section_mean_std(operand: Tensor):
+    mean = torch.nanmean(operand, dim=1, keepdim=True)
+    var = torch.nanmean((operand - mean) ** 2, dim=1, keepdim=True)
+    return mean, var.sqrt()
+
+
+class ZScore(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        mean, std = _cross_section_mean_std(operand)
+        return torch.where(std > 0, (operand - mean) / std, torch.full_like(operand, torch.nan))
+
+
+class Scale(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        denom = torch.nansum(operand.abs(), dim=1, keepdim=True)
+        return torch.where(denom > 0, operand / denom, torch.full_like(operand, torch.nan))
+
+
+class Winsorize(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        mean, std = _cross_section_mean_std(operand)
+        lower, upper = mean - 4 * std, mean + 4 * std
+        clipped = torch.maximum(torch.minimum(operand, upper), lower)
+        return torch.where(std.isnan(), operand, clipped)
+
+
+class Normalize(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        mean = torch.nanmean(operand, dim=1, keepdim=True)
+        return operand - mean
+
+
+class Quantile(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        valid = ~operand.isnan()
+        n = valid.sum(dim=1, keepdim=True).clamp_min(1)
+        ranks = operand.argsort(dim=1, stable=True).argsort(dim=1) + 1
+        pct = (ranks / n).clamp(1e-6, 1 - 1e-6)
+        result = (2 ** 0.5) * torch.erfinv(2 * pct - 1)
+        return torch.where(valid, result, torch.full_like(operand, torch.nan))
+
+
+class DaysFromLastChange(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        result = torch.empty_like(operand)
+        result[0] = 0
+        days = torch.zeros_like(operand[0])
+        prev = operand[0]
+        for index in range(1, operand.shape[0]):
+            current = operand[index]
+            same = (current == prev) | (current.isnan() & prev.isnan())
+            days = torch.where(same, days + 1, torch.zeros_like(days))
+            result[index] = days
+            prev = current
+        return result
+
+
+class Hump(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        result = torch.empty_like(operand)
+        result[0] = operand[0]
+        prev = operand[0]
+        for index in range(1, operand.shape[0]):
+            current = operand[index]
+            stepped = prev + (current - prev).clamp(-0.01, 0.01)
+            value = torch.where(prev.isnan() | current.isnan(), current, stepped)
+            result[index] = value
+            prev = value
+        return result
+
+
+class TSStep(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        steps = torch.arange(operand.shape[0], dtype=operand.dtype, device=operand.device)
+        return steps if operand.dim() == 1 else steps.unsqueeze(1).expand_as(operand)
 
 
 class Add(BinaryOperator):
@@ -349,12 +479,66 @@ class Pow(BinaryOperator):
     def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return lhs ** rhs
 
 
+class SignedPower(BinaryOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor:
+        return lhs.sign() * lhs.abs() ** rhs
+
+
 class Greater(BinaryOperator):
     def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return lhs.max(rhs)
 
 
 class Less(BinaryOperator):
     def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return lhs.min(rhs)
+
+
+class Equal(BinaryOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return (lhs == rhs).to(lhs.dtype)
+
+
+class NotEqual(BinaryOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return (lhs != rhs).to(lhs.dtype)
+
+
+class GreaterThan(BinaryOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return (lhs > rhs).to(lhs.dtype)
+
+
+class GreaterEqual(BinaryOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return (lhs >= rhs).to(lhs.dtype)
+
+
+class LessThan(BinaryOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return (lhs < rhs).to(lhs.dtype)
+
+
+class LessEqual(BinaryOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return (lhs <= rhs).to(lhs.dtype)
+
+
+class And(BinaryOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor:
+        return (lhs.bool() & rhs.bool()).to(lhs.dtype)
+
+
+class Or(BinaryOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor:
+        return (lhs.bool() | rhs.bool()).to(lhs.dtype)
+
+
+class Not(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        return (~operand.bool()).to(operand.dtype)
+
+
+class IsNan(UnaryOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        return operand.isnan().to(operand.dtype)
+
+
+class IfElse(TernaryOperator):
+    def _apply(self, first: Tensor, second: Tensor, third: Tensor) -> Tensor:
+        return torch.where(first.bool(), second, third)
 
 
 class Ref(RollingOperator):
@@ -490,14 +674,140 @@ class Corr(PairRollingOperator):
         return ncov / stdmul
 
 
+class TSArgMax(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        all_nan = operand.isnan().all(dim=-1)
+        filled = torch.where(operand.isnan(), torch.full_like(operand, -torch.inf), operand)
+        index = filled.argmax(dim=-1)
+        result = (operand.shape[-1] - 1 - index).to(operand.dtype)
+        return torch.where(all_nan, torch.full_like(result, torch.nan), result)
+
+
+class TSArgMin(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        all_nan = operand.isnan().all(dim=-1)
+        filled = torch.where(operand.isnan(), torch.full_like(operand, torch.inf), operand)
+        index = filled.argmin(dim=-1)
+        result = (operand.shape[-1] - 1 - index).to(operand.dtype)
+        return torch.where(all_nan, torch.full_like(result, torch.nan), result)
+
+
+class TSAvDiff(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        return operand[..., -1] - operand.mean(dim=-1)
+
+
+class TSBackfill(RollingOperator):
+    def evaluate(self, data, period=slice(0, 1)) -> Tensor:
+        start = period.start - self._delta_time
+        values = self._operand.evaluate(data, slice(start, period.stop))
+        return self._apply(values.unfold(0, self._delta_time + 1, 1))
+
+    def _apply(self, operand: Tensor) -> Tensor:
+        valid = ~operand.isnan()
+        positions = torch.arange(operand.shape[-1], device=operand.device).view(1, 1, -1)
+        last_valid = torch.where(valid, positions, -1).max(dim=-1).values
+        values = operand.gather(-1, last_valid.clamp_min(0).unsqueeze(-1)).squeeze(-1)
+        return torch.where(last_valid < 0, torch.full_like(values, torch.nan), values)
+
+
+class TSCountNans(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        return operand.isnan().sum(dim=-1).to(operand.dtype)
+
+
+class TSDecayLinear(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        weights = torch.arange(1, operand.shape[-1] + 1, dtype=operand.dtype, device=operand.device)
+        return (operand * weights).sum(dim=-1) / weights.sum()
+
+
+class TSProduct(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        return operand.prod(dim=-1)
+
+
+class TSQuantile(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        last = operand[..., -1:]
+        valid = ~operand.isnan()
+        left = ((operand < last) & valid).sum(dim=-1, keepdim=True)
+        right = ((operand <= last) & valid).sum(dim=-1, keepdim=True)
+        count = valid.sum(dim=-1, keepdim=True).clamp_min(1)
+        pct = ((left + 1 + right) / (2 * count)).clamp(1e-6, 1 - 1e-6)
+        result = (2 ** 0.5) * torch.erfinv(2 * pct - 1)
+        return torch.where(last.isnan(), torch.full_like(result, torch.nan), result).squeeze(-1)
+
+
+class TSScale(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        low = operand.min(dim=-1).values
+        high = operand.max(dim=-1).values
+        denom = high - low
+        result = (operand[..., -1] - low) / denom
+        return torch.where(denom == 0, torch.full_like(result, torch.nan), result)
+
+
+class TSZScore(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        mean = operand.mean(dim=-1)
+        std = operand.std(dim=-1)
+        result = (operand[..., -1] - mean) / std
+        return torch.where(std == 0, torch.full_like(result, torch.nan), result)
+
+
+class KthElement(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        result = torch.full_like(operand[..., 0], torch.nan)
+        remaining = torch.full(operand.shape[:-1], 2, dtype=torch.long, device=operand.device)
+        for index in range(operand.shape[-1] - 1, -1, -1):
+            take = (~operand[..., index].isnan()) & (remaining > 0)
+            result = torch.where(take, operand[..., index], result)
+            remaining = remaining - take.long()
+        return result
+
+
+class LastDiffValue(RollingOperator):
+    def _apply(self, operand: Tensor) -> Tensor:
+        current = operand[..., -1]
+        result = torch.full_like(current, torch.nan)
+        found = torch.zeros_like(current, dtype=torch.bool)
+        for index in range(operand.shape[-1] - 2, -1, -1):
+            value = operand[..., index]
+            same = (value == current) | (value.isnan() & current.isnan())
+            take = (~same) & (~found)
+            result = torch.where(take, value, result)
+            found = found | take
+        return result
+
+
+class TSRegression(PairRollingOperator):
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor:
+        mean_lhs = lhs.mean(dim=-1, keepdim=True)
+        mean_rhs = rhs.mean(dim=-1, keepdim=True)
+        cov = ((lhs - mean_lhs) * (rhs - mean_rhs)).sum(dim=-1)
+        var = ((rhs - mean_rhs) ** 2).sum(dim=-1)
+        result = cov / var
+        return torch.where(var == 0, torch.full_like(result, torch.nan), result)
+
+
 Operators: List[Type[Operator]] = [
     # Unary
-    Abs, Sign, Log, CSRank,
+    Abs, Sign, Inverse, Reverse, Sqrt, Log, CSRank,
+    ZScore, Scale, Winsorize, Normalize, Quantile,
+    DaysFromLastChange, Hump, TSStep,
+    Not, IsNan,
     # Binary
-    Add, Sub, Mul, Div, Pow, Greater, Less,
+    Add, Sub, Mul, Div, Pow, SignedPower, Greater, Less,
+    Equal, NotEqual, GreaterThan, GreaterEqual, LessThan, LessEqual, And, Or,
+    # Ternary
+    IfElse,
     # Rolling
     Ref, Mean, Sum, Std, Var, Skew, Kurt, Max, Min,
     Med, Mad, Rank, Delta, WMA, EMA,
+    TSArgMax, TSArgMin, TSAvDiff, TSBackfill, TSCountNans,
+    TSDecayLinear, TSProduct, TSQuantile, TSScale, TSZScore,
+    KthElement, LastDiffValue,
     # Pair rolling
-    Cov, Corr
+    Cov, Corr, TSRegression
 ]

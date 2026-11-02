@@ -371,10 +371,17 @@ export function OperatorsPage() {
   const filtered = operators.filter((o) => (category === ALL_OPERATORS || o.category_cn === category) && `${o.name}${o.description_cn}${o.example}`.toLowerCase().includes(search.toLowerCase()));
   const chips = [{ key: ALL_OPERATORS, label: "全部", count: operators.length }, ...categories.map((c) => ({ key: c, label: c, count: operators.filter((o) => o.category_cn === c).length }))];
   const columns: TableColumnsType<OperatorInfo> = [
-    { title: "算子名", dataIndex: "name", width: 220, render: (v) => <Text code>{v}</Text> },
-    { title: "分类", dataIndex: "category_cn", width: 110, render: (v) => <Tag color="geekblue">{v}</Tag> },
+    { title: "算子名", dataIndex: "name", width: 180, render: (v) => <Text code>{v}</Text> },
+    { title: "分类", dataIndex: "category_cn", width: 100, render: (v) => <Tag color="geekblue">{v}</Tag> },
+    {
+      title: "别名",
+      dataIndex: "aliases",
+      width: 180,
+      ellipsis: true,
+      render: (v?: string[]) => (v?.length ? <Text type="secondary">{v.join(" / ")}</Text> : <Text type="secondary">—</Text>),
+    },
     { title: "说明", dataIndex: "description_cn", ellipsis: true },
-    { title: "示例", dataIndex: "example", width: 280, ellipsis: true, render: (v) => <Text code>{v}</Text> },
+    { title: "示例", dataIndex: "example", width: 260, ellipsis: true, render: (v) => <Text code>{v}</Text> },
   ];
   return (
     <Space direction="vertical" size={16} className="page-stack">
@@ -383,7 +390,9 @@ export function OperatorsPage() {
           <FilterChips items={chips} value={category} onChange={(key) => { setCategory(key); setPage(1); }} />
           <Flex justify="space-between" gap={16} wrap align="center">
             <Input.Search allowClear value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="搜索算子名 / 说明" className="task-search" />
-            <Text type="secondary">共 {operatorsApi.data?.total ?? 0} 个算子 · 来自后端 operator_registry</Text>
+            <Text type="secondary">
+              共 {operators.length} 个去重算子 · PPO 可生成 {operators.filter((operator) => operator.generation_enabled).length} 个
+            </Text>
           </Flex>
         </Flex>
       </Card>

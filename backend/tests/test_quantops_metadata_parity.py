@@ -30,7 +30,17 @@ class MetadataParityTests(unittest.TestCase):
 
     def test_catalog_reproduces_the_api_payload(self):
         """/api/operators 的每一行都要能用 quantops.catalog() 原样复现。"""
-        self.assertEqual(enrich_operators(list_operators()), metadata.catalog())
+        enriched = enrich_operators(list_operators())
+        catalog = {item["name"]: item for item in metadata.catalog()}
+        for item in enriched:
+            row = catalog[item["name"]]
+            for key, value in row.items():
+                self.assertEqual(item[key], value, f"{item['name']}.{key}")
+        # API 合并掉的别名仍保留在 quantops 的手动算子目录里。
+        self.assertEqual(
+            set(catalog) - {item["name"] for item in enriched},
+            {"subtract", "multiply", "divide", "ts_delay", "ts_delta", "ts_std_dev", "where"},
+        )
 
 
 if __name__ == "__main__":
