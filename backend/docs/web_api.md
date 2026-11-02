@@ -45,7 +45,7 @@
 | `GET /api/operators` | 操作符 | `expressions.list_operators()` + `operator_registry` | 75 个去重算子（82 个手动名字，中文分类/说明） |
 | `GET /api/pools` `/{pool_id}` | 因子股票池 | **MySQL 优先**（`pools.manifest` + `pool_codes`），回退 `data_cache/pools/*/manifest.json` + `codes.txt` | 5 个股票池；响应带 `storage` 标记 |
 | `DELETE /api/pools/{pool_id}?confirm=true` | 股票池详情抽屉 | 同步删除 MySQL `pools/pool_codes/pool_candidates/pool_stats` + 本地池目录 | 返回 `deleted_local/deleted_mysql/warnings` |
-| `GET /api/factor-runs` `/{run_id}` | 因子回测（运行选择） | `factor_runs/<run_id>/factor_run.json` + `accepted_factors.jsonl` | 合格因子清单与生成指标 |
+| `GET /api/factor-runs` `/{run_id}` | 因子回测（运行选择）/ 因子生成（运行历史） | **本地 `factor_runs/` + MySQL `factor_runs` 合并**：本地 `factor_run.json` + `accepted_factors.jsonl`，MySQL 提供训练元数据与跨机器记录 | 合格因子清单、生成指标、训练时长 / 设备 / 超参数 |
 | `POST /api/factor-backtests` | 因子回测（提交） | 复用 `backtest_accepted_factors`，按 pool/run 的 `data_source` 读公司库面板（旧本地池仍读 `data_cache/master`） | 202 + `job_id`（后台任务） |
 | `GET /api/factor-backtests` `/{backtest_id}` `/.../files/{file}` | 因子回测（批次结果） | `outputs/saved_backtests/factor/<pool>/<run>/<backtest_id>/` | 批次汇总行、失败明细与 CSV 下载 |
 | `POST /api/manual-backtests` | 手动回测（提交） | 按股票池 manifest 读公司库面板（旧本地池仍读 `data_cache/master`），后台执行 `run_manual_backtest` | 202 + `job_id`（后台任务） |
@@ -238,9 +238,39 @@ factor_runs/<run_id>/（factor_run.json + accepted_factors.jsonl）
   → GET /api/factor-backtests/{backtest_id} 轮询后展示批次结果
 ```
 
-**`GET /api/factor-runs?pool_id=<可选>`**：扫描 `factor_runs/`（API 默认工作区根目录下，`QL_FACTOR_RUNS_ROOT` 可覆盖），只返回含 `factor_run.json` 的目录，按 `created_at` 倒序。每项含 `run_id / pool_id / source_signature / created_at / accepted_count / attempts / target_reached / attempts_exhausted / factor_run_dir / has_accepted`。`accepted_count` 优先按 `accepted_factors.jsonl` 实际行数统计。
+**`GET /api/factor-runs?pool_id=<可选>&limit=100`**：扫描 `factor_runs/`（API 默认工作区根目录下，`QL_FACTOR_RUNS_ROOT` 可覆盖）中含 `factor_run.json` 的目录，同时读 MySQL `factor_runs` 表（`mysql_store.fetch_factor_runs`），按 `run_id` 合并后按 `created_at` 倒序返回：
 
-**`GET /api/factor-runs/{run_id}`**：在列表字段基础上返回 `manifest` 与 `accepted_factors`。每个因子的 `factor_id` 由 `factor_<序号>_<表达式 sha256 前 10 位>` 生成（`custom_bt.factor_backtest.factor_id`），预览与回测共用同一算法，因此前端勾选的 ID 可以直接提交。
+```json
+{
+  "total": 11,
+  "runs": [{
+    "run_id": "pool_a_20261025_ab12cd34",
+    "pool_id": "bank_pool_1a2b3c4d",
+    "run_name": "bank_ppo",
+    "job_id": "20261025_093000_ab12cd34",
+    "device": "cuda",
+    "started_at": "2026-10-25T09:30:00",
+    "finished_at": "2026-10-25T09:41:12",
+    "duration_seconds": 672.4, "training_seconds": 618.9, "timesteps": 2048,
+    "target_factor_count": 50, "max_attempts": 100000, "rollout_timesteps": 2048,
+    "seed": 0, "target_horizon": 20, "max_backtrack_days": 100, "max_future_days": 20,
+    "split_days": {"train": 147, "valid": 47, "test": 47},
+    "hyperparameters": {"target_factor_count": 50, "quality": {"min_train_ic": 0.05}},
+    "fields": ["close", "volume"], "operators": ["add", "div"], "operator_mode": "selected",
+    "n_stocks": 300, "storage": "mysql+local", "local_available": true,
+    "accepted_count": 3, "attempts": 5120, "target_reached": false, "attempts_exhausted": false
+  }],
+  "source": "mysql",
+  "mysql_error": null
+}
+```
+
+- `source="local"` 表示 MySQL 不可用（此时 `mysql_error` 给出原因），列表仍返回本地记录；`storage` 为 `mysql+local` / `mysql` / `local`。
+- `local_available=false` 的记录只存在于 MySQL（例如同事机器的运行）：可以查看元数据，但本机没有 `accepted_factors.jsonl`，不能提交因子回测；前端回测运行列表会过滤掉这类记录。
+- `limit` 默认 100、最大 500；`accepted_count` 优先按 `accepted_factors.jsonl` 实际行数统计。
+- 旧运行没有训练计时时，`training_seconds` 可能为 `null`；`device` / 超参数会从对应 `outputs/jobs/<job_id>/platform_job.json` 的 `payload.generation_config` 回填，`duration_seconds` 由任务开始时间到完成时间计算。
+
+**`GET /api/factor-runs/{run_id}`**：本地优先；本地存在时在列表字段基础上返回 `manifest` 与 `accepted_factors`，并用 MySQL 元数据补全训练字段。本地不存在但 MySQL 有记录时，用数据库行构造 summary，`accepted_factors` 来自 `factors` 表，`manifest` 来自数据库存档；两侧都没有 → 404，本地缺失且 MySQL 查询异常 → 503。每个因子的 `factor_id` 由 `factor_<序号>_<表达式 sha256 前 10 位>` 生成（`custom_bt.factor_backtest.factor_id`），预览与回测共用同一算法，因此前端勾选的 ID 可以直接提交。每条记录同时返回 `canonical_expression / backtest_expression`（本地文件缺这两列时按 `expression` 现算；MySQL-only 记录直接读 `factors` 表）。
 
 **`POST /api/factor-backtests`**（202）：
 
@@ -360,13 +390,101 @@ outputs/saved_backtests/manual/<job_id>/<run_name>/
 - 文件区只列 manifest 白名单内真实存在的文件，点击用 `GET /api/results/file?run_key=...&file_name=...` 下载；研究备注仅存本机 `localStorage`。
 - 没有真实结果时显示空状态与「去手动回测 / 因子回测」入口；列表或详情失败显示 Alert + 重试，不回退 mock。
 
+### 2.12 因子生成（PPO，2026-11-02）
+
+链路：
+
+```
+GET /api/factor-generations/defaults + GET /api/pools（选择真实股票池）
+  → POST /api/factor-generations（202 + job_id / run_id）
+  → api/job_runner.py 子进程 → custom_bt/platform_jobs.py → run_factor_generation
+  → prepare_factor_runtime（按 pool_id 导出面板 + train/valid/test memmap 缓存）
+  → single_factor/runner.py：MaskablePPO 搜索表达式，评估器在 SEP 处打分并写入
+    factor_runs/<run_id>/（accepted_factors.jsonl + factor_run.json）
+  → GET /api/jobs/{job_id} 轮询 progress → GET /api/factor-runs/{run_id} 渲染合格因子
+```
+
+**`GET /api/factor-generations/defaults`**：读取 `configs/factor_generation.yaml`（按 mtime 缓存）。可传 `?pool_id=<股票池>`：传了就把 `train / valid / test` 按该池真实时间跨度（`manifest.selection_start ~ selection_end`，比例由 `split_ratios` 控制，默认 60% / 20% / 20%）连续切分；不传则使用 YAML 的固定 `splits` 兜底。股票池清单本地优先、MySQL 兜底，因此列表里仅存在于 MySQL 的池也能正常取默认值。
+
+```json
+{
+  "data_source": "clickhouse",
+  "fields": ["open", "close", "..."],
+  "field_count": 368,
+  "splits": {"train": {"cache_start": "2021-06-18", "cache_end": "2023-05-14"}, "valid": {}, "test": {}},
+  "split_source": "pool",
+  "split_ratios": {"train": 0.6, "valid": 0.2, "test": 0.2},
+  "pool_window": {"start": "2021-06-18", "end": "2024-07-26"},
+  "warnings": [],
+  "quality": {"min_coverage": 0.9, "min_train_ic": 0.05, "min_valid_ic": 0.04, "min_icir": 0.5, "score_ic_weight": 0.5, "score_rank_ic_weight": 0.3, "score_icir_weight": 0.2},
+  "max_backtrack_days": 100, "target_horizon": 20, "max_future_days": 20,
+  "target_factor_count": 50, "max_attempts": 100000,
+  "rollout_timesteps": 2048, "seed": 0, "device": "auto"
+}
+```
+
+`fields` 是面板列名（`fund_*` / `val_*` / `deriv_*` 等别名），与 `GET /api/data/fields` 的 `panel_alias` 一致；可原样提交。`split_source=pool` 表示切分来自股票池真实跨度；`config` 表示池缺少有效起止日期、回退到 YAML（同时返回 `warnings`）。
+
+**`POST /api/factor-generations`**（202）：
+
+```json
+{
+  "pool_id": "<POST /api/pools 返回的真实股票池>",
+  "run_name": "industry_bank_ppo",
+  "fields": ["close", "volume", "fund_ROE"],
+  "operators": ["add", "div", "ts_mean"],
+  "splits": {
+    "train": {"cache_start": "2024-01-01", "cache_end": "2025-06-30"},
+    "valid": {"cache_start": "2025-01-25", "cache_end": "2026-01-28"},
+    "test":  {"cache_start": "2025-07-27", "cache_end": "2026-06-12"}
+  },
+  "max_backtrack_days": 100,
+  "target_horizon": 20,
+  "max_future_days": 20,
+  "target_factor_count": 50,
+  "max_attempts": 100000,
+  "rollout_timesteps": 2048,
+  "seed": 0,
+  "device": "auto",
+  "quality": {"min_coverage": 0.9, "min_train_ic": 0.05, "min_valid_ic": 0.04, "min_icir": 0.5}
+}
+```
+
+- 所有字段可选：`fields` / `splits` / PPO 参数 / `quality` 缺省时取 YAML 默认值；`operators` 省略或空列表 = 使用全部 22 个 PPO 可采样算子。算子别名会自动规范化（`divide → div`、`subtract → sub`、`multiply → mul`）。
+- 股票池清单与代码**本地优先、MySQL 兜底**：本地有 `data_cache/pools/<pool_id>/manifest.json` + `codes.txt` 时直接读取；仅存在于 MySQL 的池从 `fetch_pool` 取 manifest 与代码并随任务传入子进程。两种来源都要求 `source_signature` 与当前数据源一致，不一致 → 422；池完全不存在 → 404。
+- 字段按 `configs/field_catalog.json` 的 `panel_alias` 规范化，未知字段 → 422；累计流量与单季流量（`fund_X` 与 `fund_X_q`）不能混用 → 422。
+- 公司库估值表 `dws.f10_finance_index_fd` 当前从 2024-01-01 起有数据。更早窗口请求 `val_*` 字段时，面板仍会保留这些列（全为 NaN），不会再报缺列；依赖它们的表达式会被评估器判为无效。建议股票池窗口选在 2024 年之后，或去掉估值字段。
+- **`splits` 省略时按股票池真实时间跨度自动切分**（与 defaults?pool_id= 相同：60% / 20% / 20%，连续三段）；显式传入时每段必须落在 `selection_start ~ selection_end` 内，超出 → 422。
+- 切分必须包含 `train`，只允许 `train / valid / test`；日期 `YYYY-MM-DD` 且 start ≤ end；与数据源区间无交集 → 422，部分超出 → 200 + `warnings`；窗口短于 `max_backtrack_days + max_future_days` 时任务仍会提交，由执行阶段按实际交易日自动收紧回溯窗口（见下条）。
+- **短切分自动收紧回溯窗口**：运行时准备完成后会读取各切分的实际交易日数（`n_days`）。若某段交易日不足以覆盖 `max_future_days` → 任务失败并给出「请扩大股票池时间跨度，或调小 target_horizon / max_future_days」；否则按最短切分自动下调 `max_backtrack_days`，公式为 `min(请求值, max(0, 最短切分交易日 - max_future_days - 5))`，使最短切分至少保留 5 个评估日，并写入 warning 日志。`result` 中同时返回 `max_backtrack_days`（实际生效值）、`requested_max_backtrack_days`（请求值）、`max_future_days` 与 `split_days`（各切分交易日数），便于前端提示。
+- `request_summary` 额外返回 `split_source`（`pool / request / config`）、`pool_window` 与 `pool_storage`（`local / mysql`），前端据此提示切分来源。
+- 参数范围：`max_backtrack_days 0–1000`、`target_horizon 1–250`、`target_horizon ≤ max_future_days ≤ 250`、`target_factor_count 1–10000`、`target_factor_count ≤ max_attempts ≤ 10000000`、`rollout_timesteps 64–1000000`、`seed 0–2147483647`、`device ∈ {auto, cpu, cuda}`；质量阈值与 Score 权重非负且权重和 > 0。`auto`（默认）在执行时检测 CUDA：可用则用 GPU，否则回退 CPU；显式 `cuda` 但环境不可用会在提交时直接返回 422 中文原因（不占用任务队列），`result.device` 返回实际使用的设备。
+- 服务端只接受白名单参数；master/pools/runtime/factor_runs 路径全部由服务端常量给出。`run_name` 只作为 `run_id` 前缀（仍追加 runtime 与时间戳保证唯一）。
+- 返回 `{job_id, status:"queued", operation:"generate_factors", pool_id, pool_name, pool_storage, run_id, run_name, data_source, warnings, request_summary}`。`run_id` 由 `create_platform_job` 注入并回读，任务结束后 `GET /api/jobs/{job_id}.result` 也包含完整运行结果。
+- **训练元数据**：`run_factor_generation` 记录 `started_at / finished_at / duration_seconds`（含准备与写盘）和 `training_started_at / training_finished_at / training_seconds / timesteps`（只覆盖 PPO 训练循环），并汇总 `hyperparameters`（`target_factor_count / max_attempts / rollout_timesteps / seed / device / target_horizon / max_backtrack_days / requested_max_backtrack_days / max_future_days / quality / operator_mode / operators`）与 `split_days`。这些字段写入 `factor_run.json`，同时随 `factor_run.json` 自动 upsert 到 MySQL `factor_runs` / `factors`（失败只记 warning，不影响本地运行）。前端因子生成页的「运行历史（MySQL）」卡片读取 `/api/factor-runs`，可按股票池 / 设备 / 关键词筛选，并展开查看训练时长、步数、超参数与切分明细。
+
+**执行与进度**：`platform_jobs` 在调用 `run_factor_generation` 前注入 `progress_callback`，节流后写入 `status.json`：
+
+```json
+{
+  "stage": "preparing_runtime | loading_panels | initializing | training | finished",
+  "pool_id": "...", "target_count": 50, "max_attempts": 100000,
+  "operators": ["add", "div"], "operator_mode": "selected | all",
+  "attempts": 2048, "accepted_count": 3, "timesteps": 2048
+}
+```
+
+前端按 `attempts / max_attempts` 显示进度条，并展示 `job.message`（如「PPO 因子生成中：已尝试 2,048 / 100,000 次，已接受 3 / 50 个因子」）。完成后读取 `GET /api/factor-runs/{run_id}`；每个 `accepted_factors` 记录新增 `segments.train / valid / test`（`ic / rank_ic / icir / coverage / valid_days`），页面按分段展示真实指标。
+
+**算子子集**：`POST` 的 `operators` 会一路传到 `SingleFactorEnv`，PPO 的 action space 只包含所选算子；未选择时保持原行为（全部 22 个）。`accepted_factors.jsonl` 的 storage metadata 会记录 `operators / operator_mode`，`factor_run.json` 同步保存。
+
 ## 3. 仍是演示数据的部分
 
 以下页面/表单数据来自 `src/mockData.ts`、`src/mockExtended.ts`，**未接真实数据**：
 
-- 任务中心（建池/因子回测/手动回测任务的 `GET /api/jobs/{job_id}` 已暴露并用于对应页面，任务中心页面本身仍渲染 mock）
+- 任务中心（建池/因子回测/手动回测/因子生成任务的 `GET /api/jobs/{job_id}` 已暴露并用于对应页面，任务中心页面本身仍渲染 mock）
 - 用户管理、审计日志
-- 因子生成 / 因子组合的**提交表单**（因子回测页已全部接真实数据，见 §2.9；因子生成页的展示部分仍部分使用 mock）
+- 因子组合的**提交表单**；因子生成页的大模型（LLM）选项暂时禁用，PPO 路径已全部接真实后端（§2.12）
 
 股票池创建表单**已不再是 mock**：候选来自公司库，提交走 `POST /api/pools` 并轮询任务状态（§2.8）。因子回测页也已完成真实接入：运行/因子来自 `factor_runs/`，提交走 `POST /api/factor-backtests`，轮询进度并读取批次结果（§2.9）。手动回测页同样已接真实后端：股票池来自 `/api/pools`，提交走 `POST /api/manual-backtests`，轮询任务并直接展示结果（§2.10）。
 
@@ -452,7 +570,7 @@ tail -f outputs/logs/api_access_$(date +%F).log   # 想看实时请求流
 
 ### 5.2 MySQL 集中存储（2026-10-25 起）
 
-股票池以 MySQL 为主存储：列表/详情优先读 `pools` / `pool_codes`，未配置或连接失败时回退本地 `data_cache/pools`。因子运行与回测结果仍以本地文件为主，MySQL 只做集中存档。写入是**尽力而为**：失败只记 warning，不影响建池与回测。
+股票池以 MySQL 为主存储：列表/详情优先读 `pools` / `pool_codes`，未配置或连接失败时回退本地 `data_cache/pools`。因子运行与回测结果仍以本地文件为主，但 `factor_runs` 表集中存档训练元数据（设备、开始/结束时间、总耗时、训练耗时、步数、超参数、字段/算子、质量阈值），`/api/factor-runs` 读取时与本地目录合并。写入是**尽力而为**：失败只记 warning，不影响建池与回测。`factors.canonical_expression / backtest_expression` 在落库时由 `expression` 经 `canonicalize_alphagen` 补算（无法规范化时保留原文）；`accepted_factors.jsonl` 本身不保存这两列，API 详情同样按此规则现算。
 
 配置优先级：`QL_MYSQL_*` 环境变量 > `configs/mysql.local.env`（已被根 `.gitignore` 的 `**/*.local.env` 忽略）。模板见 `configs/mysql.env.example`；驱动为 `PyMySQL`（已加入 `requirements.txt`）。
 
@@ -473,7 +591,7 @@ py -3 -m custom_bt.mysql_store check    # 版本 + 各表行数
 py -3 -m custom_bt.cli mysql-sync       # 本地 pools / factor_runs / saved_backtests 全量 upsert
 ```
 
-从 v1（`backtests.run_name` 主键）升级时，`schema` 会自动重建回测表并提示执行一次 `mysql-sync`；本地结果文件不受影响，补录后回测数据完整回来。v3（2026-10-25）只新增 `factor_backtest_runs`，`schema` 幂等补建，不需要重建旧表；`sync_all` 会额外扫描 `outputs/saved_backtests/**/factor_backtest_manifest.json`。
+从 v1（`backtests.run_name` 主键）升级时，`schema` 会自动重建回测表并提示执行一次 `mysql-sync`；本地结果文件不受影响，补录后回测数据完整回来。v3（2026-10-25）只新增 `factor_backtest_runs`，`schema` 幂等补建，不需要重建旧表；`sync_all` 会额外扫描 `outputs/saved_backtests/**/factor_backtest_manifest.json`。v4（2026-11-02）为 `factor_runs` 新增训练元数据列（`device / started_at / finished_at / duration_seconds / training_seconds / timesteps / target_factor_count / max_attempts / rollout_timesteps / seed / target_horizon / max_backtrack_days / max_future_days / n_stocks / operator_mode` 及 `split_days / hyperparameters / fields / operators / quality` JSON 列），`schema` 用 `ALTER TABLE ... ADD COLUMN` 幂等补列；执行一次 `mysql-sync` 即可把已完成的本地运行全部补录（含 `demo_liquid_300_20261025`），旧运行从 `outputs/jobs/<job_id>/platform_job.json` 回填设备与超参数。
 
 约定：
 
@@ -489,7 +607,8 @@ py -3 -m custom_bt.cli mysql-sync       # 本地 pools / factor_runs / saved_bac
 - ~~`POST /api/pools`~~ 已完成（2026-10-20，§2.8）：复用 `create_platform_job` + `api/job_runner.py`，与 Streamlit 共用 `outputs/jobs/`。
 - ~~`POST /api/factor-backtests`~~ 已完成（2026-10-25，§2.9）：运行列表、批次进度、版本化输出、批次查询与结果跳转均已接通。
 - ~~`POST /api/backtest`（手工表达式）~~ 已完成（2026-10-27，`POST /api/manual-backtests`，§2.10）：股票池选择、表达式校验、后台执行、进度轮询与结果预览均已接通。
-- 待接：`POST /api/factor-generations`、`POST /api/factor-compositions`，同样复用 `create_platform_job` / `run_platform_job`。
+- ~~`POST /api/factor-generations`~~ 已完成（2026-11-02，§2.12）：默认参数、字段/算子/切分校验、后台 PPO 子进程、进度轮询与真实结果展示均已接通。
+- 待接：`POST /api/factor-compositions`，同样复用 `create_platform_job` / `run_platform_job`。
 - 任务中心改读 `outputs/jobs/*/status.json` 状态机（queued → running → finished/failed）；目前股票池页、因子回测页与手动回测页分别轮询各自提交的任务。
 - 用户 / 审计页面保持演示数据（无真实后端）
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 from importlib import import_module
 import sys
 from pathlib import Path
-from typing import List, Type
+from typing import Dict, List, Type
 
 from custom_bt import _quantops_boot  # noqa: F401  （未安装 quantops 时补 sys.path）
 from quantops.registry import (  # noqa: F401
@@ -30,17 +30,23 @@ __all__ = [
     "get_operator",
     "list_operator_definitions",
     "load_alphagen_operator_classes",
+    "load_alphagen_operator_map",
 ]
 
 
-def load_alphagen_operator_classes() -> List[Type]:
+def load_alphagen_operator_map() -> Dict[str, Type]:
+    """canonical 算子名 → AlphaGen 算子类，仅包含 PPO 可采样的算子。"""
     project_root = Path(__file__).resolve().parents[2]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     module = import_module("single_factor._vendor.alphagen.data.expression")
-    classes: List[Type] = []
+    mapping: Dict[str, Type] = {}
     for definition in list_operator_definitions():
         if not definition.generation_enabled or definition.alphagen_name is None:
             continue
-        classes.append(getattr(module, definition.alphagen_name))
-    return classes
+        mapping[definition.canonical_name] = getattr(module, definition.alphagen_name)
+    return mapping
+
+
+def load_alphagen_operator_classes() -> List[Type]:
+    return list(load_alphagen_operator_map().values())

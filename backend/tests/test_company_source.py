@@ -181,6 +181,44 @@ def test_attach_valuation_merges_on_trading_day():
     assert pd.isna(out.loc[1, "val_PB"])
 
 
+def test_attach_valuation_keeps_requested_columns_when_empty():
+    panel = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2023-01-03"]),
+            "code": ["000001"],
+            "close": [10.0],
+        }
+    )
+    valuation = pd.DataFrame(columns=["code", "date", "PB", "PS"])
+
+    out = company_source.attach_valuation(panel, valuation)
+
+    assert out["val_PB"].isna().all()
+    assert out["val_PS"].isna().all()
+
+
+def test_attach_fundamentals_and_derivatives_keep_columns_when_empty():
+    panel = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2023-01-03"]),
+            "code": ["000001"],
+            "close": [10.0],
+        }
+    )
+    empty_fund = pd.DataFrame(columns=["code", "info_date", "end_date", "ROE"])
+    empty_deriv = pd.DataFrame(columns=["code", "info_date", "end_date", "ROETTM"])
+
+    fund_out = company_source.attach_fundamentals(panel, empty_fund)
+    deriv_out = company_source.attach_derivatives(panel, empty_deriv)
+
+    assert fund_out["fund_ROE"].isna().all()
+    assert fund_out["fund_info_date"].isna().all()
+    assert fund_out["fund_end_date"].isna().all()
+    assert deriv_out["deriv_ROETTM"].isna().all()
+    assert deriv_out["deriv_info_date"].isna().all()
+    assert deriv_out["deriv_end_date"].isna().all()
+
+
 def test_write_pool_panel_rejects_unknown_valuation(tmp_path):
     with pytest.raises(ValueError):
         company_source.write_pool_panel(

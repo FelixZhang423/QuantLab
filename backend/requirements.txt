@@ -2,6 +2,10 @@ pandas
 numpy
 pyarrow
 pyyaml
+# PPO 因子生成（single_factor/runner.py）
+gymnasium
+stable-baselines3
+sb3-contrib
 matplotlib
 streamlit
 plotly

@@ -6,7 +6,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, Mapping, Optional
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Tuple, Type
 from uuid import uuid4
 
 import pandas as pd
@@ -15,9 +15,40 @@ import pyarrow.parquet as pq
 
 from custom_bt import company_source
 from custom_bt.data import load_meta, normalize_code
+from custom_bt.operator_registry import (
+    canonical_name,
+    generation_operator_names,
+    load_alphagen_operator_map,
+)
 from custom_bt.pools import load_pool_codes, load_pool_manifest
 
 logger = logging.getLogger(__name__)
+
+DEVICE_CHOICES = ("auto", "cpu", "cuda")
+
+
+def resolve_generation_device(requested: Optional[str] = None) -> str:
+    """把 ``auto`` 解析成实际设备，并在显式要求 cuda 时校验可用性。"""
+    value = str(requested or "auto").strip().lower()
+    if value not in DEVICE_CHOICES:
+        raise ValueError("device 只能是 auto、cpu 或 cuda")
+    if value == "auto":
+        try:
+            import torch
+        except ImportError:
+            return "cpu"
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if value == "cuda":
+        try:
+            import torch
+        except ImportError as exc:
+            raise ValueError("当前 Python 环境未安装 PyTorch，无法使用 CUDA") from exc
+        if not torch.cuda.is_available():
+            raise ValueError(
+                "当前环境不可用 CUDA（未检测到可用的 NVIDIA GPU，或安装的是 CPU 版 PyTorch）；"
+                "请改用 cpu，或选择 auto 自动回退"
+            )
+    return value
 
 
 def _close_panel(panel) -> None:
@@ -36,12 +67,47 @@ def _single_factor_root() -> Path:
     return root
 
 
-def new_factor_run_id(pool_id: str, runtime_id: str) -> str:
-    """Create a unique factor run id so default generation starts from a clean run."""
+def new_factor_run_id(
+    pool_id: str, runtime_id: str, prefix: Optional[str] = None
+) -> str:
+    """Create a unique factor run id so default generation starts from a clean run.
+
+    ``prefix`` lets the API use the user supplied run name while keeping the
+    runtime id and timestamp that make run directories sortable and unique.
+    """
     safe_pool = str(pool_id).strip() or "pool"
+    safe_prefix = str(prefix or "").strip() or safe_pool
     safe_runtime = str(runtime_id).strip() or "runtime"
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{safe_pool}_{safe_runtime}_{stamp}_{uuid4().hex[:8]}"
+    return f"{safe_prefix}_{safe_runtime}_{stamp}_{uuid4().hex[:8]}"
+
+
+def resolve_generation_operators(
+    operators: Optional[Iterable[str]],
+) -> Tuple[Optional[List[Type]], List[str]]:
+    """把请求里的算子名（含别名）解析成 AlphaGen 类。
+
+    返回 ``(classes, canonical_names)``。未指定算子时返回 ``(None, 全部算子)``，
+    保持原行为：PPO 使用注册表里全部 generation-enabled 算子。
+    """
+    requested = [str(item).strip() for item in (operators or []) if str(item).strip()]
+    mapping = load_alphagen_operator_map()
+    if not requested:
+        return None, list(generation_operator_names())
+    classes: List[Type] = []
+    names: List[str] = []
+    for item in requested:
+        try:
+            canonical = canonical_name(item)
+        except KeyError:
+            raise ValueError(f"unsupported factor generation operator: {item}") from None
+        if canonical not in mapping:
+            raise ValueError(f"operator is not enabled for PPO generation: {item}")
+        if canonical in names:
+            continue
+        names.append(canonical)
+        classes.append(mapping[canonical])
+    return classes, names
 
 
 def export_pool_panel(
@@ -148,8 +214,14 @@ def prepare_factor_runtime(
     target_horizon: int = 20,
     max_future_days: int = 20,
     data_source: Optional[str] = None,
+    pool_manifest: Optional[Mapping[str, object]] = None,
+    pool_codes: Optional[Iterable[str]] = None,
 ) -> dict:
-    """Create pool-specific processed panel and train/valid/test caches."""
+    """Create pool-specific processed panel and train/valid/test caches.
+
+    ``pool_manifest`` / ``pool_codes`` 允许调用方传入已解析的池数据（例如仅存在于
+    MySQL 的股票池），省略时仍从 ``pools_root`` 读取本地文件。
+    """
     if not splits:
         raise ValueError("splits must not be empty")
     selected_fields = list(dict.fromkeys(str(field) for field in fields))
@@ -158,8 +230,12 @@ def prepare_factor_runtime(
     period_mode = fundamental_period_mode(selected_fields)
     # close 只用于构造未来收益 target；用户没选它时不进入 PPO 特征空间。
     panel_fields = list(dict.fromkeys([*selected_fields, "close"]))
-    pool_manifest = load_pool_manifest(pools_root, pool_id)
-    source = company_source.resolve_data_source(data_source, pool_manifest)
+    resolved_manifest = (
+        dict(pool_manifest)
+        if pool_manifest is not None
+        else load_pool_manifest(pools_root, pool_id)
+    )
+    source = company_source.resolve_data_source(data_source, resolved_manifest)
     if source != "clickhouse" and any(
         field.startswith(company_source.DERIVATIVE_PREFIX) for field in selected_fields
     ):
@@ -168,7 +244,7 @@ def prepare_factor_runtime(
         meta = company_source.meta()
     else:
         meta = load_meta(master_store)
-    if pool_manifest.get("source_signature") != meta.get("source_signature"):
+    if resolved_manifest.get("source_signature") != meta.get("source_signature"):
         raise ValueError("pool source signature does not match data source")
     split_payload = {
         name: {"cache_start": str(value["cache_start"]), "cache_end": str(value["cache_end"])}
@@ -187,14 +263,23 @@ def prepare_factor_runtime(
     runtime_dir = Path(runtime_root).expanduser().resolve() / pool_id / runtime_id
     processed_dir = runtime_dir / "processed"
     processed_dir.mkdir(parents=True, exist_ok=True)
-    pool_codes = load_pool_codes(pools_root, pool_id)
+    if pool_codes is not None:
+        resolved_codes = [
+            normalize_code(str(code).strip())
+            for code in pool_codes
+            if str(code).strip()
+        ]
+    else:
+        resolved_codes = load_pool_codes(pools_root, pool_id)
+    if not resolved_codes:
+        raise ValueError("pool has no stock codes")
     all_starts = [pd.Timestamp(value["cache_start"]) for value in splits.values()]
     all_ends = [pd.Timestamp(value["cache_end"]) for value in splits.values()]
     panel_start = str(min(all_starts).date())
     panel_end = str(max(all_ends).date())
     if source == "clickhouse":
         panel_result = company_source.write_pool_panel(
-            pool_codes,
+            resolved_codes,
             panel_fields,
             processed_dir / "panel.parquet",
             panel_start,
@@ -203,7 +288,7 @@ def prepare_factor_runtime(
     else:
         panel_result = export_pool_panel(
             master_store,
-            pool_codes,
+            resolved_codes,
             panel_fields,
             processed_dir / "panel.parquet",
             start_date=panel_start,
@@ -219,7 +304,7 @@ def prepare_factor_runtime(
         manifest = materialize_memmap(
             processed_dir=processed_dir,
             output_dir=cache_dir,
-            codes=pool_codes,
+            codes=resolved_codes,
             fields=panel_fields,
             start=split["cache_start"],
             end=split["cache_end"],
@@ -240,7 +325,7 @@ def prepare_factor_runtime(
         "fields": selected_fields,
         "panel_fields": panel_fields,
         "fundamental_period_mode": period_mode,
-        "pool_codes": pool_codes,
+        "pool_codes": resolved_codes,
         "max_backtrack_days": max_backtrack_days,
         "target_horizon": target_horizon,
         "max_future_days": max_future_days,
@@ -268,20 +353,57 @@ def run_factor_generation(
     generation_config: Optional[Mapping[str, object]] = None,
     ppo_runner=None,
     data_source: Optional[str] = None,
+    operators: Optional[Iterable[str]] = None,
+    progress_callback: Optional[Callable[[Dict[str, object]], None]] = None,
+    pool_manifest: Optional[Mapping[str, object]] = None,
+    pool_codes: Optional[Iterable[str]] = None,
 ) -> dict:
     """Prepare a pool runtime and run the existing PPO factor generator."""
+    started_at = datetime.now()
     config = dict(generation_config or {})
+    selected_fields = list(dict.fromkeys(str(field) for field in fields))
+    if not selected_fields:
+        raise ValueError("factor generation fields must not be empty")
+    target_count = int(config.get("target_factor_count", 50))
+    max_attempts = int(config.get("max_attempts", 100000))
+    rollout_timesteps = int(config.get("rollout_timesteps", 2048))
+    requested_operators = [
+        str(item).strip() for item in (operators or []) if str(item).strip()
+    ]
+    operator_classes, operator_names = resolve_generation_operators(requested_operators)
+    operator_mode = "selected" if requested_operators else "all"
+
+    def report(stage: str, **extra: object) -> None:
+        if progress_callback is None:
+            return
+        payload: Dict[str, object] = {
+            "stage": stage,
+            "pool_id": pool_id,
+            "target_count": target_count,
+            "max_attempts": max_attempts,
+            "operators": operator_names,
+            "operator_mode": operator_mode,
+            **extra,
+        }
+        try:
+            progress_callback(payload)
+        except Exception:  # noqa: BLE001 - 进度上报失败不能中断训练
+            logger.warning("factor generation progress callback failed", exc_info=True)
+
+    report("preparing_runtime", fields=len(selected_fields))
     runtime = prepare_factor_runtime(
         master_store=master_store,
         pools_root=pools_root,
         pool_id=pool_id,
         runtime_root=runtime_root,
-        fields=fields,
+        fields=selected_fields,
         splits=splits,
         max_backtrack_days=max_backtrack_days,
         target_horizon=target_horizon,
         max_future_days=max_future_days,
         data_source=data_source,
+        pool_manifest=pool_manifest,
+        pool_codes=pool_codes,
     )
     _single_factor_root()
     from single_factor.config import QualityConfig
@@ -290,10 +412,39 @@ def run_factor_generation(
     from single_factor.features import FeatureRegistry
     from single_factor.runner import run_with_ppo
 
+    split_days = {
+        name: int((cache.get("manifest") or {}).get("n_days") or 0)
+        for name, cache in runtime["splits"].items()
+    }
+    if not split_days or min(split_days.values()) <= 0:
+        raise ValueError("train / valid / test 切分没有可用的交易日")
+    shortest_name, shortest_days = min(split_days.items(), key=lambda item: item[1])
+    if shortest_days <= int(max_future_days):
+        raise ValueError(
+            f"最短切分 {shortest_name} 只有 {shortest_days} 个交易日，"
+            f"不足以覆盖未来 {int(max_future_days)} 天；"
+            "请扩大股票池时间跨度，或调小 target_horizon / max_future_days"
+        )
+    # 每个切分必须留出 lookback + lookahead 才能构造评估日；短切分下自动收紧
+    # 回溯窗口，并尽量让最短切分保留 5 个评估日。
+    effective_backtrack = min(
+        int(max_backtrack_days),
+        max(0, shortest_days - int(max_future_days) - 5),
+    )
+    if effective_backtrack < int(max_backtrack_days):
+        logger.warning(
+            "max_backtrack_days reduced from %s to %s to fit shortest split %s (%s trading days)",
+            max_backtrack_days,
+            effective_backtrack,
+            shortest_name,
+            shortest_days,
+        )
+
     panel_kwargs = {
-        "max_backtrack_days": int(max_backtrack_days),
+        "max_backtrack_days": effective_backtrack,
         "max_future_days": int(max_future_days),
     }
+    report("loading_panels", runtime_id=runtime.get("runtime_id"))
     train_cache = runtime["splits"].get("train")
     if train_cache is None:
         raise ValueError("factor generation requires a train split")
@@ -316,32 +467,78 @@ def run_factor_generation(
     run_id = explicit_run_id or new_factor_run_id(pool_id, runtime_id)
     factor_run_dir = Path(factor_runs_root).expanduser().resolve() / run_id
     runner_function = ppo_runner or run_with_ppo
+    device = resolve_generation_device(config.get("device"))
+    logger.info(
+        "factor generation device resolved to %s (requested %s)",
+        device,
+        config.get("device") or "auto",
+    )
+    report("initializing", runtime_id=runtime_id, device=device)
+
+    def forward_progress(progress: Mapping[str, object]) -> None:
+        data = dict(progress)
+        stage = str(data.pop("stage", "training"))
+        report(stage, **data)
+
+    runner_kwargs = {
+        "feature_names": registry.names(),
+        "evaluator": evaluator,
+        "output_dir": factor_run_dir,
+        "target_count": target_count,
+        "max_attempts": max_attempts,
+        "dataset_signature": runtime["splits"]["train"]["manifest"]["signature"],
+        "total_timesteps_per_rollout": rollout_timesteps,
+        "seed": int(config.get("seed", 0)),
+        "device": device,
+        "storage_metadata": {
+            "pool_id": pool_id,
+            "source_signature": runtime["source_signature"],
+            "runtime_id": runtime_id,
+            "data_source": runtime.get("data_source"),
+            "operators": operator_names,
+            "operator_mode": operator_mode,
+        },
+    }
+    if operator_classes is not None:
+        runner_kwargs["operators"] = operator_classes
+    if progress_callback is not None:
+        runner_kwargs["progress_callback"] = forward_progress
     try:
-        runner = runner_function(
-            feature_names=registry.names(),
-            evaluator=evaluator,
-            output_dir=factor_run_dir,
-            target_count=int(config.get("target_factor_count", 50)),
-            max_attempts=int(config.get("max_attempts", 100000)),
-            dataset_signature=runtime["splits"]["train"]["manifest"]["signature"],
-            total_timesteps_per_rollout=int(config.get("rollout_timesteps", 2048)),
-            seed=int(config.get("seed", 0)),
-            device=str(config.get("device", "cpu")),
-            storage_metadata={
-                "pool_id": pool_id,
-                "source_signature": runtime["source_signature"],
-                "runtime_id": runtime_id,
-                "data_source": runtime.get("data_source"),
-            },
-        )
+        runner = runner_function(**runner_kwargs)
     finally:
         _close_panel(train_panel)
         if valid_panel is not None:
             _close_panel(valid_panel)
         if test_panel is not None:
             _close_panel(test_panel)
+    finished_at = datetime.now()
+    hyperparameters = {
+        "target_factor_count": target_count,
+        "max_attempts": max_attempts,
+        "rollout_timesteps": rollout_timesteps,
+        "seed": int(config.get("seed", 0)),
+        "device": device,
+        "target_horizon": int(target_horizon),
+        "max_backtrack_days": effective_backtrack,
+        "requested_max_backtrack_days": int(max_backtrack_days),
+        "max_future_days": int(max_future_days),
+        "quality": {
+            "min_coverage": quality.min_coverage,
+            "min_train_ic": quality.min_train_ic,
+            "min_valid_ic": quality.min_valid_ic,
+            "min_test_ic": quality.min_test_ic,
+            "min_icir": quality.min_icir,
+            "score_ic_weight": quality.score_ic_weight,
+            "score_rank_ic_weight": quality.score_rank_ic_weight,
+            "score_icir_weight": quality.score_icir_weight,
+        },
+        "operator_mode": operator_mode,
+        "operators": operator_names,
+    }
     result = {
         "run_id": run_id,
+        "run_name": str(config.get("run_name") or ""),
+        "job_id": str(config.get("job_id") or ""),
         "factor_run_dir": str(factor_run_dir),
         "pool_id": pool_id,
         "data_source": runtime.get("data_source"),
@@ -350,7 +547,23 @@ def run_factor_generation(
         "fields": runtime.get("fields"),
         "panel_fields": runtime.get("panel_fields"),
         "fundamental_period_mode": runtime.get("fundamental_period_mode"),
-        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "operators": operator_names,
+        "operator_mode": operator_mode,
+        "device": device,
+        "n_stocks": len(runtime.get("pool_codes") or []),
+        "started_at": started_at.isoformat(timespec="seconds"),
+        "finished_at": finished_at.isoformat(timespec="seconds"),
+        "duration_seconds": round((finished_at - started_at).total_seconds(), 3),
+        "training_started_at": getattr(runner, "training_started_at", None),
+        "training_finished_at": getattr(runner, "training_finished_at", None),
+        "training_seconds": getattr(runner, "training_seconds", None),
+        "timesteps": getattr(runner, "timesteps", None),
+        "hyperparameters": hyperparameters,
+        "max_backtrack_days": effective_backtrack,
+        "requested_max_backtrack_days": int(max_backtrack_days),
+        "max_future_days": int(max_future_days),
+        "split_days": split_days,
+        "created_at": finished_at.isoformat(timespec="seconds"),
         "accepted_count": int(getattr(runner, "accepted_count", 0)),
         "attempts": int(getattr(runner, "attempts", 0)),
         "target_reached": bool(getattr(runner, "target_reached", False)),
