@@ -1,4 +1,4 @@
-"""算子金标准：固定合成面板 × 全部 80 个算子，锁住搬家之后的数值。
+"""算子金标准：固定合成面板 × 全部 82 个算子，锁住搬家之后的数值。
 
 数出自当前实现；搬家前用一次性 dump 脚本对 custom_bt 老实现做过逐字节对拍
 （算子清单 / 每个 example 的数值 / /api/operators 的 JSON 全部相等），所以这里的
@@ -80,12 +80,13 @@ DIGESTS = {
     "ts_av_diff": "0079da3dcee8a541",
     "ts_backfill": "26e4e9ffddc91fcd",
     "ts_corr": "d97647f91d188510",
-    "ts_count_nans": "2b51efe0eba2a4b9",
+    "ts_count_nans": "1f3fea6d76686b5c",
     "ts_covariance": "373e6819fe1ce609",
     "ts_decay_linear": "f2c071258ac638e3",
     "ts_delay": "3dbb40309b25535b",
     "ts_delta": "43cafd9c458b1f52",
     "ts_ema": "bf25b4719d98712f",
+    "ts_kurt": "bb0f41a2fe17a69c",
     "ts_mad": "e9a0315750c4c1f1",
     "ts_max": "9699d8fbee4947ee",
     "ts_mean": "3fe3670bdca7514d",
@@ -96,6 +97,7 @@ DIGESTS = {
     "ts_rank": "25ecddc4b152ca26",
     "ts_regression": "ad509fae373233b4",
     "ts_scale": "416bdde06e9c103f",
+    "ts_skew": "08288f6a78adac29",
     "ts_std": "b082b84984c93541",
     "ts_std_dev": "b082b84984c93541",
     "ts_step": "8b687061f4a82cc3",
@@ -430,7 +432,7 @@ def expression_for(name: str) -> str:
 
 
 def test_reference_panel_is_unchanged(panel):
-    """面板本身变了会让下面 80 个摘要一起红 —— 先在这里挡住。"""
+    """面板本身变了会让下面 82 个摘要一起红 —— 先在这里挡住。"""
     assert panel.shape == (PANEL_ROWS, 17)
     assert int(panel["close"].isna().sum()) == PANEL_NANS
 

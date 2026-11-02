@@ -41,15 +41,15 @@ def test_list_json(panel_csv):
     proc = run_cli("list", "--json", cwd=PROJECT_DIR)
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
-    assert payload["total"] == 80
-    assert len(payload["operators"]) == 80
+    assert payload["total"] == 82
+    assert len(payload["operators"]) == 82
     assert len(payload["categories"]) == 7
 
 
 def test_list_filters_by_category_and_search():
     by_category = run_cli("list", "--category", "time_series", cwd=PROJECT_DIR)
     assert by_category.returncode == 0
-    assert "共 34 个算子" in by_category.stdout
+    assert "共 36 个算子" in by_category.stdout
 
     by_search = run_cli("list", "--search", "corr", cwd=PROJECT_DIR)
     assert "ts_corr" in by_search.stdout

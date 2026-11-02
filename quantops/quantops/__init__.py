@@ -1,4 +1,4 @@
-"""quantops —— 80 个 Alpha101 风格因子算子 + 表达式引擎。
+"""quantops —— 82 个 Alpha101 风格因子算子 + 表达式引擎。
 
 只依赖 numpy / pandas。四种用法：
 

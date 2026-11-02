@@ -1,4 +1,4 @@
-"""类式入口：`OperatorSet` 把 80 个算子包成一个类，可选绑定一张面板。
+"""类式入口：`OperatorSet` 把 82 个算子包成一个类，可选绑定一张面板。
 
 与函数式（``quantops.ts_mean``）、访问器式（``series.qo.ts_mean``）完全等价 ——
 底层是同一份实现，这里只是把它们挂成实例方法，并支持字段名直接当参数：
@@ -49,7 +49,7 @@ from quantops.panel import available_fields, prepare_panel, to_frame as series_t
 
 
 class OperatorSet:
-    """80 个算子的类式入口；可选绑定一张面板，让字段名可以直接当参数用。"""
+    """82 个算子的类式入口；可选绑定一张面板，让字段名可以直接当参数用。"""
 
     def __init__(self, panel: Optional[pd.DataFrame] = None) -> None:
         self._panel = panel
@@ -75,7 +75,7 @@ class OperatorSet:
 
     @property
     def names(self) -> List[str]:
-        """全部算子名（80 个，按字母序）。"""
+        """全部算子名（82 个，按字母序）。"""
         return sorted(OPERATORS)
 
     def field(self, name: str) -> pd.Series:

@@ -1,4 +1,4 @@
-"""类式入口 `OperatorSet`：80 个算子当方法调、字段名解析、表达式求值、错误提示。
+"""类式入口 `OperatorSet`：82 个算子当方法调、字段名解析、表达式求值、错误提示。
 
 核心要求：类式调用与函数式调用**逐值相等**（底层是同一份实现），
 以及「字符串参数只有恰好是字段名时才解析」这条规则别误伤
@@ -213,7 +213,7 @@ def test_metadata_helpers(ops):
 
 
 def test_repr_and_names(ops):
-    assert "80 operators" in repr(ops)
+    assert f"{len(OPERATORS)} operators" in repr(ops)
     assert "7 fields" in repr(ops)  # open/close/high/low/volume/amount/industry
     assert "no panel" in repr(OperatorSet())
     assert len(ops.names) == len(OPERATORS)

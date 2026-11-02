@@ -88,8 +88,10 @@ OPERATOR_CN_DESCRIPTIONS = {
     "ts_rank": "按股票计算当前值在过去 n 天窗口内的百分位排名。",
     "ts_regression": "按股票做滚动线性回归，当前实现返回 y 对 x 的斜率。",
     "ts_scale": "按股票用滚动最小值和最大值做 0 到 1 缩放。",
+    "ts_skew": "按股票计算滚动偏度，衡量窗口内收益分布的不对称程度。",
     "ts_std": "按股票计算滚动标准差。",
     "ts_std_dev": "ts_std 的 Brain 风格别名，按股票计算滚动标准差。",
+    "ts_kurt": "按股票计算滚动超额峰度，衡量窗口内极端值出现的频率。",
     "ts_step": "按股票生成从 0 开始的时间序号。",
     "ts_sum": "按股票计算滚动求和。",
     "ts_zscore": "按股票计算滚动 zscore，衡量相对自身历史均值的偏离。",
@@ -169,8 +171,10 @@ OPERATOR_EXAMPLES = {
     "ts_rank": "ts_rank(close, 20)",
     "ts_regression": "ts_regression(close, volume, 20)",
     "ts_scale": "ts_scale(close, 20)",
+    "ts_skew": "ts_skew(close, 20)",
     "ts_std": "ts_std(close, 20)",
     "ts_std_dev": "ts_std_dev(close, 20)",
+    "ts_kurt": "ts_kurt(close, 20)",
     "ts_step": "ts_step(close)",
     "ts_sum": "ts_sum(volume, 20)",
     "ts_zscore": "ts_zscore(close, 20)",
@@ -196,18 +200,27 @@ def catalog() -> List[Dict[str, object]]:
             definition = get_operator(name)
         except KeyError:
             definition = None
+        names = [name, *definition.aliases] if definition else [name]
         items.append(
             {
                 "name": name,
                 "category": category,
                 "category_cn": CATEGORY_CN.get(category, category),
                 "canonical_name": definition.canonical_name if definition else name,
-                "description_cn": OPERATOR_CN_DESCRIPTIONS.get(
-                    name,
+                "description_cn": next(
+                    (
+                        OPERATOR_CN_DESCRIPTIONS[alias]
+                        for alias in names
+                        if alias in OPERATOR_CN_DESCRIPTIONS
+                    ),
                     definition.description if definition else item.get("description", ""),
                 ),
-                "example": OPERATOR_EXAMPLES.get(
-                    name,
+                "example": next(
+                    (
+                        OPERATOR_EXAMPLES[alias]
+                        for alias in names
+                        if alias in OPERATOR_EXAMPLES
+                    ),
                     definition.example if definition else f"{name}(close)",
                 ),
                 "generation_enabled": bool(definition and definition.generation_enabled),
@@ -226,7 +239,7 @@ def describe(name: str) -> Dict[str, object]:
 
 
 def categories() -> List[Dict[str, object]]:
-    """分类清单：``[{"key": "time_series", "label": "时间序列", "count": 34}, ...]``。"""
+    """分类清单：``[{"key": "time_series", "label": "时间序列", "count": 36}, ...]``。"""
     counts: Dict[str, int] = {}
     for item in list_operators():
         counts[item["category"]] = counts.get(item["category"], 0) + 1

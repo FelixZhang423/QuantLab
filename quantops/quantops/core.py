@@ -224,6 +224,51 @@ def _ts_rank(x: pd.Series, n: int) -> pd.Series:
     return _rolling_apply(x, n, lambda arr: pd.Series(arr).rank(pct=True).iloc[-1])
 
 
+def _ts_count_nans(x: pd.Series, n: int) -> pd.Series:
+    """Rolling count of NaNs; the indicator is non-NaN, so full windows are counted."""
+    n = int(n)
+    return (
+        x.isna()
+        .astype(float)
+        .groupby(level="code")
+        .rolling(n, min_periods=n)
+        .sum()
+        .reset_index(level=0, drop=True)
+        .sort_index()
+    )
+
+
+def _ts_skew(x: pd.Series, n: int) -> pd.Series:
+    """Population skewness, matching AlphaGen's ``Skew`` moment formula."""
+
+    def apply(arr: np.ndarray) -> float:
+        if np.isnan(arr).any():
+            return np.nan
+        central = arr - arr.mean()
+        m2 = float(np.mean(central ** 2))
+        if m2 == 0:
+            return np.nan
+        return float(np.mean(central ** 3) / m2 ** 1.5)
+
+    return _rolling_apply(x, int(n), apply)
+
+
+def _ts_kurt(x: pd.Series, n: int) -> pd.Series:
+    """Excess kurtosis, matching AlphaGen's ``Kurt`` (population m4 / sample var²)."""
+
+    def apply(arr: np.ndarray) -> float:
+        if np.isnan(arr).any():
+            return np.nan
+        central = arr - arr.mean()
+        m4 = float(np.mean(central ** 4))
+        var = float(np.var(arr, ddof=1))
+        if var == 0:
+            return np.nan
+        return m4 / var ** 2 - 3.0
+
+    return _rolling_apply(x, int(n), apply)
+
+
 def _ts_quantile(x: pd.Series, n: int, driver: str = "gaussian", sigma: float = 1.0) -> pd.Series:
     ranked = _ts_rank(x, n).clip(1e-6, 1 - 1e-6)
     driver = str(driver).lower()
@@ -298,7 +343,7 @@ def _ts_mad(x: pd.Series, n: int) -> pd.Series:
     )
 
 
-def _kth_element(x: pd.Series, n: int, k: int) -> pd.Series:
+def _kth_element(x: pd.Series, n: int, k: int = 2) -> pd.Series:
     k = int(k)
 
     def apply(arr: np.ndarray) -> float:

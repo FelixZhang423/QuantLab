@@ -59,7 +59,7 @@ def panel() -> pd.DataFrame:
 # ---------- 算子出口 ----------
 
 def test_all_operators_are_flat_callable_exports():
-    assert len(OPERATORS) == 80
+    assert len(OPERATORS) == 82
     missing = [name for name in OPERATORS if not callable(getattr(qo, name, None))]
     assert missing == []
 
@@ -67,14 +67,14 @@ def test_all_operators_are_flat_callable_exports():
 def test_list_operators_shape_is_unchanged():
     """老接口：3 个键、按 (category, name) 排序 —— 后端 /api/operators 直接吃这个形状。"""
     items = qo.list_operators()
-    assert len(items) == 80
+    assert len(items) == 82
     assert all(set(item) == {"name", "category", "description"} for item in items)
     assert items == sorted(items, key=lambda item: (item["category"], item["name"]))
 
 
 def test_catalog_and_describe_and_categories():
     catalog = qo.catalog()
-    assert len(catalog) == 80
+    assert len(catalog) == 82
     assert set(catalog[0]) == {
         "name",
         "category",
@@ -93,7 +93,7 @@ def test_catalog_and_describe_and_categories():
         qo.describe("not_an_operator")
 
     categories = qo.categories()
-    assert sum(item["count"] for item in categories) == 80
+    assert sum(item["count"] for item in categories) == 82
     assert {item["key"] for item in categories} == {
         "arithmetic",
         "cross_section",

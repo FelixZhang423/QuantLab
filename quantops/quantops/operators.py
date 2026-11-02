@@ -1,4 +1,4 @@
-"""算子注册表：80 个算子的实现与 ``OPERATORS`` 字典。
+"""算子注册表：82 个算子的实现与 ``OPERATORS`` 字典。
 
 实现从 custom_bt/expressions.py 原样搬出（逐行等价）。每个算子都是
 ``Callable[..., pd.Series]``，第一个参数为 MultiIndex(date, code) 的 Series。
@@ -43,13 +43,16 @@ from quantops.core import (
     _trade_when,
     _ts_arg,
     _ts_corr,
+    _ts_count_nans,
     _ts_covariance,
     _ts_decay_linear,
     _ts_ema,
+    _ts_kurt,
     _ts_mad,
     _ts_quantile,
     _ts_rank,
     _ts_scale,
+    _ts_skew,
     _ts_wma,
     _where,
     _winsorize,
@@ -117,8 +120,10 @@ OPERATORS: Dict[str, OperatorSpec] = {
     "ts_av_diff": OperatorSpec("ts_av_diff", "time_series", "Current value minus rolling mean.", lambda x, n: x - _rolling(x, n, "mean")),
     "ts_backfill": OperatorSpec("ts_backfill", "time_series", "Forward-fill missing values per stock with limit n.", lambda x, n: x.groupby(level="code").ffill(limit=int(n))),
     "ts_corr": OperatorSpec("ts_corr", "time_series", "Rolling correlation per stock.", _ts_corr),
-    "ts_count_nans": OperatorSpec("ts_count_nans", "time_series", "Rolling count of NaN values per stock.", lambda x, n: _rolling_apply(x, n, lambda arr: float(np.isnan(arr).sum()))),
+    "ts_count_nans": OperatorSpec("ts_count_nans", "time_series", "Rolling count of NaN values per stock.", _ts_count_nans),
     "ts_covariance": OperatorSpec("ts_covariance", "time_series", "Rolling covariance per stock.", _ts_covariance),
+    "ts_skew": OperatorSpec("ts_skew", "time_series", "Rolling skewness per stock.", _ts_skew),
+    "ts_kurt": OperatorSpec("ts_kurt", "time_series", "Rolling excess kurtosis per stock.", _ts_kurt),
     "ts_decay_linear": OperatorSpec("ts_decay_linear", "time_series", "Linearly weighted rolling mean per stock.", _ts_decay_linear),
     "ts_wma": OperatorSpec("ts_wma", "time_series", "AlphaGen-compatible weighted moving average.", _ts_wma),
     "ts_ema": OperatorSpec("ts_ema", "time_series", "AlphaGen-compatible weighted exponential moving average.", _ts_ema),
@@ -148,9 +153,9 @@ OPERATORS: Dict[str, OperatorSpec] = {
 }
 
 
-# 注意：合并规则是「已在字面量里的算子优先」。22 个 canonical 定义里只有 3 个
+# 注意：合并规则是「已在字面量里的算子优先」。64 个 canonical 定义里只有 3 个
 # （sub / mul / div）不在上面的 OPERATORS 中，会采用定义里的 category / description；
-# 其余 19 个（例如 max 用的是字面量的 "Element-wise maximum across inputs."）保留字面量文案。
+# 其余 61 个（例如 max 用的是字面量的 "Element-wise maximum across inputs."）保留字面量文案。
 # 动这段会直接改变 /api/operators 的输出 —— 不要当成"重复定义"顺手清理。
 for _definition in list_operator_definitions():
     if _definition.canonical_name in OPERATORS:

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "quantops"
 version = "0.1.0"
-description = "80 个 Alpha101 风格因子算子 + 表达式引擎（只依赖 numpy / pandas）"
+description = "82 个 Alpha101 风格因子算子 + 表达式引擎（只依赖 numpy / pandas）"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "pandas>=2.0"]
