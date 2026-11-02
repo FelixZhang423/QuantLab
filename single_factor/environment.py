@@ -1,4 +1,4 @@
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Type
 
 try:
     import gymnasium as gym
@@ -9,6 +9,7 @@ import numpy as np
 from ._vendor.alphagen.config import CONSTANTS, DELTA_TIMES, MAX_EXPR_LENGTH, OPERATORS
 from ._vendor.alphagen.data.expression import (
     BinaryOperator,
+    DeltaTime,
     PairRollingOperator,
     RollingOperator,
     UnaryOperator,
@@ -116,10 +117,22 @@ class SingleFactorEnvCore(gym.Env):
 
 
 class SingleFactorEnvWrapper(gym.Wrapper):
-    def __init__(self, env: SingleFactorEnvCore) -> None:
+    def __init__(
+        self,
+        env: SingleFactorEnvCore,
+        operators: Optional[Sequence[Type]] = None,
+    ) -> None:
         super().__init__(env)
         self.env: SingleFactorEnvCore
-        self.size_op = len(OPERATORS)
+        # None = 沿用 AlphaGen 全量算子；显式列表 = 只在该子集内采样。
+        self.operators = tuple(OPERATORS if operators is None else operators)
+        if not self.operators:
+            raise ValueError("factor generation requires at least one operator")
+        self._rolling_operators = tuple(
+            operator for operator in self.operators
+            if issubclass(operator, (RollingOperator, PairRollingOperator))
+        )
+        self.size_op = len(self.operators)
         self.size_feature = len(env.feature_names)
         self.size_constant = len(CONSTANTS)
         self.size_delta_time = len(DELTA_TIMES)
@@ -159,7 +172,7 @@ class SingleFactorEnvWrapper(gym.Wrapper):
         valid = self.env.valid_action_types()
         result = np.zeros(self.size_action, dtype=bool)
         offset = 0
-        for operator_index, operator in enumerate(OPERATORS):
+        for operator_index, operator in enumerate(self.operators):
             result[offset + operator_index] = valid["op"].get(
                 operator.category_type(), False
             )
@@ -170,16 +183,27 @@ class SingleFactorEnvWrapper(gym.Wrapper):
         if valid["select"][2]:
             result[offset : offset + self.size_constant] = True
         offset += self.size_constant
-        if valid["select"][3]:
+        # DeltaTime 只有在「选中的算子子集里至少有一个 rolling / pair-rolling
+        # 算子能消费它」时才允许。否则加入 DeltaTime 后动作掩码会变成全 False，
+        # MaskablePPO 会兜底随机采样，产生非法 token（例如常数跟在 1d 后面）。
+        if valid["select"][3] and self._delta_time_leads_to_operator():
             result[offset : offset + self.size_delta_time] = True
         offset += self.size_delta_time
         if valid["select"][4]:
             result[offset] = True
         return result
 
+    def _delta_time_leads_to_operator(self) -> bool:
+        """加入 DeltaTime 后，选中的算子子集是否还有可执行算子。"""
+        if not self._rolling_operators:
+            return False
+        probe = SingleFactorExpressionBuilder()
+        probe.stack = [*self.env._builder.stack, DeltaTime(1)]
+        return any(probe.validate_op(operator) for operator in self._rolling_operators)
+
     def action_to_token(self, action: int) -> Token:
         if action < self.size_op:
-            return OperatorToken(OPERATORS[action])
+            return OperatorToken(self.operators[action])
         action -= self.size_op
         if action < self.size_feature:
             return NamedFeatureToken(self.env.feature_names[action])
@@ -198,8 +222,10 @@ class SingleFactorEnvWrapper(gym.Wrapper):
 def SingleFactorEnv(
     feature_names: Sequence[str],
     evaluator: SingleFactorEvaluator,
+    operators: Optional[Sequence[Type]] = None,
     **kwargs,
 ) -> SingleFactorEnvWrapper:
     return SingleFactorEnvWrapper(
-        SingleFactorEnvCore(feature_names=feature_names, evaluator=evaluator, **kwargs)
+        SingleFactorEnvCore(feature_names=feature_names, evaluator=evaluator, **kwargs),
+        operators=operators,
     )

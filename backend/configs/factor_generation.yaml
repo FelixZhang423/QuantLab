@@ -385,6 +385,12 @@ splits:
   test:
     cache_start: "2025-07-27"
     cache_end: "2026-06-12"
+# 未显式指定 splits 时，按股票池真实时间跨度（selection_start ~ selection_end）
+# 连续切分 train / valid / test；这里的 splits 只在没有股票池窗口时兜底。
+split_ratios:
+  train: 0.6
+  valid: 0.2
+  test: 0.2
 max_backtrack_days: 100
 target_horizon: 20
 max_future_days: 20
@@ -392,7 +398,8 @@ target_factor_count: 50
 max_attempts: 100000
 rollout_timesteps: 2048
 seed: 0
-device: cpu
+# auto：有可用 CUDA 时用 GPU，否则回退 CPU；也可显式指定 cpu / cuda
+device: auto
 quality:
   min_coverage: 0.9
   min_train_ic: 0.05

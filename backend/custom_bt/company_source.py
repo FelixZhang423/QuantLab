@@ -854,14 +854,45 @@ def load_fundamentals(
     return merged[columns].reset_index(drop=True)
 
 
+def _add_missing_prefixed_columns(
+    panel: pd.DataFrame,
+    columns: Iterable[str],
+    prefix: str,
+    *,
+    excluded: Tuple[str, ...] = ("code",),
+    date_columns: Tuple[str, ...] = (),
+) -> pd.DataFrame:
+    """数据源在窗口内没有记录时，仍补出请求的前缀列（值为 NaN）。
+
+    否则 ``write_pool_panel`` 会生成缺少 ``val_*`` / ``fund_*`` / ``deriv_*`` 列的
+    面板，下游 ``materialize_memmap`` 按列读取时会报 PyArrow
+    ``No match for FieldRef.Name(...)``。
+    """
+    for column in columns:
+        if column in excluded:
+            continue
+        target = f"{prefix}{column}"
+        if target in panel.columns:
+            continue
+        panel[target] = pd.NaT if column in date_columns else float("nan")
+    return panel
+
+
 def attach_fundamentals(panel: pd.DataFrame, fundamentals: Optional[pd.DataFrame]) -> pd.DataFrame:
     """按 InfoPublDate 做 as-of 合并：每日只取当日已披露的最新一期，避免未来函数。"""
-    if fundamentals is None or fundamentals.empty:
+    if fundamentals is None:
         return panel
     left = panel.copy()
     left["code"] = left["code"].astype(str)
     left["date"] = pd.to_datetime(left["date"]).astype("datetime64[ns]")
     right = fundamentals.copy()
+    if right.empty:
+        return _add_missing_prefixed_columns(
+            left,
+            right.columns,
+            FUNDAMENTAL_PREFIX,
+            date_columns=("info_date", "end_date"),
+        )
     right["code"] = right["code"].astype(str)
     right["info_date"] = pd.to_datetime(right["info_date"]).astype("datetime64[ns]")
     right["end_date"] = pd.to_datetime(right["end_date"])
@@ -952,12 +983,16 @@ def load_valuation(
 
 def attach_valuation(panel: pd.DataFrame, valuation: Optional[pd.DataFrame]) -> pd.DataFrame:
     """按交易日合并估值字段（左连接，缺失保留 NaN）。"""
-    if valuation is None or valuation.empty:
+    if valuation is None:
         return panel
     left = panel.copy()
     left["code"] = left["code"].astype(str)
     left["date"] = pd.to_datetime(left["date"]).astype("datetime64[ns]")
     right = valuation.copy()
+    if right.empty:
+        return _add_missing_prefixed_columns(
+            left, right.columns, VALUATION_PREFIX, excluded=("code", "date")
+        )
     right["code"] = right["code"].astype(str)
     right["date"] = pd.to_datetime(right["date"]).astype("datetime64[ns]")
     rename = {
@@ -1057,12 +1092,19 @@ def load_derivatives(
 
 def attach_derivatives(panel: pd.DataFrame, derivatives: Optional[pd.DataFrame]) -> pd.DataFrame:
     """按 InfoPublDate 合并财务衍生字段，列名加 deriv_ 前缀。"""
-    if derivatives is None or derivatives.empty:
+    if derivatives is None:
         return panel
     left = panel.copy()
     left["code"] = left["code"].astype(str)
     left["date"] = pd.to_datetime(left["date"]).astype("datetime64[ns]")
     right = derivatives.copy()
+    if right.empty:
+        return _add_missing_prefixed_columns(
+            left,
+            right.columns,
+            DERIVATIVE_PREFIX,
+            date_columns=("info_date", "end_date"),
+        )
     right["code"] = right["code"].astype(str)
     right["info_date"] = pd.to_datetime(right["info_date"]).astype("datetime64[ns]")
     right["end_date"] = pd.to_datetime(right["end_date"])
@@ -1207,6 +1249,12 @@ def write_pool_panel(
                 derivatives = load_derivatives(codes, start_date, end_date, deriv_fields, settings=settings, client=client)
                 frame = attach_derivatives(frame, derivatives)
             frame.to_parquet(panel_path, index=False)
+        available = set(pq.read_schema(panel_path).names)
+        missing = [field for field in selected if field not in available]
+        if missing:
+            preview = ", ".join(missing[:10])
+            suffix = " ..." if len(missing) > 10 else ""
+            raise ValueError(f"panel missing requested fields: {preview}{suffix}")
         table = pq.read_table(panel_path, columns=["date", "code"])
         rows = table.num_rows
         if rows == 0:

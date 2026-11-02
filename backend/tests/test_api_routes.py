@@ -630,6 +630,9 @@ def test_factor_runs_list_and_detail(master, tmp_path, monkeypatch):
         factor_id(2, "$open"),
     ]
     assert detail["accepted_factors"][0]["ic"] == 0.01
+    assert detail["accepted_factors"][0]["canonical_expression"] == "close"
+    assert detail["accepted_factors"][0]["backtest_expression"] == "close"
+    assert detail["accepted_factors"][1]["canonical_expression"] == "open"
     assert detail["manifest"]["pool_id"] == pool_id
 
     with pytest.raises(HTTPException) as excinfo:
@@ -638,6 +641,87 @@ def test_factor_runs_list_and_detail(master, tmp_path, monkeypatch):
     with pytest.raises(HTTPException) as excinfo:
         main.get_factor_run("missing")
     assert excinfo.value.status_code == 404
+
+
+def test_factor_runs_merge_mysql_metadata(master, tmp_path, monkeypatch):
+    _, run_dir, _ = _factor_case(master, tmp_path, monkeypatch)
+    run_dir_manifest = json.loads((run_dir / "factor_run.json").read_text(encoding="utf-8"))
+    _write_json(run_dir / "factor_run.json", {**run_dir_manifest, "device": "cpu"})
+
+    def fake_fetch(pool_id=None, limit=500):
+        return [
+            {
+                "run_id": "run_a",
+                "pool_id": "pool_a",
+                "created_at": "2026-10-25T10:00:00",
+                "accepted_count": 1,
+                "attempts": 12,
+                "device": "cuda",
+                "training_seconds": 9.5,
+                "duration_seconds": 12.0,
+                "timesteps": 512,
+                "hyperparameters": {"seed": 0},
+                "split_days": {"train": 20},
+            },
+            {
+                "run_id": "run_mysql_only",
+                "pool_id": "pool_a",
+                "created_at": "2026-10-24T09:00:00",
+                "accepted_count": 2,
+                "attempts": 30,
+                "device": "cpu",
+            },
+        ]
+
+    monkeypatch.setattr(main.mysql_store, "fetch_factor_runs", fake_fetch)
+
+    data = main.get_factor_runs(pool_id=None)
+
+    assert data["source"] == "mysql"
+    assert data["total"] == 2
+    by_id = {run["run_id"]: run for run in data["runs"]}
+    assert by_id["run_a"]["storage"] == "mysql+local"
+    assert by_id["run_a"]["local_available"] is True
+    assert by_id["run_a"]["device"] == "cpu"  # 本地 manifest 优先
+    assert by_id["run_a"]["training_seconds"] == 9.5
+    assert by_id["run_a"]["timesteps"] == 512
+    assert by_id["run_a"]["hyperparameters"] == {"seed": 0}
+    assert by_id["run_a"]["split_days"] == {"train": 20}
+    assert by_id["run_mysql_only"]["storage"] == "mysql"
+    assert by_id["run_mysql_only"]["local_available"] is False
+
+
+def test_factor_run_detail_falls_back_to_mysql(master, tmp_path, monkeypatch):
+    _, _, factor_root = _factor_case(master, tmp_path, monkeypatch)
+    monkeypatch.setattr(main.mysql_store, "fetch_factor_run", lambda run_id: {
+        "run_id": run_id,
+        "pool_id": "pool_a",
+        "created_at": "2026-10-24T09:00:00",
+        "accepted_count": 1,
+        "device": "cuda",
+        "raw": {"pool_id": "pool_a", "run_name": "mysql_only"},
+    })
+    monkeypatch.setattr(
+        main.mysql_store,
+        "fetch_factor_run_factors",
+        lambda run_id, accepted_only=False: [
+            {
+                "factor_id": factor_id(1, "$close"),
+                "expression": "$close",
+                "ic": 0.02,
+                "segments": {"train": {"ic": 0.02}},
+            }
+        ],
+    )
+
+    detail = main.get_factor_run("run_mysql_only")
+
+    assert detail["storage"] == "mysql"
+    assert detail["local_available"] is False
+    assert detail["accepted_count"] == 1
+    assert detail["accepted_factors"][0]["expression"] == "$close"
+    assert detail["manifest"]["run_name"] == "mysql_only"
+    assert not (factor_root / "run_mysql_only").exists()
 
 
 def test_create_factor_backtest_builds_payload_and_spawns_job(master, tmp_path, monkeypatch):
@@ -1459,3 +1543,399 @@ def test_create_manual_backtest_marks_job_failed_when_spawn_fails(master, monkey
         )
     assert excinfo.value.status_code == 500
     assert marked["status"] == "failed"
+
+
+# ---------- 因子生成（PPO） ----------
+
+
+def _generation_splits(start="2024-01-01", end="2024-12-31"):
+    return {
+        name: main.FactorGenerationSplit(cache_start=start, cache_end=end)
+        for name in ("train", "valid", "test")
+    }
+
+
+def _generation_request(**overrides):
+    base = {
+        "pool_id": "pool_company",
+        "fields": ["close", "open"],
+        "operators": ["add"],
+        "splits": _generation_splits(),
+        "target_factor_count": 1,
+        "max_attempts": 2,
+        "rollout_timesteps": 64,
+    }
+    base.update(overrides)
+    return main.FactorGenerationRequest(**base)
+
+
+def test_create_factor_generation_builds_payload_and_returns_run_id(master, monkeypatch):
+    _write_manual_pool(main.POOLS_ROOT, selection_end="2024-12-31")
+    _stub_company_meta(monkeypatch)
+    real_create = main.create_platform_job
+    captured = {}
+
+    def wrapped_create(jobs_root, operation, payload):
+        captured["operation"] = operation
+        captured["payload"] = payload
+        return real_create(jobs_root, operation, payload)
+
+    monkeypatch.setattr(main, "create_platform_job", wrapped_create)
+    monkeypatch.setattr(
+        main, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir)
+    )
+
+    response = main.create_factor_generation(
+        main.FactorGenerationRequest(
+            pool_id="pool_company",
+            run_name="ppo_demo",
+            fields=["close", "open", "fund_OperatingReenue"],
+            operators=["add", "divide", "Add"],
+            splits=_generation_splits(),
+            target_factor_count=3,
+            max_attempts=12,
+            rollout_timesteps=64,
+            seed=7,
+            device="cpu",
+            quality={"min_coverage": 0.8},
+        )
+    )
+
+    payload = captured["payload"]
+    assert captured["operation"] == "generate_factors"
+    assert captured["spawned"].is_dir()
+    assert payload["pool_id"] == "pool_company"
+    assert payload["fields"] == ["close", "open", "fund_OperatingReenue"]
+    assert payload["operators"] == ["add", "div"]
+    assert payload["splits"] == {
+        name: {"cache_start": "2024-01-01", "cache_end": "2024-12-31"}
+        for name in ("train", "valid", "test")
+    }
+    assert payload["max_backtrack_days"] == 100
+    assert payload["target_horizon"] == 20
+    assert payload["max_future_days"] == 20
+    assert payload["data_source"] == "clickhouse"
+    config = payload["generation_config"]
+    assert config["run_name"] == "ppo_demo"
+    assert config["target_factor_count"] == 3
+    assert config["max_attempts"] == 12
+    assert config["rollout_timesteps"] == 64
+    assert config["seed"] == 7
+    assert config["device"] == "cpu"
+    assert config["quality"]["min_coverage"] == 0.8
+    assert config["quality"]["min_train_ic"] == 0.05
+
+    created = json.loads(
+        (captured["spawned"] / "platform_job.json").read_text(encoding="utf-8")
+    )
+    run_id = created["payload"]["generation_config"]["run_id"]
+    assert run_id.startswith("ppo_demo_")
+    assert response["job_id"] == captured["spawned"].name
+    assert response["status"] == "queued"
+    assert response["operation"] == "generate_factors"
+    assert response["run_id"] == run_id
+    assert response["run_name"] == "ppo_demo"
+    assert response["warnings"] == []
+    summary = response["request_summary"]
+    assert summary["pool_id"] == "pool_company"
+    assert summary["n_stocks"] == 2
+    assert summary["field_count"] == 3
+    assert summary["operators"] == ["add", "div"]
+    assert summary["operator_mode"] == "selected"
+
+
+def test_factor_generation_defaults_follow_pool_time_span(master):
+    _write_manual_pool(
+        main.POOLS_ROOT,
+        selection_start="2024-01-01",
+        selection_end="2024-01-10",
+    )
+
+    defaults = main.get_factor_generation_defaults(pool_id="pool_company")
+
+    assert defaults["split_source"] == "pool"
+    assert defaults["pool_window"] == {"start": "2024-01-01", "end": "2024-01-10"}
+    assert defaults["splits"] == {
+        "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-06"},
+        "valid": {"cache_start": "2024-01-07", "cache_end": "2024-01-08"},
+        "test": {"cache_start": "2024-01-09", "cache_end": "2024-01-10"},
+    }
+    assert defaults["warnings"] == []
+
+
+def test_factor_generation_defaults_without_pool_use_config(master):
+    defaults = main.get_factor_generation_defaults()
+
+    assert defaults["split_source"] == "config"
+    assert defaults["pool_window"] is None
+    assert defaults["splits"]["train"]["cache_start"] == "2024-01-01"
+
+
+def test_factor_generation_defaults_read_mysql_only_pool(master, monkeypatch):
+    monkeypatch.setattr(
+        main.mysql_store,
+        "fetch_pool",
+        lambda pool_id: {
+            "pool_id": pool_id,
+            "manifest": {
+                "pool_id": pool_id,
+                "name": "MySQL 池",
+                "data_source": "clickhouse",
+                "source_signature": company_source.SOURCE_SIGNATURE,
+                "selection_start": "2024-01-01",
+                "selection_end": "2024-01-10",
+            },
+            "codes": ["000001", "600000"],
+            "created_at": "2026-10-29 14:18",
+        },
+    )
+
+    defaults = main.get_factor_generation_defaults(pool_id="mysql_pool")
+
+    assert defaults["split_source"] == "pool"
+    assert defaults["pool_window"] == {"start": "2024-01-01", "end": "2024-01-10"}
+    assert defaults["splits"]["train"] == {
+        "cache_start": "2024-01-01",
+        "cache_end": "2024-01-06",
+    }
+    assert defaults["warnings"] == []
+
+
+def test_create_factor_generation_supports_mysql_only_pool(master, monkeypatch):
+    _stub_company_meta(monkeypatch)
+    monkeypatch.setattr(
+        main.mysql_store,
+        "fetch_pool",
+        lambda pool_id: {
+            "pool_id": pool_id,
+            "manifest": {
+                "pool_id": pool_id,
+                "name": "MySQL 池",
+                "data_source": "clickhouse",
+                "source_signature": company_source.SOURCE_SIGNATURE,
+                "selection_start": "2024-01-01",
+                "selection_end": "2024-12-31",
+                "n_stocks": 2,
+            },
+            "codes": ["000001", "600000"],
+            "created_at": "2026-10-29 14:18",
+        },
+    )
+    captured = {}
+
+    def fake_create(jobs_root, operation, payload):
+        captured["operation"] = operation
+        captured["payload"] = payload
+        return _make_job_dir(jobs_root)
+
+    monkeypatch.setattr(main, "create_platform_job", fake_create)
+    monkeypatch.setattr(
+        main, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir)
+    )
+
+    response = main.create_factor_generation(
+        _generation_request(pool_id="mysql_pool", splits=None)
+    )
+
+    payload = captured["payload"]
+    assert captured["operation"] == "generate_factors"
+    assert payload["pool_id"] == "mysql_pool"
+    assert payload["pool_codes"] == ["000001", "600000"]
+    assert payload["pool_manifest"]["name"] == "MySQL 池"
+    assert payload["pool_manifest"]["selection_start"] == "2024-01-01"
+    assert payload["splits"]["train"]["cache_start"] == "2024-01-01"
+    assert response["pool_storage"] == "mysql"
+    assert response["request_summary"]["pool_storage"] == "mysql"
+    assert response["request_summary"]["n_stocks"] == 2
+
+
+def test_create_factor_generation_local_pool_does_not_send_pool_payload(master, monkeypatch):
+    _write_manual_pool(main.POOLS_ROOT, selection_end="2024-12-31")
+    _stub_company_meta(monkeypatch)
+    monkeypatch.setattr(main.mysql_store, "fetch_pool", lambda pool_id: None)
+    captured = {}
+
+    def fake_create(jobs_root, operation, payload):
+        captured["payload"] = payload
+        return _make_job_dir(jobs_root)
+
+    monkeypatch.setattr(main, "create_platform_job", fake_create)
+    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+
+    response = main.create_factor_generation(_generation_request(splits=None))
+
+    assert "pool_manifest" not in captured["payload"]
+    assert "pool_codes" not in captured["payload"]
+    assert response["pool_storage"] == "local"
+
+
+def test_create_factor_generation_defaults_splits_to_pool_window(master, monkeypatch):
+    _write_manual_pool(
+        main.POOLS_ROOT,
+        selection_start="2024-01-01",
+        selection_end="2024-01-10",
+    )
+    _stub_company_meta(monkeypatch)
+    captured = {}
+
+    def fake_create(jobs_root, operation, payload):
+        captured["payload"] = payload
+        return _make_job_dir(jobs_root)
+
+    monkeypatch.setattr(main, "create_platform_job", fake_create)
+    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+
+    response = main.create_factor_generation(
+        _generation_request(
+            splits=None,
+            max_backtrack_days=1,
+            target_horizon=1,
+            max_future_days=1,
+            target_factor_count=1,
+            max_attempts=1,
+        )
+    )
+
+    assert captured["payload"]["splits"] == {
+        "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-06"},
+        "valid": {"cache_start": "2024-01-07", "cache_end": "2024-01-08"},
+        "test": {"cache_start": "2024-01-09", "cache_end": "2024-01-10"},
+    }
+    assert response["request_summary"]["split_source"] == "pool"
+    assert response["request_summary"]["pool_window"] == {
+        "start": "2024-01-01",
+        "end": "2024-01-10",
+    }
+
+
+def test_create_factor_generation_rejects_splits_outside_pool_window(master, monkeypatch):
+    _write_manual_pool(main.POOLS_ROOT)
+    _stub_company_meta(monkeypatch)
+
+    with pytest.raises(HTTPException) as excinfo:
+        main.create_factor_generation(_generation_request())
+
+    assert excinfo.value.status_code == 422
+    assert "股票池真实时间跨度" in excinfo.value.detail
+
+
+def test_create_factor_generation_validates_fields_operators_and_bounds(master, monkeypatch):
+    _write_manual_pool(main.POOLS_ROOT)
+    _stub_company_meta(monkeypatch)
+    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+
+    def expect(status, message, **overrides):
+        with pytest.raises(HTTPException) as excinfo:
+            main.create_factor_generation(_generation_request(**overrides))
+        assert excinfo.value.status_code == status
+        assert message in excinfo.value.detail
+
+    expect(422, "不能用于因子生成", fields=["not_a_real_field"])
+    expect(
+        422,
+        "财务流量字段口径冲突",
+        fields=["fund_OperatingReenue", "fund_OperatingReenue_q"],
+    )
+    expect(422, "未知算子", operators=["not_an_operator"])
+    expect(422, "max_attempts", target_factor_count=5, max_attempts=1)
+    expect(422, "max_future_days", target_horizon=50, max_future_days=20)
+    expect(422, "rollout_timesteps", rollout_timesteps=1)
+    expect(422, "run_name", run_name="bad/name")
+    expect(
+        422,
+        "不能晚于",
+        splits={
+            "train": main.FactorGenerationSplit(
+                cache_start="2024-06-01", cache_end="2024-01-01"
+            )
+        },
+    )
+    expect(
+        422,
+        "没有交集",
+        splits={
+            "train": main.FactorGenerationSplit(
+                cache_start="2030-01-01", cache_end="2030-06-01"
+            )
+        },
+    )
+    expect(422, "请至少提供 train", splits={})
+
+    with pytest.raises(HTTPException) as excinfo:
+        main.create_factor_generation(_generation_request(pool_id="missing"))
+    assert excinfo.value.status_code == 404
+
+    with pytest.raises(HTTPException) as excinfo:
+        main.create_factor_generation(_generation_request(pool_id=""))
+    assert excinfo.value.status_code == 422
+    assert "请选择股票池" in excinfo.value.detail
+
+
+def test_create_factor_generation_rejects_signature_mismatch(master, monkeypatch):
+    _write_manual_pool(main.POOLS_ROOT, signature="other")
+    _stub_company_meta(monkeypatch)
+
+    with pytest.raises(HTTPException) as excinfo:
+        main.create_factor_generation(_generation_request())
+    assert excinfo.value.status_code == 422
+    assert "签名" in excinfo.value.detail
+
+
+def test_create_factor_generation_marks_job_failed_when_spawn_fails(master, monkeypatch):
+    _write_manual_pool(main.POOLS_ROOT, selection_end="2024-12-31")
+    _stub_company_meta(monkeypatch)
+    marked = {}
+    monkeypatch.setattr(
+        main,
+        "create_platform_job",
+        lambda jobs_root, operation, payload: _make_job_dir(jobs_root),
+    )
+
+    def boom(job_dir):
+        raise OSError("spawn failed")
+
+    monkeypatch.setattr(main, "spawn_platform_job", boom)
+    monkeypatch.setattr(
+        main,
+        "update_job_status",
+        lambda job_dir, status, message, extra=None: marked.update(
+            {"status": status, "message": message}
+        ),
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        main.create_factor_generation(_generation_request())
+    assert excinfo.value.status_code == 500
+    assert marked["status"] == "failed"
+
+
+def test_accepted_factor_rows_exposes_train_valid_test_segments(tmp_path):
+    run_dir = tmp_path / "run_segments"
+    run_dir.mkdir()
+    (run_dir / "accepted_factors.jsonl").write_text(
+        json.dumps(
+            {
+                "expression": "$close",
+                "accepted": True,
+                "ic": 0.1,
+                "segments": {
+                    "train": {
+                        "ic": 0.1,
+                        "rank_ic": 0.12,
+                        "icir": 0.8,
+                        "coverage": 0.99,
+                        "valid_days": 120,
+                    },
+                    "valid": {"ic": 0.06, "rank_ic": 0.07, "icir": 0.5,
+                              "coverage": 0.97, "valid_days": 60},
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = main._accepted_factor_rows(run_dir)
+
+    assert rows[0]["segments"]["train"]["ic"] == 0.1
+    assert rows[0]["segments"]["valid"]["valid_days"] == 60

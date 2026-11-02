@@ -61,7 +61,12 @@ def _with_default_factor_run_id(operation: str, payload: Mapping[str, Any]) -> d
     generation_config = dict(prepared.get("generation_config") or {})
     if not str(generation_config.get("run_id") or "").strip():
         pool_id = str(prepared.get("pool_id") or "pool").strip() or "pool"
-        generation_config["run_id"] = new_factor_run_id(pool_id, _runtime_id_from_generation_payload(prepared))
+        prefix = str(generation_config.get("run_name") or "").strip() or None
+        generation_config["run_id"] = new_factor_run_id(
+            pool_id,
+            _runtime_id_from_generation_payload(prepared),
+            prefix=prefix,
+        )
     prepared["generation_config"] = generation_config
     return prepared
 
@@ -149,7 +154,60 @@ def _run_operation(operation: str, payload: Mapping[str, Any], job_dir: Path | N
             return create_pool_from_company(**options)
         return create_pool(**options)
     if operation == "generate_factors":
-        return run_factor_generation(**dict(payload))
+        options = dict(payload)
+        if job_dir is not None:
+            generation_config = dict(options.get("generation_config") or {})
+            generation_config.setdefault("job_id", job_dir.name)
+            options["generation_config"] = generation_config
+            last_update = 0.0
+            last_stage = ""
+            pool_id = str(options.get("pool_id") or "")
+
+            def report(progress: Dict[str, object]) -> None:
+                nonlocal last_update, last_stage
+                stage = str(progress.get("stage") or "running")
+                now = time.monotonic()
+                # 训练阶段回调很密，2 秒内同一阶段只落一次盘。
+                if (
+                    stage == last_stage
+                    and stage not in {"preparing_runtime", "finished"}
+                    and last_update
+                    and now - last_update < 2.0
+                ):
+                    return
+                last_update = now
+                last_stage = stage
+                attempts = int(progress.get("attempts") or 0)
+                max_attempts = int(progress.get("max_attempts") or 0)
+                accepted = int(progress.get("accepted_count") or 0)
+                target = int(progress.get("target_count") or 0)
+                if stage == "preparing_runtime":
+                    message = f"因子生成准备中：导出股票池 {pool_id} 面板并构建训练缓存"
+                elif stage == "loading_panels":
+                    message = "因子面板已就绪，正在加载 train / valid / test 数据"
+                elif stage == "initializing":
+                    message = "正在初始化 PPO 训练环境"
+                elif stage == "training":
+                    message = (
+                        f"PPO 因子生成中：已尝试 {attempts:,} / {max_attempts:,} 次，"
+                        f"已接受 {accepted:,} / {target:,} 个因子"
+                    )
+                elif stage == "finished":
+                    message = (
+                        f"PPO 生成完成：共尝试 {attempts:,} 次，"
+                        f"接受 {accepted:,} 个因子，正在写入运行清单"
+                    )
+                else:
+                    message = f"因子生成任务运行中：{stage}"
+                update_job_status(
+                    job_dir,
+                    "running",
+                    message,
+                    {"progress": _jsonable(progress)},
+                )
+
+            options["progress_callback"] = report
+        return run_factor_generation(**options)
     if operation == "backtest_factors":
         options = dict(payload)
         if job_dir is not None:

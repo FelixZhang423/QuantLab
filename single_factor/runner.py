@@ -1,5 +1,7 @@
+import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type
 
 from .evaluator import SingleFactorMetrics
 from .storage import FactorStorage
@@ -31,6 +33,11 @@ class FactorRunner:
         self.attempts = int(state.get("attempts", 0))
         self.accepted_count = storage.accepted_count
         self.dataset_signature = dataset_signature or previous_signature
+        self.device: Optional[str] = None
+        self.timesteps = 0
+        self.training_started_at: Optional[str] = None
+        self.training_finished_at: Optional[str] = None
+        self.training_seconds: Optional[float] = None
         self._save_state()
 
     @property
@@ -84,6 +91,8 @@ def run_with_ppo(
     seed: int = 0,
     device: str = "cpu",
     storage_metadata: Optional[Dict[str, Any]] = None,
+    operators: Optional[Sequence[Type]] = None,
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> FactorRunner:
     """Run masked PPO until enough qualified single factors are stored."""
     try:
@@ -98,6 +107,14 @@ def run_with_ppo(
 
     from .environment import SingleFactorEnv
 
+    def report(stage: str, **extra: Any) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback({"stage": stage, **extra})
+        except Exception:  # noqa: BLE001 - 进度上报失败不能中断训练
+            pass
+
     storage = FactorStorage(output_dir, metadata=storage_metadata)
     runner = FactorRunner(
         target_count=target_count,
@@ -105,9 +122,24 @@ def run_with_ppo(
         storage=storage,
         dataset_signature=dataset_signature,
     )
-    env = SingleFactorEnv(feature_names=feature_names, evaluator=evaluator)
+    env_operators: List[Type] | None = None if operators is None else list(operators)
+    env = SingleFactorEnv(
+        feature_names=feature_names,
+        evaluator=evaluator,
+        operators=env_operators,
+    )
     checkpoint_dir = Path(output_dir) / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    def report_training(model: Any) -> None:
+        report(
+            "training",
+            attempts=runner.attempts,
+            accepted_count=runner.accepted_count,
+            target_count=runner.target_count,
+            max_attempts=runner.max_attempts,
+            timesteps=int(getattr(model, "num_timesteps", 0)),
+        )
 
     class FactorCallback(BaseCallback):
         def _on_step(self) -> bool:
@@ -119,6 +151,7 @@ def run_with_ppo(
                 for metrics in core.drain_completed_metrics():
                     runner.register_attempt()
                     runner.record(metrics)
+            report_training(self.model)
             if not runner.can_continue():
                 self.continue_training = False
 
@@ -148,6 +181,9 @@ def run_with_ppo(
             verbose=0,
         )
 
+    report_training(model)
+    training_started_at = datetime.now()
+    training_started = time.monotonic()
     while runner.can_continue():
         model.learn(
             total_timesteps=total_timesteps_per_rollout,
@@ -159,4 +195,17 @@ def run_with_ppo(
         runner.set_checkpoint(str(checkpoint))
         if runner.attempts_exhausted or runner.target_reached:
             break
+    runner.device = device
+    runner.timesteps = int(getattr(model, "num_timesteps", 0))
+    runner.training_started_at = training_started_at.isoformat(timespec="seconds")
+    runner.training_finished_at = datetime.now().isoformat(timespec="seconds")
+    runner.training_seconds = round(time.monotonic() - training_started, 3)
+    report(
+        "finished",
+        attempts=runner.attempts,
+        accepted_count=runner.accepted_count,
+        target_count=runner.target_count,
+        max_attempts=runner.max_attempts,
+        timesteps=int(getattr(model, "num_timesteps", 0)),
+    )
     return runner

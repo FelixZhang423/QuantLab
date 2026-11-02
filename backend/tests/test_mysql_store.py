@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from datetime import date, datetime
 from pathlib import Path
 
@@ -437,6 +438,200 @@ def test_persist_factor_backtest_run_upserts_batch_summary(tmp_path: Path):
     assert row[11] == 1
     assert row[13] == "factor/pool_a/run_a/job_abc"
     assert json.loads(row[15])["completed"] == 2
+
+
+def _factor_run_insert_row(conn: FakeConnection) -> dict:
+    cursor = conn.cursors[0]
+    sql, params = next(
+        (sql, params)
+        for sql, params in cursor.executed
+        if "INSERT INTO `factor_runs`" in sql
+    )
+    columns_sql = sql.split("(", 1)[1].split(")", 1)[0]
+    columns = re.findall(r"`(\w+)`", columns_sql)
+    return dict(zip(columns, params))
+
+
+def test_persist_factor_run_writes_training_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(mysql_store, "_JOBS_ROOT", tmp_path / "jobs")
+    run_dir = tmp_path / "factor_runs" / "run_meta"
+    run_dir.mkdir(parents=True)
+    manifest = {
+        "run_id": "run_meta",
+        "pool_id": "pool_a",
+        "run_name": "demo",
+        "job_id": "20260101_120000_abcd",
+        "data_source": "clickhouse",
+        "device": "cuda",
+        "started_at": "2026-01-01T12:00:00",
+        "finished_at": "2026-01-01T12:10:00",
+        "duration_seconds": 600.5,
+        "training_seconds": 500.25,
+        "timesteps": 4096,
+        "n_stocks": 50,
+        "created_at": "2026-01-01T12:10:00",
+        "accepted_count": 1,
+        "attempts": 10,
+        "target_reached": True,
+        "attempts_exhausted": False,
+        "split_days": {"train": 100, "valid": 20, "test": 20},
+        "fields": ["close", "volume"],
+        "operators": ["add"],
+        "operator_mode": "selected",
+        "hyperparameters": {
+            "target_factor_count": 1,
+            "max_attempts": 10,
+            "rollout_timesteps": 64,
+            "seed": 7,
+            "device": "cuda",
+            "target_horizon": 5,
+            "max_backtrack_days": 20,
+            "max_future_days": 5,
+            "quality": {"min_train_ic": 0.05},
+        },
+    }
+    (run_dir / "factor_run.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    conn = FakeConnection()
+    mysql_store._persist_factor_run_conn(conn, run_dir)
+    row = _factor_run_insert_row(conn)
+
+    assert row["run_id"] == "run_meta"
+    assert row["device"] == "cuda"
+    assert row["run_name"] == "demo"
+    assert row["job_id"] == "20260101_120000_abcd"
+    assert row["training_seconds"] == 500.25
+    assert row["duration_seconds"] == 600.5
+    assert row["timesteps"] == 4096
+    assert row["n_stocks"] == 50
+    assert row["max_attempts"] == 10
+    assert row["rollout_timesteps"] == 64
+    assert row["seed"] == 7
+    assert json.loads(row["split_days"])["valid"] == 20
+    assert json.loads(row["hyperparameters"])["device"] == "cuda"
+    assert json.loads(row["fields"]) == ["close", "volume"]
+
+
+def test_factor_expressions_fill_canonical_and_backtest():
+    expression, canonical, backtest = mysql_store._factor_expressions(
+        {"expression": "Rank(Delta(close, 5))"}
+    )
+
+    assert expression == "Rank(Delta(close, 5))"
+    assert canonical == "Rank(delta(close, 5))"
+    assert backtest == canonical
+
+
+def test_factor_expressions_keep_explicit_values_and_handle_blank():
+    expression, canonical, backtest = mysql_store._factor_expressions(
+        {
+            "expression": "rank(close)",
+            "canonical_expression": "rank(close)",
+            "backtest_expression": "rank(close) / 2",
+        }
+    )
+    assert (expression, canonical, backtest) == ("rank(close)", "rank(close)", "rank(close) / 2")
+
+    assert mysql_store._factor_expressions({"expression": "  "}) == (None, None, None)
+    # 无法完全规范化的表达式也不能抛错，至少保留原文
+    _, fallback, _ = mysql_store._factor_expressions({"expression": "rank(close"})
+    assert fallback == "rank(close"
+
+
+def test_persist_factor_run_writes_canonical_expressions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(mysql_store, "_JOBS_ROOT", tmp_path / "jobs")
+    run_dir = tmp_path / "factor_runs" / "run_expr"
+    run_dir.mkdir(parents=True)
+    manifest = {
+        "run_id": "run_expr",
+        "pool_id": "pool_a",
+        "created_at": "2026-01-01T12:00:00",
+        "attempts": 3,
+        "accepted_count": 1,
+    }
+    (run_dir / "factor_run.json").write_text(json.dumps(manifest), encoding="utf-8")
+    accepted = [{"expression": "Rank(Delta(close, 5))", "ic": 0.03}]
+    rejected = [{"expression": "Div(close, open)"}]
+    (run_dir / "accepted_factors.jsonl").write_text(
+        "\n".join(json.dumps(record) for record in accepted) + "\n", encoding="utf-8"
+    )
+    (run_dir / "rejected_candidates.jsonl").write_text(
+        "\n".join(json.dumps(record) for record in rejected) + "\n", encoding="utf-8"
+    )
+
+    conn = FakeConnection()
+    mysql_store._persist_factor_run_conn(conn, run_dir)
+
+    inserts = [
+        rows
+        for cursor in conn.cursors
+        for sql, rows in cursor.many
+        if "INSERT INTO factors" in sql
+    ]
+    assert len(inserts) == 1
+    rows = inserts[0]
+    assert [row[3] for row in rows] == [1, 0]  # 合格在前，拒绝在后
+    assert rows[0][4] == "Rank(Delta(close, 5))"
+    assert rows[0][5] == "Rank(delta(close, 5))"
+    assert rows[0][6] == "Rank(delta(close, 5))"
+    assert rows[1][4] == "Div(close, open)"
+    assert rows[1][5] == "div(close,open)"
+    assert rows[1][6] == "div(close,open)"
+
+
+def test_persist_factor_run_backfills_job_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    jobs_root = tmp_path / "jobs"
+    job_dir = jobs_root / "20260102_090000_deadbeef"
+    job_dir.mkdir(parents=True)
+    payload = {
+        "operation": "generate_factors",
+        "payload": {
+            "generation_config": {
+                "run_id": "run_old",
+                "target_factor_count": 2,
+                "max_attempts": 20,
+                "rollout_timesteps": 128,
+                "seed": 3,
+                "device": "cpu",
+                "quality": {"min_train_ic": 0.04},
+            }
+        },
+    }
+    status = {
+        "status": "finished",
+        "updated_at": "2026-01-02T09:05:00",
+        "progress": {"timesteps": 256},
+    }
+    (job_dir / "platform_job.json").write_text(json.dumps(payload), encoding="utf-8")
+    (job_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    monkeypatch.setattr(mysql_store, "_JOBS_ROOT", jobs_root)
+
+    run_dir = tmp_path / "factor_runs" / "run_old"
+    run_dir.mkdir(parents=True)
+    manifest = {
+        "run_id": "run_old",
+        "pool_id": "pool_b",
+        "created_at": "2026-01-02T09:05:00",
+        "attempts": 5,
+        "accepted_count": 0,
+    }
+    (run_dir / "factor_run.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    conn = FakeConnection()
+    mysql_store._persist_factor_run_conn(conn, run_dir)
+    row = _factor_run_insert_row(conn)
+
+    assert row["job_id"] == job_dir.name
+    assert row["device"] == "cpu"
+    assert row["target_factor_count"] == 2
+    assert row["max_attempts"] == 20
+    assert row["rollout_timesteps"] == 128
+    assert row["seed"] == 3
+    assert row["timesteps"] == 256
+    assert row["started_at"] == datetime(2026, 1, 2, 9, 0, 0)
+    assert row["finished_at"] == datetime(2026, 1, 2, 9, 5, 0)
+    assert row["duration_seconds"] == 300.0
+    assert json.loads(row["quality"])["min_train_ic"] == 0.04
 
 
 def test_persist_pool_returns_false_without_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

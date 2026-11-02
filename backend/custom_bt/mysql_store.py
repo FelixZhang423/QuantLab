@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = PROJECT_ROOT / "configs" / "mysql.local.env"
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 _BATCH_SIZE = 1000
 _TABLE_COLUMNS_CACHE: Dict[str, List[str]] = {}
 _SCHEMA_READY: set[Tuple[str, int, str]] = set()
@@ -271,6 +271,29 @@ _TABLE_DDL: Tuple[str, ...] = (
         factor_run_dir VARCHAR(1024) NULL,
         source_signature VARCHAR(128) NULL,
         runtime_id VARCHAR(191) NULL,
+        run_name VARCHAR(191) NULL,
+        job_id VARCHAR(191) NULL,
+        data_source VARCHAR(64) NULL,
+        device VARCHAR(32) NULL,
+        started_at DATETIME NULL,
+        finished_at DATETIME NULL,
+        duration_seconds DOUBLE NULL,
+        training_seconds DOUBLE NULL,
+        timesteps BIGINT NULL,
+        target_factor_count INT NULL,
+        max_attempts INT NULL,
+        rollout_timesteps INT NULL,
+        seed INT NULL,
+        target_horizon INT NULL,
+        max_backtrack_days INT NULL,
+        max_future_days INT NULL,
+        n_stocks INT NULL,
+        operator_mode VARCHAR(32) NULL,
+        split_days JSON NULL,
+        hyperparameters JSON NULL,
+        fields JSON NULL,
+        operators JSON NULL,
+        quality JSON NULL,
         created_at DATETIME NOT NULL,
         accepted_count INT NULL,
         attempts INT NULL,
@@ -279,7 +302,8 @@ _TABLE_DDL: Tuple[str, ...] = (
         raw JSON NULL,
         PRIMARY KEY (run_id),
         KEY idx_factor_runs_pool (pool_id),
-        KEY idx_factor_runs_created (created_at)
+        KEY idx_factor_runs_created (created_at),
+        KEY idx_factor_runs_device (device)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """,
     """
@@ -453,6 +477,33 @@ _LEGACY_BACKTEST_TABLES = (
     "backtests",
 )
 
+# factor_runs 的训练元数据列（v4 新增）。旧表通过 ALTER 幂等补齐。
+_FACTOR_RUN_EXTRA_COLUMNS: Tuple[Tuple[str, str], ...] = (
+    ("run_name", "VARCHAR(191) NULL"),
+    ("job_id", "VARCHAR(191) NULL"),
+    ("data_source", "VARCHAR(64) NULL"),
+    ("device", "VARCHAR(32) NULL"),
+    ("started_at", "DATETIME NULL"),
+    ("finished_at", "DATETIME NULL"),
+    ("duration_seconds", "DOUBLE NULL"),
+    ("training_seconds", "DOUBLE NULL"),
+    ("timesteps", "BIGINT NULL"),
+    ("target_factor_count", "INT NULL"),
+    ("max_attempts", "INT NULL"),
+    ("rollout_timesteps", "INT NULL"),
+    ("seed", "INT NULL"),
+    ("target_horizon", "INT NULL"),
+    ("max_backtrack_days", "INT NULL"),
+    ("max_future_days", "INT NULL"),
+    ("n_stocks", "INT NULL"),
+    ("operator_mode", "VARCHAR(32) NULL"),
+    ("split_days", "JSON NULL"),
+    ("hyperparameters", "JSON NULL"),
+    ("fields", "JSON NULL"),
+    ("operators", "JSON NULL"),
+    ("quality", "JSON NULL"),
+)
+
 
 def _has_column(cur, table: str, column: str) -> bool:
     cur.execute(
@@ -479,6 +530,9 @@ def ensure_schema(conn) -> None:
             cur.execute("DROP TABLE IF EXISTS " + ", ".join(_LEGACY_BACKTEST_TABLES))
         for statement in _TABLE_DDL:
             cur.execute(statement)
+        for column, ddl in _FACTOR_RUN_EXTRA_COLUMNS:
+            if not _has_column(cur, "factor_runs", column):
+                cur.execute(f"ALTER TABLE factor_runs ADD COLUMN `{column}` {ddl}")
         cur.execute(
             "INSERT INTO ql_schema_meta (meta_key, meta_value) VALUES ('schema_version', %s) "
             "ON DUPLICATE KEY UPDATE meta_value=VALUES(meta_value)",
@@ -947,6 +1001,28 @@ def delete_pool(
 # ---------------------------------------------------------------------------
 
 
+def _factor_expressions(record: Mapping[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """补全 canonical / backtest 表达式。
+
+    ``accepted_factors.jsonl`` 只保存生成器输出的 expression，规范表达式是在回测阶段
+    用 ``normalize_expression``（内部优先 ``canonicalize_alphagen``）现算的；
+    落库时同样补算，避免 MySQL 两列全为 NULL。
+    """
+    expression = _clean_text(record.get("expression")) or None
+    if expression is not None and not expression.strip():
+        expression = None
+    canonical = _clean_text(record.get("canonical_expression")) or None
+    if not canonical and expression:
+        try:
+            from custom_bt.canonical_expression import normalize_expression
+
+            canonical = normalize_expression(expression) or expression
+        except Exception:  # noqa: BLE001 - 无法规范化的表达式保留原文
+            canonical = expression
+    backtest = _clean_text(record.get("backtest_expression")) or canonical
+    return expression, canonical, backtest
+
+
 def _factor_rows(run_id: str, accepted: List[Dict[str, Any]], rejected: List[Dict[str, Any]]) -> List[tuple]:
     rows: List[tuple] = []
     seq = 0
@@ -958,15 +1034,16 @@ def _factor_rows(run_id: str, accepted: List[Dict[str, Any]], rejected: List[Dic
                 or record.get("name")
                 or f"factor_{seq:04d}"
             )
+            expression, canonical, backtest = _factor_expressions(record)
             rows.append(
                 (
                     run_id,
                     seq,
                     _clean_text(factor_id, 191),
                     accepted_flag,
-                    _clean_text(record.get("expression")),
-                    _clean_text(record.get("canonical_expression")),
-                    _clean_text(record.get("backtest_expression")),
+                    expression,
+                    canonical,
+                    backtest,
                     _to_float(record.get("ic")),
                     _to_float(record.get("rank_ic")),
                     _to_float(record.get("icir")),
@@ -977,6 +1054,73 @@ def _factor_rows(run_id: str, accepted: List[Dict[str, Any]], rejected: List[Dic
             )
             seq += 1
     return rows
+
+
+_JOBS_ROOT = PROJECT_ROOT / "outputs" / "jobs"
+
+
+def _job_started_at(job_id: Any) -> Optional[datetime]:
+    """平台任务目录名以 ``YYYYMMDD_HHMMSS_`` 开头，可还原任务开始时间。"""
+    match = re.match(r"^(\d{8})_(\d{6})_", str(job_id or ""))
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+
+
+def _parse_datetime(value: Any) -> Optional[datetime]:
+    if value is None or value == "":
+        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text).replace(tzinfo=None)
+    except ValueError:
+        return _to_datetime(value)
+
+
+def _factor_run_job_metadata(run_id: str, jobs_root: Optional[Path] = None) -> Dict[str, Any]:
+    """从 outputs/jobs 找回该因子运行对应的任务配置与状态（用于历史运行补录）。"""
+    root = Path(jobs_root or _JOBS_ROOT)
+    if not root.is_dir():
+        return {}
+    for job_dir in root.iterdir():
+        payload_path = job_dir / "platform_job.json"
+        if not payload_path.is_file():
+            continue
+        job = _read_json(payload_path)
+        if not isinstance(job, dict) or job.get("operation") != "generate_factors":
+            continue
+        payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+        config = payload.get("generation_config") if isinstance(payload.get("generation_config"), dict) else {}
+        if str(config.get("run_id") or "") != str(run_id):
+            continue
+        status = _read_json(job_dir / "status.json")
+        return {
+            "job_id": job_dir.name,
+            "config": config,
+            "status": status if isinstance(status, dict) else {},
+        }
+    return {}
+
+
+def _runtime_pool_count(manifest: Mapping[str, Any]) -> Optional[int]:
+    path = manifest.get("runtime_manifest")
+    if not path:
+        return None
+    runtime = _read_json(path)
+    if not isinstance(runtime, dict):
+        return None
+    codes = runtime.get("pool_codes")
+    return len(codes) if isinstance(codes, list) else None
+
+
+def _first_value(*values: Any) -> Any:
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return None
 
 
 def _persist_factor_run_conn(conn, run_dir: Path) -> None:
@@ -995,12 +1139,74 @@ def _persist_factor_run_conn(conn, run_dir: Path) -> None:
                 pool_id = record.get("pool_id")
                 break
 
+    job_meta = _factor_run_job_metadata(run_id)
+    job_config = job_meta.get("config") or {}
+    job_status = job_meta.get("status") or {}
+    job_progress = job_status.get("progress") if isinstance(job_status.get("progress"), dict) else {}
+    job_id = _first_value(manifest.get("job_id"), job_meta.get("job_id"))
+
+    hyperparameters = manifest.get("hyperparameters")
+    hyperparameters = dict(hyperparameters) if isinstance(hyperparameters, dict) else {}
+    for key in (
+        "target_factor_count",
+        "max_attempts",
+        "rollout_timesteps",
+        "seed",
+        "target_horizon",
+        "max_backtrack_days",
+        "max_future_days",
+        "device",
+    ):
+        if hyperparameters.get(key) is None and job_config.get(key) is not None:
+            hyperparameters[key] = job_config.get(key)
+    if hyperparameters.get("quality") is None and isinstance(job_config.get("quality"), dict):
+        hyperparameters["quality"] = job_config["quality"]
+    hyperparameters = {
+        key: value for key, value in hyperparameters.items() if value is not None
+    }
+
+    device = _first_value(
+        manifest.get("device"),
+        job_config.get("device") if job_config.get("device") in {"cpu", "cuda"} else None,
+    )
+    started_at = _parse_datetime(manifest.get("started_at")) or _job_started_at(job_id)
+    finished_at = _parse_datetime(manifest.get("finished_at")) or created_at
+    duration_seconds = _to_float(manifest.get("duration_seconds"))
+    if duration_seconds is None and started_at and finished_at:
+        duration_seconds = max(0.0, (finished_at - started_at).total_seconds())
+
+    def hyper_int(key: str) -> Optional[int]:
+        return _to_int(_first_value(hyperparameters.get(key), job_config.get(key)))
+
     row = {
         "run_id": run_id,
         "pool_id": _clean_text(pool_id, 191),
         "factor_run_dir": _clean_text(str(run_dir.resolve()), 1024),
         "source_signature": _clean_text(manifest.get("source_signature"), 128),
         "runtime_id": _clean_text(manifest.get("runtime_id"), 191),
+        "run_name": _clean_text(manifest.get("run_name"), 191),
+        "job_id": _clean_text(job_id, 191),
+        "data_source": _clean_text(manifest.get("data_source"), 64),
+        "device": _clean_text(device, 32),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": duration_seconds,
+        "training_seconds": _to_float(manifest.get("training_seconds")),
+        "timesteps": _to_int(_first_value(manifest.get("timesteps"), job_progress.get("timesteps"))),
+        "target_factor_count": hyper_int("target_factor_count"),
+        "max_attempts": hyper_int("max_attempts"),
+        "rollout_timesteps": hyper_int("rollout_timesteps"),
+        "seed": hyper_int("seed"),
+        "target_horizon": hyper_int("target_horizon"),
+        "max_backtrack_days": hyper_int("max_backtrack_days"),
+        "max_future_days": hyper_int("max_future_days"),
+        "n_stocks": _to_int(_first_value(manifest.get("n_stocks"), _runtime_pool_count(manifest))),
+        "operator_mode": _clean_text(manifest.get("operator_mode"), 32),
+        "split_days": _json_text(manifest.get("split_days")),
+        "hyperparameters": _json_text(hyperparameters) if hyperparameters else None,
+        "fields": _json_text(manifest.get("fields")),
+        "operators": _json_text(manifest.get("operators")),
+        "quality": _json_text(hyperparameters.get("quality")),
         "created_at": created_at,
         "accepted_count": _to_int(manifest.get("accepted_count")) or len(accepted),
         "attempts": _to_int(manifest.get("attempts")),
@@ -1030,6 +1236,122 @@ def persist_factor_run(run_dir: str | Path, *, settings: MySQLSettings | None = 
         conn,
         lambda owned: _persist_factor_run_conn(owned, Path(run_dir)),
     )
+
+
+def _json_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "replace")
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+def _factor_run_db_row(row: Mapping[str, Any], *, include_raw: bool = False) -> Dict[str, Any]:
+    item = dict(row)
+    for key in ("split_days", "hyperparameters", "fields", "operators", "quality"):
+        item[key] = _json_value(item.get(key))
+    if include_raw:
+        item["raw"] = _json_value(item.get("raw"))
+    else:
+        item.pop("raw", None)
+    for key in ("created_at", "started_at", "finished_at"):
+        value = item.get(key)
+        if isinstance(value, datetime):
+            item[key] = value.isoformat(timespec="seconds")
+        elif value:
+            item[key] = str(value)
+        else:
+            item[key] = None
+    item["storage"] = "mysql"
+    item["has_accepted"] = bool(item.get("accepted_count"))
+    return item
+
+
+def fetch_factor_runs(
+    pool_id: Optional[str] = None,
+    *,
+    limit: int = 100,
+    offset: int = 0,
+    settings: MySQLSettings | None = None,
+) -> List[Dict[str, Any]]:
+    """按完成时间倒序读取因子运行记录（含训练元数据）。"""
+    settings = settings or load_settings()
+    if settings is None:
+        return []
+    limit = max(1, min(int(limit), 500))
+    offset = max(0, int(offset))
+    sql = "SELECT * FROM factor_runs"
+    params: List[Any] = []
+    if pool_id:
+        sql += " WHERE pool_id=%s"
+        params.append(pool_id)
+    sql += " ORDER BY created_at DESC, run_id DESC LIMIT %s OFFSET %s"
+    params.extend([limit, offset])
+    with _connection(settings) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+    return [_factor_run_db_row(row) for row in rows]
+
+
+def fetch_factor_run(run_id: str, *, settings: MySQLSettings | None = None) -> Optional[Dict[str, Any]]:
+    settings = settings or load_settings()
+    if settings is None:
+        return None
+    with _connection(settings) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM factor_runs WHERE run_id=%s LIMIT 1", (run_id,))
+            row = cur.fetchone()
+    return _factor_run_db_row(row, include_raw=True) if row else None
+
+
+def fetch_factor_run_factors(
+    run_id: str,
+    *,
+    accepted_only: bool = False,
+    settings: MySQLSettings | None = None,
+) -> List[Dict[str, Any]]:
+    """读取某次运行写入 factors 表的因子记录（默认包含被拒绝候选）。"""
+    settings = settings or load_settings()
+    if settings is None:
+        return []
+    sql = "SELECT * FROM factors WHERE run_id=%s"
+    params: List[Any] = [run_id]
+    if accepted_only:
+        sql += " AND accepted=1"
+    sql += " ORDER BY seq ASC"
+    with _connection(settings) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+    records: List[Dict[str, Any]] = []
+    for row in rows:
+        record = _json_value(row.get("raw"))
+        record = dict(record) if isinstance(record, dict) else {}
+        record.setdefault("factor_id", row.get("factor_id"))
+        for key in (
+            "expression",
+            "canonical_expression",
+            "backtest_expression",
+            "ic",
+            "rank_ic",
+            "icir",
+            "coverage",
+            "score",
+        ):
+            if record.get(key) is None:
+                record[key] = row.get(key)
+        record["accepted"] = bool(row.get("accepted"))
+        record["seq"] = row.get("seq")
+        records.append(record)
+    return records
 
 
 # ---------------------------------------------------------------------------

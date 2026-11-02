@@ -324,6 +324,38 @@ export type FactorRunSummary = {
   attempts_exhausted: boolean | null;
   factor_run_dir: string;
   has_accepted: boolean;
+  /** 训练元数据（MySQL factor_runs 表） */
+  run_name?: string | null;
+  job_id?: string | null;
+  device?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_seconds?: number | null;
+  training_seconds?: number | null;
+  timesteps?: number | null;
+  target_factor_count?: number | null;
+  max_attempts?: number | null;
+  rollout_timesteps?: number | null;
+  seed?: number | null;
+  target_horizon?: number | null;
+  max_backtrack_days?: number | null;
+  max_future_days?: number | null;
+  split_days?: Record<string, number> | null;
+  hyperparameters?: Record<string, unknown> | null;
+  fields?: string[] | null;
+  operators?: string[] | null;
+  operator_mode?: string | null;
+  n_stocks?: number | null;
+  storage?: string;
+  local_available?: boolean;
+};
+
+export type SegmentMetrics = {
+  ic: number | null;
+  rank_ic: number | null;
+  icir: number | null;
+  coverage: number | null;
+  valid_days: number | null;
 };
 
 export type AcceptedFactor = {
@@ -337,11 +369,67 @@ export type AcceptedFactor = {
   coverage: number | null;
   score: number | null;
   reason: string | null;
+  /** train / valid / test 分段指标 */
+  segments?: Record<string, SegmentMetrics>;
 };
 
 export type FactorRunDetail = FactorRunSummary & {
   manifest: Record<string, unknown>;
   accepted_factors: AcceptedFactor[];
+};
+
+export type FactorGenerationSplit = { cache_start: string; cache_end: string };
+
+export type FactorGenerationQuality = Record<string, number | null | undefined>;
+
+export type FactorGenerationDefaults = {
+  data_source: string;
+  fields: string[];
+  field_count: number;
+  splits: Record<string, FactorGenerationSplit>;
+  split_source: "pool" | "config";
+  split_ratios: Record<string, number>;
+  pool_window: { start: string; end: string } | null;
+  warnings: string[];
+  quality: FactorGenerationQuality;
+  max_backtrack_days: number;
+  target_horizon: number;
+  max_future_days: number;
+  target_factor_count: number;
+  max_attempts: number;
+  rollout_timesteps: number;
+  seed: number;
+  device: string;
+};
+
+export type FactorGenerationRequest = {
+  pool_id: string;
+  run_name?: string;
+  fields?: string[];
+  operators?: string[];
+  splits?: Record<string, FactorGenerationSplit>;
+  max_backtrack_days?: number;
+  target_horizon?: number;
+  max_future_days?: number;
+  target_factor_count?: number;
+  max_attempts?: number;
+  rollout_timesteps?: number;
+  seed?: number;
+  device?: string;
+  quality?: FactorGenerationQuality;
+};
+
+export type FactorGenerationResponse = {
+  job_id: string;
+  status: string;
+  operation: string;
+  pool_id: string;
+  pool_name: string | null;
+  run_id: string | null;
+  run_name: string | null;
+  data_source: string;
+  warnings: string[];
+  request_summary: Record<string, unknown>;
 };
 
 export type FactorBacktestRequest = {
@@ -547,9 +635,17 @@ export const api = {
   results: () => apiGet<{ total: number; results: ResultSummary[] }>("/api/results"),
   result: (runKey: string) => apiGet<ResultDetail>(withQuery("/api/results/detail", { run_key: runKey })),
   factorRuns: (poolId?: string) =>
-    apiGet<{ total: number; runs: FactorRunSummary[] }>(withQuery("/api/factor-runs", { pool_id: poolId })),
+    apiGet<{ total: number; runs: FactorRunSummary[]; source?: string; mysql_error?: string | null }>(
+      withQuery("/api/factor-runs", { pool_id: poolId }),
+    ),
   factorRun: (runId: string) =>
     apiGet<FactorRunDetail>(`/api/factor-runs/${encodeURIComponent(runId)}`),
+  factorGenerationDefaults: (poolId?: string) =>
+    apiGet<FactorGenerationDefaults>(
+      withQuery("/api/factor-generations/defaults", { pool_id: poolId }),
+    ),
+  createFactorGeneration: (payload: FactorGenerationRequest) =>
+    apiPost<FactorGenerationResponse>("/api/factor-generations", payload),
   createFactorBacktest: (payload: FactorBacktestRequest) =>
     apiPost<FactorBacktestResponse>("/api/factor-backtests", payload),
   factorBacktests: (factorRunId: string) =>

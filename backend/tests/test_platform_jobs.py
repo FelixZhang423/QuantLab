@@ -84,6 +84,106 @@ class PlatformJobTests(unittest.TestCase):
             self.assertNotEqual(first_run_id, second_run_id)
             self.assertNotIn("run_id", payload["generation_config"])
 
+    def test_generate_factor_job_uses_run_name_as_run_id_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            job_dir = create_platform_job(
+                root / "jobs",
+                "generate_factors",
+                {
+                    "pool_id": "pool_a",
+                    "fields": ["close"],
+                    "splits": {
+                        "train": {"cache_start": "2024-01-01", "cache_end": "2024-02-01"},
+                    },
+                    "max_backtrack_days": 1,
+                    "target_horizon": 1,
+                    "max_future_days": 1,
+                    "generation_config": {
+                        "target_factor_count": 1,
+                        "run_name": "daily_alpha",
+                    },
+                },
+            )
+
+            config = json.loads((job_dir / "platform_job.json").read_text(encoding="utf-8"))
+            run_id = config["payload"]["generation_config"]["run_id"]
+            self.assertTrue(run_id.startswith("daily_alpha_"))
+            self.assertNotEqual(run_id, "daily_alpha")
+
+    def test_generate_factor_job_persists_training_progress(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            job_dir = create_platform_job(
+                root / "jobs",
+                "generate_factors",
+                {
+                    "pool_id": "pool_a",
+                    "fields": ["close"],
+                    "splits": {
+                        "train": {"cache_start": "2024-01-01", "cache_end": "2024-02-01"},
+                    },
+                    "max_backtrack_days": 1,
+                    "target_horizon": 1,
+                    "max_future_days": 1,
+                    "generation_config": {"target_factor_count": 5, "max_attempts": 20},
+                },
+            )
+            snapshots = []
+
+            def read_status():
+                return json.loads((job_dir / "status.json").read_text(encoding="utf-8"))
+
+            def fake_generate(**kwargs):
+                callback = kwargs["progress_callback"]
+                callback({"stage": "preparing_runtime", "fields": 1})
+                snapshots.append(read_status())
+                callback(
+                    {
+                        "stage": "training",
+                        "attempts": 10,
+                        "accepted_count": 2,
+                        "target_count": 5,
+                        "max_attempts": 20,
+                    }
+                )
+                snapshots.append(read_status())
+                # 同一阶段 2 秒内的第二次上报应被节流掉
+                callback(
+                    {
+                        "stage": "training",
+                        "attempts": 11,
+                        "accepted_count": 2,
+                        "target_count": 5,
+                        "max_attempts": 20,
+                    }
+                )
+                snapshots.append(read_status())
+                callback(
+                    {
+                        "stage": "finished",
+                        "attempts": 20,
+                        "accepted_count": 4,
+                        "target_count": 5,
+                        "max_attempts": 20,
+                    }
+                )
+                snapshots.append(read_status())
+                return {"run_id": "run_x", "accepted_count": 4, "attempts": 20}
+
+            with patch("custom_bt.platform_jobs.run_factor_generation", side_effect=fake_generate):
+                result = run_platform_job(job_dir)
+
+            self.assertEqual(result["run_id"], "run_x")
+            self.assertIn("导出股票池 pool_a", snapshots[0]["message"])
+            self.assertIn("已尝试 10 / 20 次", snapshots[1]["message"])
+            self.assertEqual(snapshots[1]["progress"]["attempts"], 10)
+            # 被节流的第二次上报不改变已落盘的进度
+            self.assertEqual(snapshots[2]["progress"]["attempts"], 10)
+            self.assertIn("PPO 生成完成", snapshots[3]["message"])
+            self.assertEqual(snapshots[3]["progress"]["stage"], "finished")
+            self.assertEqual(read_status()["status"], "finished")
+
     def test_create_and_run_pool_job_updates_status_and_writes_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

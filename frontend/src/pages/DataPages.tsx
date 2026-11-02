@@ -119,7 +119,7 @@ export function DataOverviewPage({ addTask, navigate }: { addTask: TaskAdder; na
 }
 
 /** 横铺的筛选标签行（操作符分类 / 字段来源共用）：选中项置灰，未选中为浅色胶囊 */
-function FilterChips<T extends string>({ items, value, onChange }: { items: { key: T; label: string; count: number }[]; value: T; onChange: (key: T) => void }) {
+export function FilterChips<T extends string>({ items, value, onChange }: { items: { key: T; label: string; count: number }[]; value: T; onChange: (key: T) => void }) {
   return (
     <Flex gap={8} wrap>
       {items.map(({ key, label, count }) => (
