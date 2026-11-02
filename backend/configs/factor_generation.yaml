@@ -5,6 +5,7 @@ pools_root: "../data_cache/pools"
 runtime_root: "../data_cache/factor_runtime"
 factor_runs_root: "../../factor_runs"
 fields:
+  # 来自 field_catalog.json 的 panel_alias；默认累计口径，排除 16 个 flow_q 字段。
   - open
   - close
   - high
@@ -15,47 +16,365 @@ fields:
   - ChangePCT
   - RangePCT
   - TurnoverRate
-  - Ifsuspend
-  - if_up
-  - if_flat
-  - if_down
-  - RisingUpDays
-  - FallingDownDays
   - MaxRisingUpDays
   - MaxFallingDownDays
-  - HighestPrice
-  - LowestPrice
   - ema12
   - ema26
-  - dif
-  - dea
-  - macd
   - max_high_9
   - min_low_9
   - RSV
   - kdj_k
   - kdj_d
   - kdj_j
-  - ma4
   - ma5
+  - ma20
+  - ma4
   - ma8
   - ma12
   - ma16
-  - ma20
   - ma47
-  # 财务字段：生成面板会按 InfoPublDate as-of 合并（列名保留 fund_ 前缀）。
-  # 字段列表变了 runtime_id 就会变，旧的 factor_runtime 缓存不会复用。
+  - fund_ROE
+  - fund_ROECut
+  - fund_WROE
+  - fund_OperatingReenue
+  - fund_NPFromParentCompanyOwners
+  - fund_NetProfitCut
+  - fund_RetainedProfit
   - fund_NetOperateCashFlow
-  - fund_FairValueChangeIncome
-  - fund_NetProfit
+  - fund_CashEquialentIncrease
+  - fund_CashEquialents
   - fund_TotalAssets
-  # 每日估值字段：按交易日直接对齐，无披露日问题。
+  - fund_SEWithoutMI
+  - fund_NAPS
+  - fund_CapitalResereFund
+  - fund_TotalShares
+  - fund_OperatingProfit
+  - fund_TotalProfit
+  - fund_IncomeTaxCost
+  - fund_MinorityProfit
+  - fund_NetProfit
+  - fund_NetInvestCashFlow
+  - fund_NetFinanceCashFlow
+  - fund_ExchanRateChangeEffect
+  - fund_EndPeriodCashEquivalent
+  - fund_AccountReceivables
+  - fund_OtherReceivable
+  - fund_Inventories
+  - fund_TotalCurrentAssets
+  - fund_LongtermEquityInvest
+  - fund_IntangibleAssets
+  - fund_TotalNonCurrentAssets
+  - fund_ShortTermLoan
+  - fund_SalariesPayable
+  - fund_TaxsPayable
+  - fund_OtherPayable
+  - fund_TotalLiability
+  - fund_PaidInCapital
+  - fund_SurplusReserveFund
+  - fund_MinorityInterests
+  - fund_TotalShareholderEquity
+  - fund_TotalLiabilityAndEquity
+  - fund_TotalCurrentLiability
+  - fund_FinancialExpense
+  - fund_InvestIncome
+  - fund_TotalNonCurrentLiability
+  - fund_NonCurrentLiabilityIn1Year
+  - fund_NonRecurringProfitLoss
+  - fund_BillReceivable
+  - fund_BillAccReceivable
+  - fund_OtherReceivableED
+  - fund_OtherPayableED
   - val_PB
+  - val_PCF
+  - val_PS
+  - val_DividendRatio
   - val_PSTTM
-  - val_PCFTTM
-  - val_DividendRatioLYR
   - val_TotalMV
-# 估值字段从 2024-01-01 才有数据，训练窗口整体后移；2022-2023 不再参与估值因子训练。
+  - val_NegotiableMV
+  - val_PELYR
+  - val_PCFTTM
+  - val_PCFS
+  - val_PCFSTTM
+  - val_DividendRatioLYR
+  - val_EnterpriseValueW
+  - val_EnterpriseValueN
+  - val_TotalMV2
+  - val_TotalASMV
+  - val_PETTMCut
+  - val_ForwardPEQA
+  - val_ForwardPEHR
+  - val_PEG
+  - val_PETTMToORRate
+  - val_ForwardPCFQA
+  - val_ForwardPCFHR
+  - val_ForwardPCFSQA
+  - val_ForwardPCFSHR
+  - val_ForwardPSQA
+  - val_ForwardPSHR
+  - val_EVToEBITDA
+  - val_EVToOR
+  - val_EVToFCFF
+  - val_EVToCFO
+  - val_EVToGP
+  - val_PER
+  - val_EVToEBITDARANDD
+  - val_TotalMVToRANDD
+  - val_MVA
+  - val_FloatMVA
+  - val_MarketValueToDebt1
+  - val_MarketValueToDebt2
+  - val_DebtToAssetValue1
+  - val_DebtToAssetValue2
+  - val_PE
+  - deriv_EPS
+  - deriv_BasicEPS
+  - deriv_DilutedEPS
+  - deriv_NetAssetPS
+  - deriv_MainIncomePS
+  - deriv_OperProfitPS
+  - deriv_EBITPS
+  - deriv_CapitalSurplusFundPS
+  - deriv_OperCashFlowPS
+  - deriv_CashFlowPS
+  - deriv_NetProfit
+  - deriv_NetProfitCut
+  - deriv_EBIT
+  - deriv_EBITDA
+  - deriv_OperatingProfitRatio
+  - deriv_GrossIncomeRatio
+  - deriv_NetProfitRatio
+  - deriv_TotalProfitCostRatio
+  - deriv_ROA
+  - deriv_ROECut
+  - deriv_ROECutWeighted
+  - deriv_ROIC
+  - deriv_CurrentRatio
+  - deriv_QuickRatio
+  - deriv_SuperQuickRatio
+  - deriv_OperCashInToCurrentDebt
+  - deriv_InterestCover
+  - deriv_DebtAssetsRatio
+  - deriv_DebtEquityRatio
+  - deriv_DebtTangibleEquityRatio
+  - deriv_LongDebtToWorkingCapital
+  - deriv_OperatingRevenueGrowRate
+  - deriv_OperProfitGrowRate
+  - deriv_TotalProfeiGrowRate
+  - deriv_NetProfitGrowRate
+  - deriv_NetAssetGrowRate
+  - deriv_TotalAssetGrowRate
+  - deriv_OperCashPSGrowRate
+  - deriv_SustainableGrowRate
+  - deriv_ARTRate
+  - deriv_ARTDays
+  - deriv_InventoryTRate
+  - deriv_InventoryTDays
+  - deriv_FixedAssetTRate
+  - deriv_EquityTRate
+  - deriv_TotalAssetTRate
+  - deriv_OperCycle
+  - deriv_CashEquivalentIncrease
+  - deriv_NetOperateCashFlow
+  - deriv_GoodsSaleServiceRenderCash
+  - deriv_FreeCashFlow
+  - deriv_NetProfitCashCover
+  - deriv_OperatingRevenueCashCover
+  - deriv_CashRateOfSales
+  - deriv_OperCashInToAsset
+  - deriv_CashEquivalentPS
+  - deriv_UndividedProfit
+  - deriv_AccumulationFundPS
+  - deriv_RetainedEarningRatio
+  - deriv_WorkingCapital
+  - deriv_EquityToAsset
+  - deriv_LongDebtToEquity
+  - deriv_LongAssetFitRate
+  - deriv_FixAssetRatio
+  - deriv_IntangibleAssetRatio
+  - deriv_EquityMultipler
+  - deriv_EPSTTM
+  - deriv_TotalOperatingRevenuePS
+  - deriv_OperatingRevenuePSTTM
+  - deriv_SurplusReserveFundPS
+  - deriv_RetainedEarningsPS
+  - deriv_OperCashFlowPSTTM
+  - deriv_CashFlowPSTTM
+  - deriv_EnterpriseFCFPS
+  - deriv_ShareHolderFCFPS
+  - deriv_ROEAvg
+  - deriv_ROEWeighted
+  - deriv_ROE
+  - deriv_ROETTM
+  - deriv_ROA_EBIT
+  - deriv_ROA_EBITTTM
+  - deriv_ROATTM
+  - deriv_NetProfitRatioTTM
+  - deriv_GrossIncomeRatioTTM
+  - deriv_SalesCostRatio
+  - deriv_PeriodCostsRate
+  - deriv_PeriodCostsRateTTM
+  - deriv_NPToTOR
+  - deriv_NPToTORTTM
+  - deriv_OperatingProfitToTOR
+  - deriv_OperatingProfitToTORTTM
+  - deriv_EBITToTOR
+  - deriv_TOperatingCostToTOR
+  - deriv_TOperatingCostToTORTTM
+  - deriv_OperatingExpenseRate
+  - deriv_OperatingExpenseRateTTM
+  - deriv_AdminiExpenseRate
+  - deriv_AdminiExpenseRateTTM
+  - deriv_FinancialExpenseRate
+  - deriv_FinancialExpenseRateTTM
+  - deriv_AssetImpaLossToTOR
+  - deriv_AssetImpaLossToTORTTM
+  - deriv_SEWithoutMIToTL
+  - deriv_SEWMIToInterestBearDebt
+  - deriv_TangibleAToInteBearDebt
+  - deriv_EBITDAToTLiability
+  - deriv_NOCFToTLiability
+  - deriv_NOCFToInterestBearDebt
+  - deriv_NOCFToCurrentLiability
+  - deriv_BasicEPSYOY
+  - deriv_DilutedEPSYOY
+  - deriv_NPParentCompanyYOY
+  - deriv_NPParentCompanyCutYOY
+  - deriv_NetOperateCashFlowYOY
+  - deriv_NAORYOY
+  - deriv_EPSGrowRateYTD
+  - deriv_SEWithoutMIGrowRateYTD
+  - deriv_TAGrowRateYTD
+  - deriv_AccountsPayablesTRate
+  - deriv_AccountsPayablesTDays
+  - deriv_CurrentAssetsTRate
+  - deriv_SaleServiceCashToOR
+  - deriv_SaleServiceCashToORTTM
+  - deriv_CashRateOfSalesTTM
+  - deriv_NOCFToOperatingNI
+  - deriv_NOCFToOperatingNITTM
+  - deriv_CapitalExpenditureToDM
+  - deriv_CurrentAssetsToTA
+  - deriv_NonCurrentAssetsToTA
+  - deriv_SEWithoutMIToTotalCapital
+  - deriv_InteBearDebtToTotalCapital
+  - deriv_CurrentLiabilityToTL
+  - deriv_NonCurrentLiabilityToTL
+  - deriv_OperatingNIToTP
+  - deriv_OperatingMIToTPTTM
+  - deriv_ValueChangeNIToTP
+  - deriv_ValueChangeNIToTPTTM
+  - deriv_NetNonOperatingIncomeToTP
+  - deriv_NetNonOIToTPTTM
+  - deriv_TaxesToTP
+  - deriv_NPCutToTP
+  - deriv_EquityMultipler_DuPont
+  - deriv_NPPCToNP_DuPont
+  - deriv_NPToTOR_DuPont
+  - deriv_NPToTP_DuPont
+  - deriv_TPToEBIT_DuPont
+  - deriv_EBITToTOR_DuPont
+  - deriv_AvgNPYOYPastFiveYear
+  - deriv_ORComGrowRate3Y
+  - deriv_NPPCCGrowRate3Y
+  - deriv_EVWtoEBITDA
+  - deriv_EVNtoEBITDA
+  - deriv_InteBearDebtToTL
+  - deriv_BasicEPSGrowRate3Y
+  - deriv_DilutedEPSGrowRate3Y
+  - deriv_TORGrowRate
+  - deriv_TORGrowRate3Y
+  - deriv_OperProfitGrowRate3Y
+  - deriv_TPGrowRate3Y
+  - deriv_NetProfitGrowRate3Y
+  - deriv_NPParentCompanyCut3Y
+  - deriv_NetOperateCashFlow3Y
+  - deriv_OperCashPSGrowRate3Y
+  - deriv_NAORGrowRate3Y
+  - deriv_NetAssetGrowRate3Y
+  - deriv_TotalAssetGrowRate3Y
+  - deriv_FreeCashFlowToNPPC
+  - deriv_CashWorkingIndex
+  - deriv_ROACut
+  - deriv_ROACutTTM
+  - deriv_EBITDAPS
+  - deriv_AnnualizedROE
+  - deriv_AnnualizedROAEBIT
+  - deriv_AnnualizedROA
+  - deriv_ROICTTM
+  - deriv_AssetILossToOProfit
+  - deriv_NetProfToOpRevenTTM
+  - deriv_EBITToToAssetsTTM
+  - deriv_EBITDAToTOR
+  - deriv_OperatingProRatioTTM
+  - deriv_MainProfitProportion
+  - deriv_TangibleAToTL
+  - deriv_NOCFToTotalNonCurLia
+  - deriv_NOCFInterestCover
+  - deriv_CashRatio
+  - deriv_OperCashInToDueDebt
+  - deriv_NetAssetLiabilityRatio
+  - deriv_NetLiabilityRatio
+  - deriv_NetNoFCFToCLiability
+  - deriv_NetNoFCFToTLiability
+  - deriv_LongDebtRatio
+  - deriv_EBITDAToIntBearDebt
+  - deriv_EBITDAToInttFinExp
+  - deriv_EntireliabToEBITDA
+  - deriv_CashToCurliability
+  - deriv_ToOpCostGrowRate
+  - deriv_ToLiabGrowRate
+  - deriv_CashEqIncreaseYOY
+  - deriv_CashEquivalGrowRate
+  - deriv_FAExpansionRate
+  - deriv_NetOperCycle
+  - deriv_WorkingCapitalTurDays
+  - deriv_TotalAssetTRateTTM
+  - deriv_WorkingCaitalTRate
+  - deriv_NonCurrentATRate
+  - deriv_NetOperCFToOperProfTTM
+  - deriv_NetOperCFToToOperReve
+  - deriv_NetOperCFToToAssets
+  - deriv_DebtARatioCutADRecp
+  - deriv_DebtARatioCutADReNo
+  - deriv_NetTangibleAToTA
+  - deriv_TotalCLiaToSEWMI
+  - deriv_TotalNonCLiaToSEWMI
+  - deriv_TotalNonCurLiaToSEWMI
+  - deriv_TotalNonCurAToSEWMI
+  - deriv_ToProfToOperProfitTTM
+  - deriv_ToProfToOperRevenueTTM
+  - deriv_DebtEquityRatio_DuPont
+  - deriv_EPSCut
+  - deriv_EBITAssetRatio
+  - deriv_EBIAT
+  - deriv_TaxRatio
+  - deriv_EVW
+  - deriv_EVN
+  - deriv_NonRecurrGLProportion
+  - deriv_CapitalReturn
+  - deriv_EquityGrowRate
+  - deriv_RetainedEarningAsset
+  - deriv_RepaymentCover
+  - deriv_WorkingCapitalAsset
+  - deriv_EPSYOY
+  - deriv_EPSGrowRate3Y
+  - deriv_PBVGrowRate
+  - deriv_PBVGrowRate3Y
+  - deriv_ARTRGrowRate
+  - deriv_FATRGrowRate
+  - deriv_InventoryTRGrowRate
+  - deriv_CashEqGroRate
+  - deriv_CashPayStaffRatio
+  - deriv_FinancingCashGrowRate
+  - deriv_InvestCashGrowRate
+  - deriv_NetOperateCashProfit
+  - deriv_CashToMeetInvestNeeds
+  - deriv_ExternalFinanceRatio
+  - deriv_OperCashStability
+  - deriv_DividendTTM
+  - deriv_EquityFixedAssetRatio
+  - deriv_FinancialLeverage
+
 splits:
   train:
     cache_start: "2024-01-01"

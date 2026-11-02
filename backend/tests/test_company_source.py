@@ -70,6 +70,71 @@ def test_build_fundamentals_sql_is_readonly_and_filtered():
     assert "f.Mark = 2" in sql
     assert "f.BulletinType = '20'" in sql
     assert "INTERVAL 550 DAY" in sql
+    assert "toInt32(f.AccountingStandards) AS accounting_standards" in sql
+    assert "ORDER BY f.CompanyCode, f.EndDate, f.InfoPublDate, f.ID" in sql
+
+
+def test_select_fundamental_rows_prefers_new_standard_then_latest_publish():
+    frame = pd.DataFrame([
+        {
+            "company_code": "1", "end_date": pd.Timestamp("2023-12-31"),
+            "info_date": pd.Timestamp("2024-04-30"), "accounting_standards": 9,
+            "update_ts": 300, "row_id": 30, "ROE": 0.09,
+        },
+        {
+            "company_code": "1", "end_date": pd.Timestamp("2023-12-31"),
+            "info_date": pd.Timestamp("2024-04-20"), "accounting_standards": 1,
+            "update_ts": 200, "row_id": 20, "ROE": 0.10,
+        },
+        {
+            "company_code": "1", "end_date": pd.Timestamp("2024-03-31"),
+            "info_date": pd.Timestamp("2024-04-25"), "accounting_standards": 9,
+            "update_ts": 100, "row_id": 10, "ROE": 0.01,
+        },
+        {
+            "company_code": "1", "end_date": pd.Timestamp("2024-03-31"),
+            "info_date": pd.Timestamp("2024-04-28"), "accounting_standards": 9,
+            "update_ts": 400, "row_id": 40, "ROE": 0.02,
+        },
+    ])
+    selected = company_source._select_fundamental_rows(frame)
+    selected = selected.sort_values("end_date").reset_index(drop=True)
+    assert len(selected) == 2
+    assert selected.loc[0, "accounting_standards"] == 1
+    assert selected.loc[0, "ROE"] == 0.10
+    assert selected.loc[1, "accounting_standards"] == 9
+    assert selected.loc[1, "ROE"] == 0.02
+
+
+def test_select_fundamental_rows_breaks_publish_ties_by_id():
+    frame = pd.DataFrame([
+        {
+            "company_code": "1", "end_date": pd.Timestamp("2024-03-31"),
+            "info_date": pd.Timestamp("2024-04-25"), "accounting_standards": 1,
+            "update_ts": 100, "row_id": 10, "ROE": 0.01,
+        },
+        {
+            "company_code": "1", "end_date": pd.Timestamp("2024-03-31"),
+            "info_date": pd.Timestamp("2024-04-25"), "accounting_standards": 1,
+            "update_ts": 100, "row_id": 20, "ROE": 0.02,
+        },
+    ])
+    selected = company_source._select_fundamental_rows(frame)
+    assert len(selected) == 1
+    assert selected.iloc[0]["ROE"] == 0.02
+
+
+def test_single_quarter_series_subtracts_previous_cumulative():
+    frame = pd.DataFrame([
+        {"code": "1", "end_date": pd.Timestamp("2023-03-31"), "OperatingReenue": 100.0},
+        {"code": "1", "end_date": pd.Timestamp("2023-06-30"), "OperatingReenue": 250.0},
+        {"code": "1", "end_date": pd.Timestamp("2023-09-30"), "OperatingReenue": 450.0},
+        {"code": "1", "end_date": pd.Timestamp("2023-12-31"), "OperatingReenue": 700.0},
+        {"code": "2", "end_date": pd.Timestamp("2023-06-30"), "OperatingReenue": 80.0},
+    ])
+    result = company_source._single_quarter_series(frame, "OperatingReenue")
+    assert result.iloc[:4].tolist() == [100.0, 150.0, 200.0, 250.0]
+    assert pd.isna(result.iloc[4])
 
 
 def test_build_fundamentals_sql_rejects_unknown_fields():
@@ -172,7 +237,63 @@ def test_attach_fundamentals_is_asof_by_publish_date():
     assert out.loc[1, "fund_end_date"] == pd.Timestamp("2023-12-31")
 
 
+def test_attach_fundamentals_same_publish_date_keeps_latest_period():
+    panel = pd.DataFrame({
+        "date": pd.to_datetime(["2024-04-25"]),
+        "code": ["000001"],
+        "close": [12.0],
+    })
+    fund = pd.DataFrame({
+        "code": ["000001", "000001"],
+        "info_date": pd.to_datetime(["2024-04-20", "2024-04-20"]),
+        "end_date": pd.to_datetime(["2023-12-31", "2024-03-31"]),
+        "ROE": [5.0, 6.0],
+    })
+    out = company_source.attach_fundamentals(panel, fund)
+    assert out.loc[0, "fund_ROE"] == 6.0
+    assert out.loc[0, "fund_end_date"] == pd.Timestamp("2024-03-31")
+
+
+def test_dedupe_fundamental_ids_keeps_latest_update():
+    frame = pd.DataFrame([
+        {"row_id": 10, "update_ts": 1, "ROE": 1.0},
+        {"row_id": 10, "update_ts": 2, "ROE": 2.0},
+        {"row_id": 20, "update_ts": 1, "ROE": 3.0},
+    ])
+    out = company_source._dedupe_fundamental_ids(frame)
+    assert len(out) == 2
+    assert out.loc[out["row_id"] == 10, "ROE"].iloc[0] == 2.0
+
+
+def test_attach_derivatives_merges_asof_by_publish_date():
+    panel = pd.DataFrame({
+        "date": pd.to_datetime(["2024-04-25"]),
+        "code": ["000001"],
+        "close": [12.0],
+    })
+    deriv = pd.DataFrame({
+        "code": ["000001"],
+        "info_date": pd.to_datetime(["2024-04-20"]),
+        "end_date": pd.to_datetime(["2024-03-31"]),
+        "ROE": [5.0],
+    })
+    out = company_source.attach_derivatives(panel, deriv)
+    assert out.loc[0, "deriv_ROE"] == 5.0
+    assert out.loc[0, "deriv_end_date"] == pd.Timestamp("2024-03-31")
+
+
 # ---------- SQL ----------
+
+
+def test_build_derivative_sql_is_readonly_and_filtered():
+    sql = company_source.build_derivative_sql(
+        ["600519"], ["ROE"], "2024-01-01", "2024-12-31"
+    )
+    live_db.guard_readonly(sql)
+    assert company_source.DERIVATIVE_TABLE in sql
+    assert "d.SecuCode IN ('600519')" in sql
+    assert "d.EndDate >=" in sql
+    assert "max(InfoPublDate)" in sql
 
 
 def test_selection_days_sql_is_readonly_and_escapes_codes():

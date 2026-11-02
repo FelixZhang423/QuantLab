@@ -1,37 +1,5 @@
 [
  {
-  "name": "market_code",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "market_code",
-  "panel_alias": "market_code",
-  "description": "数据来源（SH:上海交易所、SZ:深证交易所、BJ:北京交易所、GZ：股转）"
- },
- {
-  "name": "category",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "category",
-  "panel_alias": "category",
-  "description": "行情类别（指数:index、股票:stock、基金:fund、债券:bond、其他:other）"
- },
- {
-  "name": "code",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "code",
-  "panel_alias": null,
-  "description": "股票代码"
- },
- {
-  "name": "timestamps",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "timestamps",
-  "panel_alias": null,
-  "description": "时间戳"
- },
- {
   "name": "open",
   "category": "行情与技术",
   "source_table": "dws.ll_stock_daily_sharing",
@@ -112,54 +80,6 @@
   "description": "换手率(%)"
  },
  {
-  "name": "Ifsuspend",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "Ifsuspend",
-  "panel_alias": "Ifsuspend",
-  "description": "是否停牌"
- },
- {
-  "name": "if_up",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "if_up",
-  "panel_alias": "if_up",
-  "description": "是否上涨"
- },
- {
-  "name": "if_flat",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "if_flat",
-  "panel_alias": "if_flat",
-  "description": "是否平盘"
- },
- {
-  "name": "if_down",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "if_down",
-  "panel_alias": "if_down",
-  "description": "是否下跌"
- },
- {
-  "name": "RisingUpDays",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "RisingUpDays",
-  "panel_alias": "RisingUpDays",
-  "description": "连涨天数"
- },
- {
-  "name": "FallingDownDays",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "FallingDownDays",
-  "panel_alias": "FallingDownDays",
-  "description": "连跌天数"
- },
- {
   "name": "MaxRisingUpDays",
   "category": "行情与技术",
   "source_table": "dws.ll_stock_daily_sharing",
@@ -176,198 +96,6 @@
   "description": "历史连跌最多天数"
  },
  {
-  "name": "FallOnDebut",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "FallOnDebut",
-  "panel_alias": "FallOnDebut",
-  "description": "是否破发"
- },
- {
-  "name": "FallOnNAPS",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "FallOnNAPS",
-  "panel_alias": "FallOnNAPS",
-  "description": "是否破净"
- },
- {
-  "name": "StockBoard",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "StockBoard",
-  "panel_alias": "StockBoard",
-  "description": "今日是否涨停一字板"
- },
- {
-  "name": "LimitBoard",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LimitBoard",
-  "panel_alias": "LimitBoard",
-  "description": "今日是否跌停一字板"
- },
- {
-  "name": "SurgedLimit",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "SurgedLimit",
-  "panel_alias": "SurgedLimit",
-  "description": "今日是否涨停股"
- },
- {
-  "name": "DeclineLimit",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "DeclineLimit",
-  "panel_alias": "DeclineLimit",
-  "description": "今日是否跌停股"
- },
- {
-  "name": "HighestPrice",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "HighestPrice",
-  "panel_alias": "HighestPrice",
-  "description": "今日是否创历史新高"
- },
- {
-  "name": "LowestPrice",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LowestPrice",
-  "panel_alias": "LowestPrice",
-  "description": "今日是否创历史新低"
- },
- {
-  "name": "HighestPriceRW",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "HighestPriceRW",
-  "panel_alias": "HighestPriceRW",
-  "description": "是否近一周新高"
- },
- {
-  "name": "LowestPriceRW",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LowestPriceRW",
-  "panel_alias": "LowestPriceRW",
-  "description": "是否近一周新低"
- },
- {
-  "name": "HighestPriceTW",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "HighestPriceTW",
-  "panel_alias": "HighestPriceTW",
-  "description": "是否本周以来新高"
- },
- {
-  "name": "LowestPriceTW",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LowestPriceTW",
-  "panel_alias": "LowestPriceTW",
-  "description": "是否本周以来新低"
- },
- {
-  "name": "HighestPriceRM",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "HighestPriceRM",
-  "panel_alias": "HighestPriceRM",
-  "description": "是否近一月新高"
- },
- {
-  "name": "LowestPriceRM",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LowestPriceRM",
-  "panel_alias": "LowestPriceRM",
-  "description": "是否近一月新低"
- },
- {
-  "name": "HighestPriceTM",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "HighestPriceTM",
-  "panel_alias": "HighestPriceTM",
-  "description": "是否本月以来新高"
- },
- {
-  "name": "LowestPriceTM",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LowestPriceTM",
-  "panel_alias": "LowestPriceTM",
-  "description": "是否本月以来新低"
- },
- {
-  "name": "HighestPriceRMThree",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "HighestPriceRMThree",
-  "panel_alias": "HighestPriceRMThree",
-  "description": "是否近三个月新高"
- },
- {
-  "name": "LowestPriceRMThree",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LowestPriceRMThree",
-  "panel_alias": "LowestPriceRMThree",
-  "description": "是否近三个月新低"
- },
- {
-  "name": "HighestPriceRMSix",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "HighestPriceRMSix",
-  "panel_alias": "HighestPriceRMSix",
-  "description": "是否近半年新高"
- },
- {
-  "name": "LowestPriceRMSix",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LowestPriceRMSix",
-  "panel_alias": "LowestPriceRMSix",
-  "description": "是否近半年新低"
- },
- {
-  "name": "HighestPriceRY",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "HighestPriceRY",
-  "panel_alias": "HighestPriceRY",
-  "description": "是否近一年新高"
- },
- {
-  "name": "LowestPriceRY",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LowestPriceRY",
-  "panel_alias": "LowestPriceRY",
-  "description": "是否近一年新低"
- },
- {
-  "name": "HighestPriceYTD",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "HighestPriceYTD",
-  "panel_alias": "HighestPriceYTD",
-  "description": "是否今年以来新高"
- },
- {
-  "name": "LowestPriceYTD",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "LowestPriceYTD",
-  "panel_alias": "LowestPriceYTD",
-  "description": "是否今年以来新低"
- },
- {
   "name": "ema12",
   "category": "行情与技术",
   "source_table": "dws.ll_stock_daily_sharing",
@@ -382,30 +110,6 @@
   "column": "ema26",
   "panel_alias": "ema26",
   "description": ""
- },
- {
-  "name": "dif",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "dif",
-  "panel_alias": "dif",
-  "description": "DIF"
- },
- {
-  "name": "dea",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "dea",
-  "panel_alias": "dea",
-  "description": "DEA"
- },
- {
-  "name": "macd",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "macd",
-  "panel_alias": "macd",
-  "description": "MACD"
  },
  {
   "name": "max_high_9",
@@ -472,38 +176,6 @@
   "description": "20日均线"
  },
  {
-  "name": "ma_signal",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "ma_signal",
-  "panel_alias": null,
-  "description": "均线信号"
- },
- {
-  "name": "macd_signal",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "macd_signal",
-  "panel_alias": null,
-  "description": "MACD信号"
- },
- {
-  "name": "kdj_signal",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "kdj_signal",
-  "panel_alias": null,
-  "description": "KDJ信号"
- },
- {
-  "name": "strategy",
-  "category": "行情与技术",
-  "source_table": "dws.ll_stock_daily_sharing",
-  "column": "strategy",
-  "panel_alias": null,
-  "description": "策略1"
- },
- {
   "name": "ma4",
   "category": "行情与技术",
   "source_table": "dws.ll_stock_daily_sharing",
@@ -544,108 +216,13 @@
   "description": "47日均线"
  },
  {
-  "name": "InfoPublDate",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "InfoPublDate",
-  "panel_alias": null,
-  "description": "信息发布日期"
- },
- {
-  "name": "InfoSource",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "InfoSource",
-  "panel_alias": null,
-  "description": "信息来源"
- },
- {
-  "name": "BulletinType",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "BulletinType",
-  "panel_alias": null,
-  "description": "公告类别"
- },
- {
-  "name": "EndDate",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "EndDate",
-  "panel_alias": null,
-  "description": "截止日期"
- },
- {
-  "name": "AccountingStandards",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "AccountingStandards",
-  "panel_alias": null,
-  "description": "会计准则"
- },
- {
-  "name": "Mark",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "Mark",
-  "panel_alias": null,
-  "description": "合并调整标志"
- },
- {
-  "name": "BasicEPS",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "BasicEPS",
-  "panel_alias": "fund_BasicEPS",
-  "description": "基本每股收益(元)"
- },
- {
-  "name": "DilutedEPS",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "DilutedEPS",
-  "panel_alias": "fund_DilutedEPS",
-  "description": "稀释每股收益(元)"
- },
- {
-  "name": "BasicEPSCut",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "BasicEPSCut",
-  "panel_alias": null,
-  "description": "基本每股收益(扣除)(元)"
- },
- {
-  "name": "DilutedEPSCut",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "DilutedEPSCut",
-  "panel_alias": null,
-  "description": "稀释每股收益(扣除)(元)"
- },
- {
-  "name": "EPS",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "EPS",
-  "panel_alias": "fund_EPS",
-  "description": "每股收益(摊薄)(元)"
- },
- {
-  "name": "ROEByReport",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "ROEByReport",
-  "panel_alias": "fund_ROEByReport",
-  "description": "净资产收益率(摊薄)-原始披露(%)"
- },
- {
   "name": "ROE",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "ROE",
   "panel_alias": "fund_ROE",
-  "description": "净资产收益率(摊薄)(%)"
+  "description": "净资产收益率(摊薄)(%)",
+  "period_type": "ratio"
  },
  {
   "name": "ROECut",
@@ -653,7 +230,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "ROECut",
   "panel_alias": "fund_ROECut",
-  "description": "净资产收益率(摊薄-扣除)(%)"
+  "description": "净资产收益率(摊薄-扣除)(%)",
+  "period_type": "ratio"
  },
  {
   "name": "WROE",
@@ -661,15 +239,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "WROE",
   "panel_alias": "fund_WROE",
-  "description": "净资产收益率(加权)(%)"
- },
- {
-  "name": "WROECut",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "WROECut",
-  "panel_alias": "fund_WROECut",
-  "description": "净资产收益率(加权-扣除)(%)"
+  "description": "净资产收益率(加权)(%)",
+  "period_type": "ratio"
  },
  {
   "name": "OperatingReenue",
@@ -677,7 +248,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "OperatingReenue",
   "panel_alias": "fund_OperatingReenue",
-  "description": "营业收入(元)"
+  "description": "营业收入(元)",
+  "period_type": "flow"
  },
  {
   "name": "NPFromParentCompanyOwners",
@@ -685,7 +257,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NPFromParentCompanyOwners",
   "panel_alias": "fund_NPFromParentCompanyOwners",
-  "description": "净利润(不含少数损益)(元)"
+  "description": "净利润(不含少数损益)(元)",
+  "period_type": "flow"
  },
  {
   "name": "NetProfitCut",
@@ -693,23 +266,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NetProfitCut",
   "panel_alias": "fund_NetProfitCut",
-  "description": "扣除非经常性损益后归母净利润(元)"
- },
- {
-  "name": "ProfitatISA",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "ProfitatISA",
-  "panel_alias": null,
-  "description": "国际会计准则净利润(元)"
- },
- {
-  "name": "MarginIntoOutStatement",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "MarginIntoOutStatement",
-  "panel_alias": null,
-  "description": "境内外审计净利润差异说明"
+  "description": "扣除非经常性损益后归母净利润(元)",
+  "period_type": "flow"
  },
  {
   "name": "RetainedProfit",
@@ -717,7 +275,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "RetainedProfit",
   "panel_alias": "fund_RetainedProfit",
-  "description": "未分配利润(元)"
+  "description": "未分配利润(元)",
+  "period_type": "stock"
  },
  {
   "name": "NetOperateCashFlow",
@@ -725,31 +284,26 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NetOperateCashFlow",
   "panel_alias": "fund_NetOperateCashFlow",
-  "description": "经营活动产生的现金流量净额(元)"
- },
- {
-  "name": "NetOperateCashFlowPS",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "NetOperateCashFlowPS",
-  "panel_alias": null,
-  "description": "每股经营活动现金流量净额(元)"
+  "description": "经营活动产生的现金流量净额(元)",
+  "period_type": "flow"
  },
  {
   "name": "CashEquialentIncrease",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "CashEquialentIncrease",
-  "panel_alias": null,
-  "description": "现金及现金等价物净增加额(元)"
+  "panel_alias": "fund_CashEquialentIncrease",
+  "description": "现金及现金等价物净增加额(元)",
+  "period_type": "flow"
  },
  {
   "name": "CashEquialents",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "CashEquialents",
-  "panel_alias": null,
-  "description": "货币资金(元)"
+  "panel_alias": "fund_CashEquialents",
+  "description": "货币资金(元)",
+  "period_type": "stock"
  },
  {
   "name": "TotalAssets",
@@ -757,7 +311,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalAssets",
   "panel_alias": "fund_TotalAssets",
-  "description": "资产总计(元)"
+  "description": "资产总计(元)",
+  "period_type": "stock"
  },
  {
   "name": "SEWithoutMI",
@@ -765,79 +320,35 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "SEWithoutMI",
   "panel_alias": "fund_SEWithoutMI",
-  "description": "股东权益(不含少数权益)(元)"
- },
- {
-  "name": "NetAssetISA",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "NetAssetISA",
-  "panel_alias": null,
-  "description": "国际会计准则净资产/股东权益(元)"
- },
- {
-  "name": "NAPSByReport",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "NAPSByReport",
-  "panel_alias": null,
-  "description": "每股净资产-原始披露(元)"
+  "description": "股东权益(不含少数权益)(元)",
+  "period_type": "stock"
  },
  {
   "name": "NAPS",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NAPS",
-  "panel_alias": null,
-  "description": "每股净资产(元)"
- },
- {
-  "name": "NAPSAdjusted",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "NAPSAdjusted",
-  "panel_alias": null,
-  "description": "调整后每股净资产(元)"
+  "panel_alias": "fund_NAPS",
+  "description": "每股净资产(元)",
+  "period_type": "stock"
  },
  {
   "name": "CapitalResereFund",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "CapitalResereFund",
-  "panel_alias": null,
-  "description": "资本公积(元)"
+  "panel_alias": "fund_CapitalResereFund",
+  "description": "资本公积(元)",
+  "period_type": "stock"
  },
  {
   "name": "TotalShares",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalShares",
-  "panel_alias": null,
-  "description": "总股本(股)"
- },
- {
-  "name": "DiidendFinancing",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "DiidendFinancing",
-  "panel_alias": null,
-  "description": "分配融资方案说明"
- },
- {
-  "name": "TotalRecompense",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "TotalRecompense",
-  "panel_alias": null,
-  "description": "领导人报酬总额(元)"
- },
- {
-  "name": "FeeForAccountantOffice",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "FeeForAccountantOffice",
-  "panel_alias": null,
-  "description": "会计师事务所费用(元)"
+  "panel_alias": "fund_TotalShares",
+  "description": "总股本(股)",
+  "period_type": "stock"
  },
  {
   "name": "OperatingProfit",
@@ -845,7 +356,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "OperatingProfit",
   "panel_alias": "fund_OperatingProfit",
-  "description": "营业利润(元)"
+  "description": "营业利润(元)",
+  "period_type": "flow"
  },
  {
   "name": "TotalProfit",
@@ -853,23 +365,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalProfit",
   "panel_alias": "fund_TotalProfit",
-  "description": "利润总额(元)"
- },
- {
-  "name": "ModifiedAuditOpinion",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "ModifiedAuditOpinion",
-  "panel_alias": null,
-  "description": "非标准审计意见描述"
- },
- {
-  "name": "FairValueChangeIncome",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "FairValueChangeIncome",
-  "panel_alias": "fund_FairValueChangeIncome",
-  "description": "公允价值变动净收益(元)"
+  "description": "利润总额(元)",
+  "period_type": "flow"
  },
  {
   "name": "IncomeTaxCost",
@@ -877,23 +374,17 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "IncomeTaxCost",
   "panel_alias": "fund_IncomeTaxCost",
-  "description": "所得税(元)"
- },
- {
-  "name": "UncertainedInvestmentLosses",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "UncertainedInvestmentLosses",
-  "panel_alias": null,
-  "description": "未确认的投资损失(元)"
+  "description": "所得税(元)",
+  "period_type": "flow"
  },
  {
   "name": "MinorityProfit",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "MinorityProfit",
-  "panel_alias": null,
-  "description": "少数股东损益(元)"
+  "panel_alias": "fund_MinorityProfit",
+  "description": "少数股东损益(元)",
+  "period_type": "flow"
  },
  {
   "name": "NetProfit",
@@ -901,7 +392,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NetProfit",
   "panel_alias": "fund_NetProfit",
-  "description": ""
+  "description": "",
+  "period_type": "flow"
  },
  {
   "name": "NetInvestCashFlow",
@@ -909,7 +401,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NetInvestCashFlow",
   "panel_alias": "fund_NetInvestCashFlow",
-  "description": "投资活动产生的现金流量净额(元)"
+  "description": "投资活动产生的现金流量净额(元)",
+  "period_type": "flow"
  },
  {
   "name": "NetFinanceCashFlow",
@@ -917,47 +410,26 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NetFinanceCashFlow",
   "panel_alias": "fund_NetFinanceCashFlow",
-  "description": "筹资活动产生的现金流量净额(元)"
+  "description": "筹资活动产生的现金流量净额(元)",
+  "period_type": "flow"
  },
  {
   "name": "ExchanRateChangeEffect",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "ExchanRateChangeEffect",
-  "panel_alias": null,
-  "description": "汇率变动对现金及现金等价物的影响"
+  "panel_alias": "fund_ExchanRateChangeEffect",
+  "description": "汇率变动对现金及现金等价物的影响",
+  "period_type": "flow"
  },
  {
   "name": "EndPeriodCashEquivalent",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "EndPeriodCashEquivalent",
-  "panel_alias": null,
-  "description": "期末现金及现金等价物余额"
- },
- {
-  "name": "TradingAssets",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "TradingAssets",
-  "panel_alias": null,
-  "description": "交易性金融资产(元)"
- },
- {
-  "name": "InterestReceivables",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "InterestReceivables",
-  "panel_alias": null,
-  "description": "应收利息(元)"
- },
- {
-  "name": "DividendReceivables",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "DividendReceivables",
-  "panel_alias": null,
-  "description": "应收股利(元)"
+  "panel_alias": "fund_EndPeriodCashEquivalent",
+  "description": "期末现金及现金等价物余额",
+  "period_type": "stock"
  },
  {
   "name": "AccountReceivables",
@@ -965,15 +437,17 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "AccountReceivables",
   "panel_alias": "fund_AccountReceivables",
-  "description": "应收账款(元)"
+  "description": "应收账款(元)",
+  "period_type": "stock"
  },
  {
   "name": "OtherReceivable",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "OtherReceivable",
-  "panel_alias": null,
-  "description": "其他应收款(元)"
+  "panel_alias": "fund_OtherReceivable",
+  "description": "其他应收款(元)",
+  "period_type": "stock"
  },
  {
   "name": "Inventories",
@@ -981,7 +455,8 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "Inventories",
   "panel_alias": "fund_Inventories",
-  "description": ""
+  "description": "",
+  "period_type": "stock"
  },
  {
   "name": "TotalCurrentAssets",
@@ -989,47 +464,26 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalCurrentAssets",
   "panel_alias": "fund_TotalCurrentAssets",
-  "description": "流动资产合计(元)"
- },
- {
-  "name": "HoldForSaleAssets",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "HoldForSaleAssets",
-  "panel_alias": null,
-  "description": "可供出售金融资产(元)"
- },
- {
-  "name": "HoldToMaturityInvestments",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "HoldToMaturityInvestments",
-  "panel_alias": null,
-  "description": "持有至到期投资(元)"
- },
- {
-  "name": "InvestmentProperty",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "InvestmentProperty",
-  "panel_alias": null,
-  "description": "投资性房地产(元)"
+  "description": "流动资产合计(元)",
+  "period_type": "stock"
  },
  {
   "name": "LongtermEquityInvest",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "LongtermEquityInvest",
-  "panel_alias": null,
-  "description": "长期股权投资(元)"
+  "panel_alias": "fund_LongtermEquityInvest",
+  "description": "长期股权投资(元)",
+  "period_type": "stock"
  },
  {
   "name": "IntangibleAssets",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "IntangibleAssets",
-  "panel_alias": null,
-  "description": "无形资产(元)"
+  "panel_alias": "fund_IntangibleAssets",
+  "description": "无形资产(元)",
+  "period_type": "stock"
  },
  {
   "name": "TotalNonCurrentAssets",
@@ -1037,63 +491,44 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalNonCurrentAssets",
   "panel_alias": "fund_TotalNonCurrentAssets",
-  "description": "非流动资产合计(元)"
+  "description": "非流动资产合计(元)",
+  "period_type": "stock"
  },
  {
   "name": "ShortTermLoan",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "ShortTermLoan",
-  "panel_alias": null,
-  "description": "短期借款(元)"
- },
- {
-  "name": "TradingLiability",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "TradingLiability",
-  "panel_alias": null,
-  "description": "交易性金融负债(元)"
+  "panel_alias": "fund_ShortTermLoan",
+  "description": "短期借款(元)",
+  "period_type": "stock"
  },
  {
   "name": "SalariesPayable",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "SalariesPayable",
-  "panel_alias": null,
-  "description": "应付职工薪酬(元)"
- },
- {
-  "name": "DividendPayable",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "DividendPayable",
-  "panel_alias": null,
-  "description": "应付股利(元)"
+  "panel_alias": "fund_SalariesPayable",
+  "description": "应付职工薪酬(元)",
+  "period_type": "stock"
  },
  {
   "name": "TaxsPayable",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TaxsPayable",
-  "panel_alias": null,
-  "description": "应交税费(元)"
- },
- {
-  "name": "InterestPayable",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "InterestPayable",
-  "panel_alias": null,
-  "description": "应付利息(元)"
+  "panel_alias": "fund_TaxsPayable",
+  "description": "应交税费(元)",
+  "period_type": "stock"
  },
  {
   "name": "OtherPayable",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "OtherPayable",
-  "panel_alias": null,
-  "description": "其他应付款(元)"
+  "panel_alias": "fund_OtherPayable",
+  "description": "其他应付款(元)",
+  "period_type": "stock"
  },
  {
   "name": "TotalLiability",
@@ -1101,31 +536,35 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalLiability",
   "panel_alias": "fund_TotalLiability",
-  "description": "负债合计(元)"
+  "description": "负债合计(元)",
+  "period_type": "stock"
  },
  {
   "name": "PaidInCapital",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "PaidInCapital",
-  "panel_alias": null,
-  "description": "实收资本(或股本)(元)"
+  "panel_alias": "fund_PaidInCapital",
+  "description": "实收资本(或股本)(元)",
+  "period_type": "stock"
  },
  {
   "name": "SurplusReserveFund",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "SurplusReserveFund",
-  "panel_alias": null,
-  "description": "盈余公积(元)"
+  "panel_alias": "fund_SurplusReserveFund",
+  "description": "盈余公积(元)",
+  "period_type": "stock"
  },
  {
   "name": "MinorityInterests",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "MinorityInterests",
-  "panel_alias": null,
-  "description": "少数股东权益(元)"
+  "panel_alias": "fund_MinorityInterests",
+  "description": "少数股东权益(元)",
+  "period_type": "stock"
  },
  {
   "name": "TotalShareholderEquity",
@@ -1133,15 +572,17 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalShareholderEquity",
   "panel_alias": "fund_TotalShareholderEquity",
-  "description": "所有者权益合计(元)"
+  "description": "所有者权益合计(元)",
+  "period_type": "stock"
  },
  {
   "name": "TotalLiabilityAndEquity",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalLiabilityAndEquity",
-  "panel_alias": null,
-  "description": "负债和所有者权益总计(元)"
+  "panel_alias": "fund_TotalLiabilityAndEquity",
+  "description": "负债和所有者权益总计(元)",
+  "period_type": "stock"
  },
  {
   "name": "TotalCurrentLiability",
@@ -1149,23 +590,26 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalCurrentLiability",
   "panel_alias": "fund_TotalCurrentLiability",
-  "description": "流动负债合计(元)"
+  "description": "流动负债合计(元)",
+  "period_type": "stock"
  },
  {
   "name": "FinancialExpense",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "FinancialExpense",
-  "panel_alias": null,
-  "description": "财务费用(元)"
+  "panel_alias": "fund_FinancialExpense",
+  "description": "财务费用(元)",
+  "period_type": "flow"
  },
  {
   "name": "InvestIncome",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "InvestIncome",
-  "panel_alias": null,
-  "description": "投资净收益(元)"
+  "panel_alias": "fund_InvestIncome",
+  "description": "投资净收益(元)",
+  "period_type": "flow"
  },
  {
   "name": "TotalNonCurrentLiability",
@@ -1173,2359 +617,222 @@
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "TotalNonCurrentLiability",
   "panel_alias": "fund_TotalNonCurrentLiability",
-  "description": "非流动负债合计(元)"
+  "description": "非流动负债合计(元)",
+  "period_type": "stock"
  },
  {
   "name": "NonCurrentLiabilityIn1Year",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NonCurrentLiabilityIn1Year",
-  "panel_alias": null,
-  "description": "一年内到期的非流动负债(元)"
+  "panel_alias": "fund_NonCurrentLiabilityIn1Year",
+  "description": "一年内到期的非流动负债(元)",
+  "period_type": "stock"
  },
  {
   "name": "NonRecurringProfitLoss",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NonRecurringProfitLoss",
-  "panel_alias": null,
-  "description": "非经常性损益(元)"
- },
- {
-  "name": "InfoSourceCode",
-  "category": "财务原始",
-  "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "InfoSourceCode",
-  "panel_alias": null,
-  "description": "信息来源编码"
+  "panel_alias": "fund_NonRecurringProfitLoss",
+  "description": "非经常性损益(元)",
+  "period_type": "flow"
  },
  {
   "name": "BillReceivable",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "BillReceivable",
-  "panel_alias": null,
-  "description": "应收票据"
+  "panel_alias": "fund_BillReceivable",
+  "description": "应收票据",
+  "period_type": "stock"
  },
  {
   "name": "BillAccReceivable",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "BillAccReceivable",
-  "panel_alias": null,
-  "description": "应收票据及应收账款"
+  "panel_alias": "fund_BillAccReceivable",
+  "description": "应收票据及应收账款",
+  "period_type": "stock"
  },
  {
   "name": "OtherReceivableED",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "OtherReceivableED",
-  "panel_alias": null,
-  "description": "其他应收款(含利息和股利)"
+  "panel_alias": "fund_OtherReceivableED",
+  "description": "其他应收款(含利息和股利)",
+  "period_type": "stock"
  },
  {
   "name": "OtherPayableED",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
   "column": "OtherPayableED",
-  "panel_alias": null,
-  "description": "其他应付款(含利息和股利)"
+  "panel_alias": "fund_OtherPayableED",
+  "description": "其他应付款(含利息和股利)",
+  "period_type": "stock"
  },
  {
-  "name": "CommonSE",
+  "name": "OperatingReenue_q",
   "category": "财务原始",
   "source_table": "ods_dps_target.lc_maindatanew",
-  "column": "CommonSE",
-  "panel_alias": null,
-  "description": "归属于普通股股东权益"
+  "column": "OperatingReenue",
+  "panel_alias": "fund_OperatingReenue_q",
+  "description": "单季营业收入(元)",
+  "period_type": "flow_q",
+  "derived_from": "OperatingReenue"
  },
  {
-  "name": "idx_EndDate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EndDate",
-  "panel_alias": null,
-  "description": "截止日期"
+  "name": "NPFromParentCompanyOwners_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "NPFromParentCompanyOwners",
+  "panel_alias": "fund_NPFromParentCompanyOwners_q",
+  "description": "单季净利润(不含少数损益)(元)",
+  "period_type": "flow_q",
+  "derived_from": "NPFromParentCompanyOwners"
  },
  {
-  "name": "idx_InfoPublDate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InfoPublDate",
-  "panel_alias": null,
-  "description": "信息发布日期"
- },
- {
-  "name": "idx_EPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EPS",
-  "panel_alias": null,
-  "description": "每股收益_期末股本摊薄(元/股)"
- },
- {
-  "name": "idx_BasicEPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "BasicEPS",
-  "panel_alias": null,
-  "description": "基本每股收益(元/股)"
- },
- {
-  "name": "idx_DilutedEPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DilutedEPS",
-  "panel_alias": null,
-  "description": "稀释每股收益(元/股)"
- },
- {
-  "name": "idx_NetAssetPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetAssetPS",
-  "panel_alias": null,
-  "description": "每股净资产(元/股)"
- },
- {
-  "name": "idx_MainIncomePS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "MainIncomePS",
-  "panel_alias": null,
-  "description": "每股营业收入(元/股)"
- },
- {
-  "name": "idx_OperProfitPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperProfitPS",
-  "panel_alias": null,
-  "description": "每股营业利润(元/股)"
- },
- {
-  "name": "idx_EBITPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITPS",
-  "panel_alias": null,
-  "description": "每股息税前利润(元/股)"
- },
- {
-  "name": "idx_CapitalSurplusFundPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CapitalSurplusFundPS",
-  "panel_alias": null,
-  "description": "每股资本公积金(元/股)"
- },
- {
-  "name": "idx_OperCashFlowPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperCashFlowPS",
-  "panel_alias": null,
-  "description": "每股经营活动产生的现金流量净额(元/股)"
- },
- {
-  "name": "idx_CashFlowPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashFlowPS",
-  "panel_alias": null,
-  "description": "每股现金流量净额(元/股)"
- },
- {
-  "name": "idx_NetProfit",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetProfit",
-  "panel_alias": null,
-  "description": "归属母公司净利润(元)"
- },
- {
-  "name": "idx_NetProfitCut",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
+  "name": "NetProfitCut_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NetProfitCut",
-  "panel_alias": null,
-  "description": "扣除非经常性损益后的归母净利润(元)"
+  "panel_alias": "fund_NetProfitCut_q",
+  "description": "单季扣除非经常性损益后归母净利润(元)",
+  "period_type": "flow_q",
+  "derived_from": "NetProfitCut"
  },
  {
-  "name": "idx_EBIT",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBIT",
-  "panel_alias": null,
-  "description": "息税前利润(元)"
- },
- {
-  "name": "idx_EBITDA",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITDA",
-  "panel_alias": null,
-  "description": "息税折旧摊销前利润(元)"
- },
- {
-  "name": "idx_OperatingProfitRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingProfitRatio",
-  "panel_alias": null,
-  "description": "营业利润率(%)"
- },
- {
-  "name": "idx_GrossIncomeRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "GrossIncomeRatio",
-  "panel_alias": null,
-  "description": "销售毛利率(%)"
- },
- {
-  "name": "idx_NetProfitRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetProfitRatio",
-  "panel_alias": null,
-  "description": "销售净利率(%)"
- },
- {
-  "name": "idx_TotalProfitCostRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalProfitCostRatio",
-  "panel_alias": null,
-  "description": "成本费用利润率(%)"
- },
- {
-  "name": "idx_ROA",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROA",
-  "panel_alias": null,
-  "description": "总资产净利率(%)"
- },
- {
-  "name": "idx_ROECut",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROECut",
-  "panel_alias": null,
-  "description": "净资产收益率_扣除,摊薄(%)"
- },
- {
-  "name": "idx_ROECutWeighted",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROECutWeighted",
-  "panel_alias": null,
-  "description": "净资产收益率_扣除,加权(%)"
- },
- {
-  "name": "idx_ROIC",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROIC",
-  "panel_alias": null,
-  "description": "投入资本回报率(%)"
- },
- {
-  "name": "idx_CurrentRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CurrentRatio",
-  "panel_alias": null,
-  "description": "流动比率"
- },
- {
-  "name": "idx_QuickRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "QuickRatio",
-  "panel_alias": null,
-  "description": "速动比率"
- },
- {
-  "name": "idx_SuperQuickRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SuperQuickRatio",
-  "panel_alias": null,
-  "description": "超速动比率"
- },
- {
-  "name": "idx_OperCashInToCurrentDebt",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperCashInToCurrentDebt",
-  "panel_alias": null,
-  "description": "现金流动负债比"
- },
- {
-  "name": "idx_InterestCover",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InterestCover",
-  "panel_alias": null,
-  "description": "利息保障倍数(倍)"
- },
- {
-  "name": "idx_DebtAssetsRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DebtAssetsRatio",
-  "panel_alias": null,
-  "description": "资产负债率(%)"
- },
- {
-  "name": "idx_DebtEquityRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DebtEquityRatio",
-  "panel_alias": null,
-  "description": "产权比率(%)"
- },
- {
-  "name": "idx_DebtTangibleEquityRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DebtTangibleEquityRatio",
-  "panel_alias": null,
-  "description": "有形净值债务率(%)"
- },
- {
-  "name": "idx_LongDebtToWorkingCapital",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "LongDebtToWorkingCapital",
-  "panel_alias": null,
-  "description": "非流动负债/营运资金(%)"
- },
- {
-  "name": "idx_OperatingRevenueGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingRevenueGrowRate",
-  "panel_alias": null,
-  "description": "营业收入同比增长(%)"
- },
- {
-  "name": "idx_OperProfitGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperProfitGrowRate",
-  "panel_alias": null,
-  "description": "营业利润同比增长(%)"
- },
- {
-  "name": "idx_TotalProfeiGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalProfeiGrowRate",
-  "panel_alias": null,
-  "description": "利润总额同比增长(%)"
- },
- {
-  "name": "idx_NetProfitGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetProfitGrowRate",
-  "panel_alias": null,
-  "description": "净利润同比增长(%)"
- },
- {
-  "name": "idx_NetAssetGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetAssetGrowRate",
-  "panel_alias": null,
-  "description": "净资产同比增长(%)"
- },
- {
-  "name": "idx_TotalAssetGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalAssetGrowRate",
-  "panel_alias": null,
-  "description": "总资产同比增长(%)"
- },
- {
-  "name": "idx_OperCashPSGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperCashPSGrowRate",
-  "panel_alias": null,
-  "description": "每股经营活动产生的现金流量净额同比增长(%)"
- },
- {
-  "name": "idx_SustainableGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SustainableGrowRate",
-  "panel_alias": null,
-  "description": "可持续增长率(%)"
- },
- {
-  "name": "idx_ARTRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ARTRate",
-  "panel_alias": null,
-  "description": "应收账款周转率(次)"
- },
- {
-  "name": "idx_ARTDays",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ARTDays",
-  "panel_alias": null,
-  "description": "应收账款周转天数(天/次)"
- },
- {
-  "name": "idx_InventoryTRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InventoryTRate",
-  "panel_alias": null,
-  "description": "存货周转率(次)"
- },
- {
-  "name": "idx_InventoryTDays",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InventoryTDays",
-  "panel_alias": null,
-  "description": "存货周转天数(天/次)"
- },
- {
-  "name": "idx_FixedAssetTRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FixedAssetTRate",
-  "panel_alias": null,
-  "description": "固定资产周转率(次)"
- },
- {
-  "name": "idx_EquityTRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EquityTRate",
-  "panel_alias": null,
-  "description": "股东权益周转率(次)"
- },
- {
-  "name": "idx_TotalAssetTRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalAssetTRate",
-  "panel_alias": null,
-  "description": "总资产周转率(次)"
- },
- {
-  "name": "idx_OperCycle",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperCycle",
-  "panel_alias": null,
-  "description": "营业周期(天/次)"
- },
- {
-  "name": "idx_CashEquivalentIncrease",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashEquivalentIncrease",
-  "panel_alias": null,
-  "description": "现金及现金等价物净增加额(元)"
- },
- {
-  "name": "idx_NetOperateCashFlow",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
+  "name": "NetOperateCashFlow_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
   "column": "NetOperateCashFlow",
-  "panel_alias": null,
-  "description": "经营活动产生的现金流量净额(元)"
- },
- {
-  "name": "idx_GoodsSaleServiceRenderCash",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "GoodsSaleServiceRenderCash",
-  "panel_alias": null,
-  "description": "销售商品提供劳务收到的现金(元)"
- },
- {
-  "name": "idx_FreeCashFlow",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FreeCashFlow",
-  "panel_alias": null,
-  "description": "自由现金流量(元)"
- },
- {
-  "name": "idx_NetProfitCashCover",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetProfitCashCover",
-  "panel_alias": null,
-  "description": "净利润现金含量(%)"
- },
- {
-  "name": "idx_OperatingRevenueCashCover",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingRevenueCashCover",
-  "panel_alias": null,
-  "description": "营业收入现金含量(%)"
- },
- {
-  "name": "idx_CashRateOfSales",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashRateOfSales",
-  "panel_alias": null,
-  "description": "经营活动产生的现金流量净额/营业收入(%)"
- },
- {
-  "name": "idx_OperCashInToAsset",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperCashInToAsset",
-  "panel_alias": null,
-  "description": "总资产现金回收率(%)"
- },
- {
-  "name": "idx_CashEquivalentPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashEquivalentPS",
-  "panel_alias": null,
-  "description": "每股现金及现金等价物余额(元/股)"
- },
- {
-  "name": "idx_UndividedProfit",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "UndividedProfit",
-  "panel_alias": null,
-  "description": "每股未分配利润(元/股)"
- },
- {
-  "name": "idx_AccumulationFundPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AccumulationFundPS",
-  "panel_alias": null,
-  "description": "每股公积金(元/股)"
- },
- {
-  "name": "idx_DividendPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DividendPS",
-  "panel_alias": null,
-  "description": "每股股利(元/股)"
- },
- {
-  "name": "idx_DividendCover",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DividendCover",
-  "panel_alias": null,
-  "description": "股利保障倍数(倍)"
- },
- {
-  "name": "idx_DividendPaidRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DividendPaidRatio",
-  "panel_alias": null,
-  "description": "股利支付率(%)"
- },
- {
-  "name": "idx_RetainedEarningRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "RetainedEarningRatio",
-  "panel_alias": null,
-  "description": "留存盈余比率(%)"
- },
- {
-  "name": "idx_CashDividendCover",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashDividendCover",
-  "panel_alias": null,
-  "description": "现金股利保障倍数(倍)"
- },
- {
-  "name": "idx_WorkingCapital",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "WorkingCapital",
-  "panel_alias": null,
-  "description": "营运资金(元)"
- },
- {
-  "name": "idx_LongDebtToAsset",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "LongDebtToAsset",
-  "panel_alias": null,
-  "description": "长期借款/总资产"
- },
- {
-  "name": "idx_BondsPayableToAsset",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "BondsPayableToAsset",
-  "panel_alias": null,
-  "description": "应付债券/总资产"
- },
- {
-  "name": "idx_EquityToAsset",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EquityToAsset",
-  "panel_alias": null,
-  "description": "股东权益比率(%)"
- },
- {
-  "name": "idx_LongDebtToEquity",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "LongDebtToEquity",
-  "panel_alias": null,
-  "description": "长期负债/股东权益合计"
- },
- {
-  "name": "idx_LongAssetFitRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "LongAssetFitRate",
-  "panel_alias": null,
-  "description": "长期资产适合率"
- },
- {
-  "name": "idx_FixAssetRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FixAssetRatio",
-  "panel_alias": null,
-  "description": "固定资产比率(%)"
- },
- {
-  "name": "idx_IntangibleAssetRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "IntangibleAssetRatio",
-  "panel_alias": null,
-  "description": "无形资产比率(%)"
- },
- {
-  "name": "idx_EquityMultipler",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EquityMultipler",
-  "panel_alias": null,
-  "description": "权益乘数"
- },
- {
-  "name": "idx_EPSTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EPSTTM",
-  "panel_alias": null,
-  "description": "每股收益_TTM(元/股)"
- },
- {
-  "name": "idx_TotalOperatingRevenuePS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalOperatingRevenuePS",
-  "panel_alias": null,
-  "description": "每股营业总收入(元/股)"
- },
- {
-  "name": "idx_OperatingRevenuePSTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingRevenuePSTTM",
-  "panel_alias": null,
-  "description": "每股营业收入_TTM(元/股)"
- },
- {
-  "name": "idx_SurplusReserveFundPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SurplusReserveFundPS",
-  "panel_alias": null,
-  "description": "每股盈余公积(元/股)"
- },
- {
-  "name": "idx_RetainedEarningsPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "RetainedEarningsPS",
-  "panel_alias": null,
-  "description": "每股留存收益(元/股)"
- },
- {
-  "name": "idx_OperCashFlowPSTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperCashFlowPSTTM",
-  "panel_alias": null,
-  "description": "每股经营活动产生的现金流量净额_TTM(元/股)"
- },
- {
-  "name": "idx_CashFlowPSTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashFlowPSTTM",
-  "panel_alias": null,
-  "description": "每股现金流量净额_TTM(元/股)"
- },
- {
-  "name": "idx_EnterpriseFCFPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EnterpriseFCFPS",
-  "panel_alias": null,
-  "description": "每股企业自由现金流量(元/股)"
- },
- {
-  "name": "idx_ShareHolderFCFPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ShareHolderFCFPS",
-  "panel_alias": null,
-  "description": "每股股东自由现金流量(元/股)"
- },
- {
-  "name": "idx_ROEAvg",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROEAvg",
-  "panel_alias": null,
-  "description": "净资产收益率_平均,计算值(%)"
- },
- {
-  "name": "idx_ROEWeighted",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROEWeighted",
-  "panel_alias": null,
-  "description": "净资产收益率_加权,公布值(%)"
- },
- {
-  "name": "idx_ROE",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROE",
-  "panel_alias": null,
-  "description": "净资产收益率_摊薄,公布值(%)"
- },
- {
-  "name": "idx_ROETTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROETTM",
-  "panel_alias": null,
-  "description": "净资产收益率_TTM(%)"
- },
- {
-  "name": "idx_ROA_EBIT",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROA_EBIT",
-  "panel_alias": null,
-  "description": "总资产报酬率(%)"
- },
- {
-  "name": "idx_ROA_EBITTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROA_EBITTTM",
-  "panel_alias": null,
-  "description": "总资产报酬率_TTM(%)"
- },
- {
-  "name": "idx_ROATTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROATTM",
-  "panel_alias": null,
-  "description": "总资产净利率_TTM(%)"
- },
- {
-  "name": "idx_NetProfitRatioTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetProfitRatioTTM",
-  "panel_alias": null,
-  "description": "销售净利率_TTM(%)"
- },
- {
-  "name": "idx_GrossIncomeRatioTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "GrossIncomeRatioTTM",
-  "panel_alias": null,
-  "description": "销售毛利率_TTM(%)"
- },
- {
-  "name": "idx_SalesCostRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SalesCostRatio",
-  "panel_alias": null,
-  "description": "销售成本率(%)"
- },
- {
-  "name": "idx_PeriodCostsRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "PeriodCostsRate",
-  "panel_alias": null,
-  "description": "销售期间费用率(%)"
- },
- {
-  "name": "idx_PeriodCostsRateTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "PeriodCostsRateTTM",
-  "panel_alias": null,
-  "description": "销售期间费用率_TTM(%)"
- },
- {
-  "name": "idx_NPToTOR",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPToTOR",
-  "panel_alias": null,
-  "description": "净利润/营业总收入(%)"
- },
- {
-  "name": "idx_NPToTORTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPToTORTTM",
-  "panel_alias": null,
-  "description": "净利润/营业总收入_TTM(%)"
- },
- {
-  "name": "idx_OperatingProfitToTOR",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingProfitToTOR",
-  "panel_alias": null,
-  "description": "营业利润/营业总收入(%)"
- },
- {
-  "name": "idx_OperatingProfitToTORTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingProfitToTORTTM",
-  "panel_alias": null,
-  "description": "营业利润/营业总收入_TTM(%)"
- },
- {
-  "name": "idx_EBITToTOR",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITToTOR",
-  "panel_alias": null,
-  "description": "息税前利润/营业总收入_杜邦分析(%)"
- },
- {
-  "name": "idx_TOperatingCostToTOR",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TOperatingCostToTOR",
-  "panel_alias": null,
-  "description": "营业总成本/营业总收入(%)"
- },
- {
-  "name": "idx_TOperatingCostToTORTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TOperatingCostToTORTTM",
-  "panel_alias": null,
-  "description": "营业总成本/营业总收入_TTM(%)"
- },
- {
-  "name": "idx_OperatingExpenseRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingExpenseRate",
-  "panel_alias": null,
-  "description": "销售费用/营业总收入(%)"
- },
- {
-  "name": "idx_OperatingExpenseRateTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingExpenseRateTTM",
-  "panel_alias": null,
-  "description": "销售费用/营业总收入_TTM(%)"
- },
- {
-  "name": "idx_AdminiExpenseRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AdminiExpenseRate",
-  "panel_alias": null,
-  "description": "管理费用/营业总收入(%)"
- },
- {
-  "name": "idx_AdminiExpenseRateTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AdminiExpenseRateTTM",
-  "panel_alias": null,
-  "description": "管理费用/营业总收入_TTM(%)"
- },
- {
-  "name": "idx_FinancialExpenseRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FinancialExpenseRate",
-  "panel_alias": null,
-  "description": "财务费用/营业总收入(%)"
- },
- {
-  "name": "idx_FinancialExpenseRateTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FinancialExpenseRateTTM",
-  "panel_alias": null,
-  "description": "财务费用/营业总收入_TTM(%)"
- },
- {
-  "name": "idx_AssetImpaLossToTOR",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AssetImpaLossToTOR",
-  "panel_alias": null,
-  "description": "资产减值损失/营业总收入(%)"
- },
- {
-  "name": "idx_AssetImpaLossToTORTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AssetImpaLossToTORTTM",
-  "panel_alias": null,
-  "description": "资产减值损失/营业总收入_TTM(%)"
- },
- {
-  "name": "idx_SEWithoutMIToTL",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SEWithoutMIToTL",
-  "panel_alias": null,
-  "description": "归属母公司股东的权益/负债合计(%)"
- },
- {
-  "name": "idx_SEWMIToInterestBearDebt",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SEWMIToInterestBearDebt",
-  "panel_alias": null,
-  "description": "归属母公司股东的权益/带息债务(%)"
- },
- {
-  "name": "idx_TangibleAToInteBearDebt",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TangibleAToInteBearDebt",
-  "panel_alias": null,
-  "description": "有形净值/带息债务(%)"
- },
- {
-  "name": "idx_TangibleAToNetDebt",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TangibleAToNetDebt",
-  "panel_alias": null,
-  "description": "有形净值/净债务(%)"
- },
- {
-  "name": "idx_EBITDAToTLiability",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITDAToTLiability",
-  "panel_alias": null,
-  "description": "息税折旧摊销前利润/负债合计"
- },
- {
-  "name": "idx_NOCFToTLiability",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NOCFToTLiability",
-  "panel_alias": null,
-  "description": "经营活动产生现金流量净额/负债合计"
- },
- {
-  "name": "idx_NOCFToInterestBearDebt",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NOCFToInterestBearDebt",
-  "panel_alias": null,
-  "description": "经营活动产生现金流量净额/带息债务"
- },
- {
-  "name": "idx_NOCFToCurrentLiability",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NOCFToCurrentLiability",
-  "panel_alias": null,
-  "description": "经营活动产生现金流量净额/流动负债"
- },
- {
-  "name": "idx_NOCFToNetDebt",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NOCFToNetDebt",
-  "panel_alias": null,
-  "description": "经营活动产生现金流量净额/净债务"
- },
- {
-  "name": "idx_BasicEPSYOY",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "BasicEPSYOY",
-  "panel_alias": null,
-  "description": "基本每股收益同比增长(%)"
- },
- {
-  "name": "idx_DilutedEPSYOY",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DilutedEPSYOY",
-  "panel_alias": null,
-  "description": "稀释每股收益同比增长(%)"
- },
- {
-  "name": "idx_NPParentCompanyYOY",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPParentCompanyYOY",
-  "panel_alias": null,
-  "description": "归属母公司股东的净利润同比增长(%)"
- },
- {
-  "name": "idx_NPParentCompanyCutYOY",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPParentCompanyCutYOY",
-  "panel_alias": null,
-  "description": "归属母公司股东的净利润(扣除)同比增长(%)"
- },
- {
-  "name": "idx_NetOperateCashFlowYOY",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetOperateCashFlowYOY",
-  "panel_alias": null,
-  "description": "经营活动产生的现金流量净额同比增长(%)"
- },
- {
-  "name": "idx_NAORYOY",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NAORYOY",
-  "panel_alias": null,
-  "description": "净资产收益率(摊薄)同比增长(%)"
- },
- {
-  "name": "idx_EPSGrowRateYTD",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EPSGrowRateYTD",
-  "panel_alias": null,
-  "description": "每股净资产相对年初增长率(%)"
- },
- {
-  "name": "idx_SEWithoutMIGrowRateYTD",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SEWithoutMIGrowRateYTD",
-  "panel_alias": null,
-  "description": "归属母公司股东的权益相对年初增长率(%)"
- },
- {
-  "name": "idx_TAGrowRateYTD",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TAGrowRateYTD",
-  "panel_alias": null,
-  "description": "资产总计相对年初增长率(%)"
- },
- {
-  "name": "idx_AccountsPayablesTRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AccountsPayablesTRate",
-  "panel_alias": null,
-  "description": "应付账款周转率(次)"
- },
- {
-  "name": "idx_AccountsPayablesTDays",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AccountsPayablesTDays",
-  "panel_alias": null,
-  "description": "应付账款周转天数(天/次)"
- },
- {
-  "name": "idx_CurrentAssetsTRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CurrentAssetsTRate",
-  "panel_alias": null,
-  "description": "流动资产周转率(次)"
- },
- {
-  "name": "idx_SaleServiceCashToOR",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SaleServiceCashToOR",
-  "panel_alias": null,
-  "description": "销售商品提供劳务收到的现金/营业收入(%)"
- },
- {
-  "name": "idx_SaleServiceCashToORTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SaleServiceCashToORTTM",
-  "panel_alias": null,
-  "description": "销售商品提供劳务收到的现金/营业收入_TTM(%)"
- },
- {
-  "name": "idx_CashRateOfSalesTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashRateOfSalesTTM",
-  "panel_alias": null,
-  "description": "经营活动产生的现金流量净额/营业收入_TTM(%)"
- },
- {
-  "name": "idx_NOCFToOperatingNI",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NOCFToOperatingNI",
-  "panel_alias": null,
-  "description": "经营活动产生的现金流量净额/经营活动净收益(%)"
- },
- {
-  "name": "idx_NOCFToOperatingNITTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NOCFToOperatingNITTM",
-  "panel_alias": null,
-  "description": "经营活动产生的现金流量净额/经营活动净收益_TTM(%)"
- },
- {
-  "name": "idx_CapitalExpenditureToDM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CapitalExpenditureToDM",
-  "panel_alias": null,
-  "description": "资本支出/折旧和摊销"
- },
- {
-  "name": "idx_CurrentAssetsToTA",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CurrentAssetsToTA",
-  "panel_alias": null,
-  "description": "流动资产/总资产(%)"
- },
- {
-  "name": "idx_NonCurrentAssetsToTA",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NonCurrentAssetsToTA",
-  "panel_alias": null,
-  "description": "非流动资产/总资产(%)"
- },
- {
-  "name": "idx_SEWithoutMIToTotalCapital",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "SEWithoutMIToTotalCapital",
-  "panel_alias": null,
-  "description": "归属母公司股东的权益/全部投入资本(%)"
- },
- {
-  "name": "idx_InteBearDebtToTotalCapital",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InteBearDebtToTotalCapital",
-  "panel_alias": null,
-  "description": "带息债务/全部投入资本(%)"
- },
- {
-  "name": "idx_CurrentLiabilityToTL",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CurrentLiabilityToTL",
-  "panel_alias": null,
-  "description": "流动负债/负债合计(%)"
- },
- {
-  "name": "idx_NonCurrentLiabilityToTL",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NonCurrentLiabilityToTL",
-  "panel_alias": null,
-  "description": "非流动负债/负债合计(%)"
- },
- {
-  "name": "idx_OperatingNIToTP",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingNIToTP",
-  "panel_alias": null,
-  "description": "经营活动净收益/利润总额(%)"
- },
- {
-  "name": "idx_OperatingMIToTPTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingMIToTPTTM",
-  "panel_alias": null,
-  "description": "经营活动净收益/利润总额_TTM(%)"
- },
- {
-  "name": "idx_InvestRAssociatesToTP",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InvestRAssociatesToTP",
-  "panel_alias": null,
-  "description": "对联营合营公司投资收益/利润总额(%)"
- },
- {
-  "name": "idx_InvestRAssociatesToTPTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InvestRAssociatesToTPTTM",
-  "panel_alias": null,
-  "description": "对联营合营公司投资收益/利润总额_TTM(%)"
- },
- {
-  "name": "idx_ValueChangeNIToTP",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ValueChangeNIToTP",
-  "panel_alias": null,
-  "description": "价值变动净收益/利润总额(%)"
- },
- {
-  "name": "idx_ValueChangeNIToTPTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ValueChangeNIToTPTTM",
-  "panel_alias": null,
-  "description": "价值变动净收益/利润总额_TTM(%)"
- },
- {
-  "name": "idx_NetNonOperatingIncomeToTP",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetNonOperatingIncomeToTP",
-  "panel_alias": null,
-  "description": "营业外收支净额/利润总额(%)"
- },
- {
-  "name": "idx_NetNonOIToTPTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetNonOIToTPTTM",
-  "panel_alias": null,
-  "description": "营业外收支净额/利润总额_TTM(%)"
- },
- {
-  "name": "idx_TaxesToTP",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TaxesToTP",
-  "panel_alias": null,
-  "description": "所得税/利润总额(%)"
- },
- {
-  "name": "idx_NPCutToTP",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPCutToTP",
-  "panel_alias": null,
-  "description": "扣除非经常损益后的归母净利润/净利润(%)"
- },
- {
-  "name": "idx_EquityMultipler_DuPont",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EquityMultipler_DuPont",
-  "panel_alias": null,
-  "description": "权益乘数_杜邦分析"
- },
- {
-  "name": "idx_NPPCToNP_DuPont",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPPCToNP_DuPont",
-  "panel_alias": null,
-  "description": "归属母公司股东的净利润/净利润(%)_杜邦分析"
- },
- {
-  "name": "idx_NPToTOR_DuPont",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPToTOR_DuPont",
-  "panel_alias": null,
-  "description": "净利润/营业总收入_杜邦分析(%)"
- },
- {
-  "name": "idx_NPToTP_DuPont",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPToTP_DuPont",
-  "panel_alias": null,
-  "description": "净利润/利润总额_杜邦分析(%)"
- },
- {
-  "name": "idx_TPToEBIT_DuPont",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TPToEBIT_DuPont",
-  "panel_alias": null,
-  "description": "利润总额/息税前利润_杜邦分析(%)"
- },
- {
-  "name": "idx_EBITToTOR_DuPont",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITToTOR_DuPont",
-  "panel_alias": null,
-  "description": "息税前利润/营业总收入_杜邦分析(%)"
- },
- {
-  "name": "idx_AvgNPYOYPastFiveYear",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AvgNPYOYPastFiveYear",
-  "panel_alias": null,
-  "description": "过去五年同期归属母公司净利润平均增幅(%)"
- },
- {
-  "name": "idx_ORComGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ORComGrowRate3Y",
-  "panel_alias": null,
-  "description": "营业收入3年复合增长率(%)"
- },
- {
-  "name": "idx_NPPCCGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPPCCGrowRate3Y",
-  "panel_alias": null,
-  "description": "归属母公司股东的净利润3年复合增长率(%)"
- },
- {
-  "name": "idx_EVWtoEBITDA",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EVWtoEBITDA",
-  "panel_alias": null,
-  "description": "EVW/EBITDA(含货币资金)"
- },
- {
-  "name": "idx_EVNtoEBITDA",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EVNtoEBITDA",
-  "panel_alias": null,
-  "description": "EVN/EBITDA(剔除货币资金)"
- },
- {
-  "name": "idx_InteBearDebtToTL",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InteBearDebtToTL",
-  "panel_alias": null,
-  "description": "带息债务率(%)"
- },
- {
-  "name": "idx_BasicEPSGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "BasicEPSGrowRate3Y",
-  "panel_alias": null,
-  "description": "基本每股收益3年复合增长率(%)"
- },
- {
-  "name": "idx_DilutedEPSGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DilutedEPSGrowRate3Y",
-  "panel_alias": null,
-  "description": "稀释每股收益3年复合增长率(%)"
- },
- {
-  "name": "idx_TORGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TORGrowRate",
-  "panel_alias": null,
-  "description": "营业总收入同比增长率(%)"
- },
- {
-  "name": "idx_TORGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TORGrowRate3Y",
-  "panel_alias": null,
-  "description": "营业总收入3年复合增长率(%)"
- },
- {
-  "name": "idx_OperProfitGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperProfitGrowRate3Y",
-  "panel_alias": null,
-  "description": "营业利润3年复合增长率(%)"
- },
- {
-  "name": "idx_TPGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TPGrowRate3Y",
-  "panel_alias": null,
-  "description": "利润总额3年复合增长率(%)"
- },
- {
-  "name": "idx_NetProfitGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetProfitGrowRate3Y",
-  "panel_alias": null,
-  "description": "净利润3年复合增长率(%)"
- },
- {
-  "name": "idx_NPParentCompanyCut3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NPParentCompanyCut3Y",
-  "panel_alias": null,
-  "description": "归属母公司股东的净利润(扣除)3年复合增长率(%)"
- },
- {
-  "name": "idx_NetOperateCashFlow3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetOperateCashFlow3Y",
-  "panel_alias": null,
-  "description": "经营活动产生的现金流量净额3年复合增长率(%)"
- },
- {
-  "name": "idx_OperCashPSGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperCashPSGrowRate3Y",
-  "panel_alias": null,
-  "description": "每股经营活动产生的现金流量净额3年复合增长率(%)"
- },
- {
-  "name": "idx_NAORGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NAORGrowRate3Y",
-  "panel_alias": null,
-  "description": "净资产收益率(摊薄)3年复合增长率(%)"
- },
- {
-  "name": "idx_NetAssetGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetAssetGrowRate3Y",
-  "panel_alias": null,
-  "description": "净资产3年复合增长率(%)"
- },
- {
-  "name": "idx_TotalAssetGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalAssetGrowRate3Y",
-  "panel_alias": null,
-  "description": "总资产3年复合增长率(%)"
- },
- {
-  "name": "idx_FreeCashFlowToNPPC",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FreeCashFlowToNPPC",
-  "panel_alias": null,
-  "description": "自由现金流与归属母公司净利润比率"
- },
- {
-  "name": "idx_CashWorkingIndex",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashWorkingIndex",
-  "panel_alias": null,
-  "description": "现金营运指数"
- },
- {
-  "name": "idx_ROACut",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROACut",
-  "panel_alias": null,
-  "description": "总资产净利率_不含少数股东损益(%)"
- },
- {
-  "name": "idx_ROACutTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROACutTTM",
-  "panel_alias": null,
-  "description": "总资产净利率_不含少数股东损益_TTM(%)"
- },
- {
-  "name": "idx_EBITDAPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITDAPS",
-  "panel_alias": null,
-  "description": "每股息税折旧前利润(元/股)"
- },
- {
-  "name": "idx_AnnualizedROE",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AnnualizedROE",
-  "panel_alias": null,
-  "description": "年化净资产收益率(%)"
- },
- {
-  "name": "idx_AnnualizedROAEBIT",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AnnualizedROAEBIT",
-  "panel_alias": null,
-  "description": "年化总资产报酬率(%)"
- },
- {
-  "name": "idx_AnnualizedROA",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AnnualizedROA",
-  "panel_alias": null,
-  "description": "年化总资产净利率(%)"
- },
- {
-  "name": "idx_ROICTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ROICTTM",
-  "panel_alias": null,
-  "description": "投入资本回报率_TTM(%)"
- },
- {
-  "name": "idx_AssetILossToOProfit",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "AssetILossToOProfit",
-  "panel_alias": null,
-  "description": "资产减值损失/营业利润(%)"
- },
- {
-  "name": "idx_NetProfToOpRevenTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetProfToOpRevenTTM",
-  "panel_alias": null,
-  "description": "归属母公司股东的净利润/营业收入_TTM(%)"
- },
- {
-  "name": "idx_EBITToToAssetsTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITToToAssetsTTM",
-  "panel_alias": null,
-  "description": "息税前利润/总资产_TTM(%)"
- },
- {
-  "name": "idx_EBITDAToTOR",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITDAToTOR",
-  "panel_alias": null,
-  "description": "息税折旧前利润/营业总收入(%)"
- },
- {
-  "name": "idx_OperatingProRatioTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperatingProRatioTTM",
-  "panel_alias": null,
-  "description": "营业利润率_TTM(%)"
- },
- {
-  "name": "idx_MainProfitProportion",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "MainProfitProportion",
-  "panel_alias": null,
-  "description": "主营业务比率(%)"
- },
- {
-  "name": "idx_TangibleAToTL",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TangibleAToTL",
-  "panel_alias": null,
-  "description": "有形资产/负债合计(%)"
- },
- {
-  "name": "idx_NOCFToTotalNonCurLia",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NOCFToTotalNonCurLia",
-  "panel_alias": null,
-  "description": "经营活动产生现金流量净额/非流动负债(%)"
- },
- {
-  "name": "idx_NOCFInterestCover",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NOCFInterestCover",
-  "panel_alias": null,
-  "description": "现金流量利息保障倍数(倍)"
- },
- {
-  "name": "idx_CashRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashRatio",
-  "panel_alias": null,
-  "description": "现金比率(%)"
- },
- {
-  "name": "idx_OperCashInToDueDebt",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperCashInToDueDebt",
-  "panel_alias": null,
-  "description": "现金到期债务比"
- },
- {
-  "name": "idx_NetAssetLiabilityRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetAssetLiabilityRatio",
-  "panel_alias": null,
-  "description": "净资产负债率(%)"
- },
- {
-  "name": "idx_NetLiabilityRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetLiabilityRatio",
-  "panel_alias": null,
-  "description": "净负债率(%)"
- },
- {
-  "name": "idx_NetNoFCFToCLiability",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetNoFCFToCLiability",
-  "panel_alias": null,
-  "description": "非筹资性现金净流量与流动负债的比率(%)"
- },
- {
-  "name": "idx_NetNoFCFToTLiability",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetNoFCFToTLiability",
-  "panel_alias": null,
-  "description": "非筹资性现金净流量与负债总额的比率(%)"
- },
- {
-  "name": "idx_LongDebtRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "LongDebtRatio",
-  "panel_alias": null,
-  "description": "长期负债占比"
- },
- {
-  "name": "idx_EBITDAToIntBearDebt",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITDAToIntBearDebt",
-  "panel_alias": null,
-  "description": "息税折旧前利润/带息债务(%)"
- },
- {
-  "name": "idx_EBITDAToInttFinExp",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITDAToInttFinExp",
-  "panel_alias": null,
-  "description": "息税折旧前利润/利息费用(%)"
- },
- {
-  "name": "idx_EntireliabToEBITDA",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EntireliabToEBITDA",
-  "panel_alias": null,
-  "description": "全部债务/息税折旧前利润"
- },
- {
-  "name": "idx_CashToCurliability",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashToCurliability",
-  "panel_alias": null,
-  "description": "货币资金/短期债务(%)"
- },
- {
-  "name": "idx_ToOpCostGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ToOpCostGrowRate",
-  "panel_alias": null,
-  "description": "营业总成本同比增长(%)"
- },
- {
-  "name": "idx_ToLiabGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ToLiabGrowRate",
-  "panel_alias": null,
-  "description": "总负债同比增长(%)"
- },
- {
-  "name": "idx_CashEqIncreaseYOY",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashEqIncreaseYOY",
-  "panel_alias": null,
-  "description": "现金净流量同比增长(%)"
- },
- {
-  "name": "idx_CashEquivalGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashEquivalGrowRate",
-  "panel_alias": null,
-  "description": "货币资金增长率(%)"
- },
- {
-  "name": "idx_FAExpansionRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FAExpansionRate",
-  "panel_alias": null,
-  "description": "固定资产投资扩张率(%)"
- },
- {
-  "name": "idx_NetOperCycle",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetOperCycle",
-  "panel_alias": null,
-  "description": "净营业周期(天/次)"
- },
- {
-  "name": "idx_WorkingCapitalTurDays",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "WorkingCapitalTurDays",
-  "panel_alias": null,
-  "description": "营运资金周转天数(天/次)"
- },
- {
-  "name": "idx_TotalAssetTRateTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalAssetTRateTTM",
-  "panel_alias": null,
-  "description": "总资产周转率_TTM(次)"
- },
- {
-  "name": "idx_WorkingCaitalTRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "WorkingCaitalTRate",
-  "panel_alias": null,
-  "description": "营运资本周转率(次)"
- },
- {
-  "name": "idx_NonCurrentATRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NonCurrentATRate",
-  "panel_alias": null,
-  "description": "非流动资产周转率(次)"
- },
- {
-  "name": "idx_NetOperCFToOperProfTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetOperCFToOperProfTTM",
-  "panel_alias": null,
-  "description": "经营活动产生的现金流量净额/营业利润_TTM(%)"
- },
- {
-  "name": "idx_NetOperCFRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetOperCFRatio",
-  "panel_alias": null,
-  "description": "经营活动产生的现金流量净额占比"
- },
- {
-  "name": "idx_NetInvestCFRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetInvestCFRatio",
-  "panel_alias": null,
-  "description": "投资活动产生的现金流量净额占比"
- },
- {
-  "name": "idx_NetFinaCFRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetFinaCFRatio",
-  "panel_alias": null,
-  "description": "筹资活动产生的现金流量净额占比"
- },
- {
-  "name": "idx_NetOperCFToToOperReve",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetOperCFToToOperReve",
-  "panel_alias": null,
-  "description": "经营现金净流量/营业总收入(%)"
- },
- {
-  "name": "idx_NetOperCFToToAssets",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetOperCFToToAssets",
-  "panel_alias": null,
-  "description": "全部资产现金回收率(%)"
- },
- {
-  "name": "idx_ActualDividendPS",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ActualDividendPS",
-  "panel_alias": null,
-  "description": "每股股利(元/股)(税后)"
- },
- {
-  "name": "idx_DebtARatioCutADRecp",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DebtARatioCutADRecp",
-  "panel_alias": null,
-  "description": "剔除预收账款后的资产负债率(%)"
- },
- {
-  "name": "idx_DebtARatioCutADReNo",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DebtARatioCutADReNo",
-  "panel_alias": null,
-  "description": "剔除预收账款后的资产负债率_公告口径(%)"
- },
- {
-  "name": "idx_NetTangibleAToTA",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetTangibleAToTA",
-  "panel_alias": null,
-  "description": "有形资产/总资产(%)"
- },
- {
-  "name": "idx_TotalCLiaToSEWMI",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalCLiaToSEWMI",
-  "panel_alias": null,
-  "description": "流动负债权益比率(%)"
- },
- {
-  "name": "idx_TotalNonCLiaToSEWMI",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalNonCLiaToSEWMI",
-  "panel_alias": null,
-  "description": "非流动负债权益比率(%)"
- },
- {
-  "name": "idx_TotalNonCurLiaToSEWMI",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalNonCurLiaToSEWMI",
-  "panel_alias": null,
-  "description": "长期资本负债率(%)"
- },
- {
-  "name": "idx_TotalNonCurAToSEWMI",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TotalNonCurAToSEWMI",
-  "panel_alias": null,
-  "description": "资本固定化比率(%)"
- },
- {
-  "name": "idx_ToProfToOperProfitTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ToProfToOperProfitTTM",
-  "panel_alias": null,
-  "description": "营业利润/利润总额_TTM(%)"
- },
- {
-  "name": "idx_ToProfToOperRevenueTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ToProfToOperRevenueTTM",
-  "panel_alias": null,
-  "description": "利润总额/营业收入_TTM(%)"
- },
- {
-  "name": "idx_DebtEquityRatio_DuPont",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DebtEquityRatio_DuPont",
-  "panel_alias": null,
-  "description": "产权比率_杜邦分析(%)"
- },
- {
-  "name": "idx_EPSCut",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EPSCut",
-  "panel_alias": null,
-  "description": "基本每股收益(扣除)(元/股)"
- },
- {
-  "name": "idx_NetAssetPSAdjusted",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetAssetPSAdjusted",
-  "panel_alias": null,
-  "description": "调整后每股净资产(元/股)"
- },
- {
-  "name": "idx_EBITAssetRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBITAssetRatio",
-  "panel_alias": null,
-  "description": "息税前利润/资产总额(%)"
- },
- {
-  "name": "idx_EBIAT",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EBIAT",
-  "panel_alias": null,
-  "description": "息前税后利润(元)"
- },
- {
-  "name": "idx_TaxRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "TaxRatio",
-  "panel_alias": null,
-  "description": "销售税金率(%)"
- },
- {
-  "name": "idx_EVW",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EVW",
-  "panel_alias": null,
-  "description": "EVW(含货币资金)"
- },
- {
-  "name": "idx_EVN",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EVN",
-  "panel_alias": null,
-  "description": "EVN(剔除货币资金)"
- },
- {
-  "name": "idx_NonRecurrGLProportion",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NonRecurrGLProportion",
-  "panel_alias": null,
-  "description": "非经常性损益比率(%)"
- },
- {
-  "name": "idx_CapitalReturn",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CapitalReturn",
-  "panel_alias": null,
-  "description": "资本收益率(%)"
- },
- {
-  "name": "idx_EquityGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EquityGrowRate",
-  "panel_alias": null,
-  "description": "资本保值增值率(%)"
- },
- {
-  "name": "idx_RetainedEarningAsset",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "RetainedEarningAsset",
-  "panel_alias": null,
-  "description": "留存收益/资产总额(%)"
- },
- {
-  "name": "idx_RepaymentCover",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "RepaymentCover",
-  "panel_alias": null,
-  "description": "偿债倍数(倍)"
- },
- {
-  "name": "idx_WorkingCapitalAsset",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "WorkingCapitalAsset",
-  "panel_alias": null,
-  "description": "营运资金/资产总额"
- },
- {
-  "name": "idx_EPSYOY",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EPSYOY",
-  "panel_alias": null,
-  "description": "每股收益同比增长(%)"
- },
- {
-  "name": "idx_EPSGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EPSGrowRate3Y",
-  "panel_alias": null,
-  "description": "每股收益3年复合增长率(%)"
- },
- {
-  "name": "idx_PBVGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "PBVGrowRate",
-  "panel_alias": null,
-  "description": "每股净资产同比增长(%)"
- },
- {
-  "name": "idx_PBVGrowRate3Y",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "PBVGrowRate3Y",
-  "panel_alias": null,
-  "description": "每股净资产3年复合增长率(%)"
- },
- {
-  "name": "idx_CapitalStockGrowth",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CapitalStockGrowth",
-  "panel_alias": null,
-  "description": "股本同比增长数(元)"
- },
- {
-  "name": "idx_ARTRGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ARTRGrowRate",
-  "panel_alias": null,
-  "description": "应收账款周转率增长率(%)"
- },
- {
-  "name": "idx_FATRGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FATRGrowRate",
-  "panel_alias": null,
-  "description": "固定资产周转率增长率(%)"
- },
- {
-  "name": "idx_InventoryTRGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InventoryTRGrowRate",
-  "panel_alias": null,
-  "description": "存货周转率增长率(%)"
- },
- {
-  "name": "idx_CashEqGroRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashEqGroRate",
-  "panel_alias": null,
-  "description": "现金及现金等价物增长率(%)"
- },
- {
-  "name": "idx_CashPayStaffRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashPayStaffRatio",
-  "panel_alias": null,
-  "description": "支付给职工的现金比率(%)"
- },
- {
-  "name": "idx_FinancingCashGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FinancingCashGrowRate",
-  "panel_alias": null,
-  "description": "筹资活动产生的现金流量净额增长率(%)"
- },
- {
-  "name": "idx_InvestCashGrowRate",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "InvestCashGrowRate",
-  "panel_alias": null,
-  "description": "投资活动产生的现金流量净额增长率(%)"
- },
- {
-  "name": "idx_NetOperateCashProfit",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "NetOperateCashProfit",
-  "panel_alias": null,
-  "description": "经营活动现金净流量与净利润差(元)"
- },
- {
-  "name": "idx_CashToMeetInvestNeeds",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "CashToMeetInvestNeeds",
-  "panel_alias": null,
-  "description": "现金满足投资比率(%)"
- },
- {
-  "name": "idx_ExternalFinanceRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "ExternalFinanceRatio",
-  "panel_alias": null,
-  "description": "外部融资比率(%)"
- },
- {
-  "name": "idx_OperCashStability",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "OperCashStability",
-  "panel_alias": null,
-  "description": "营业现金稳定性"
- },
- {
-  "name": "idx_DividendTTM",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "DividendTTM",
-  "panel_alias": null,
-  "description": "股息TTM(元)"
- },
- {
-  "name": "idx_Dividend",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "Dividend",
-  "panel_alias": null,
-  "description": "累计派现合计(元)"
- },
- {
-  "name": "idx_EquityFixedAssetRatio",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "EquityFixedAssetRatio",
-  "panel_alias": null,
-  "description": "股东权益与固定资产比率(%)"
- },
- {
-  "name": "idx_FinancialLeverage",
-  "category": "财务衍生",
-  "source_table": "dws.f10_derivative_index_fd",
-  "column": "FinancialLeverage",
-  "panel_alias": null,
-  "description": "财务杠杆效率"
- },
- {
-  "name": "InnerCode",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "InnerCode",
-  "panel_alias": null,
-  "description": "证券内部编码"
- },
- {
-  "name": "CompanyCode",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "CompanyCode",
-  "panel_alias": null,
-  "description": "公司代码"
- },
- {
-  "name": "SecuCode",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "SecuCode",
-  "panel_alias": null,
-  "description": "证券代码"
- },
- {
-  "name": "ChiName",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "ChiName",
-  "panel_alias": null,
-  "description": "中文名称"
- },
- {
-  "name": "ChiNameAbbr",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "ChiNameAbbr",
-  "panel_alias": null,
-  "description": "中文名称缩写"
- },
- {
-  "name": "EngName",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "EngName",
-  "panel_alias": null,
-  "description": "英文名称"
- },
- {
-  "name": "EngNameAbbr",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "EngNameAbbr",
-  "panel_alias": null,
-  "description": "英文名称缩写"
- },
- {
-  "name": "SecuAbbr",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "SecuAbbr",
-  "panel_alias": null,
-  "description": "证券简称"
- },
- {
-  "name": "ChiSpelling",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "ChiSpelling",
-  "panel_alias": null,
-  "description": "拼音证券简称"
- },
- {
-  "name": "SecuMarket",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "SecuMarket",
-  "panel_alias": null,
-  "description": "证券市场"
- },
- {
-  "name": "SecuCategory",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "SecuCategory",
-  "panel_alias": null,
-  "description": "证券类别"
- },
- {
-  "name": "ListedDate",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "ListedDate",
-  "panel_alias": null,
-  "description": "上市日期"
- },
- {
-  "name": "ListedSector",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "ListedSector",
-  "panel_alias": null,
-  "description": "上市板块"
- },
- {
-  "name": "ListedState",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "ListedState",
-  "panel_alias": null,
-  "description": "上市状态"
- },
- {
-  "name": "XGRQ",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "XGRQ",
-  "panel_alias": null,
-  "description": "更新时间"
- },
- {
-  "name": "JSID",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "JSID",
-  "panel_alias": null,
-  "description": "JSID"
- },
- {
-  "name": "ISIN",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "ISIN",
-  "panel_alias": null,
-  "description": "ISIN代码"
- },
- {
-  "name": "ExtendedAbbr",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "ExtendedAbbr",
-  "panel_alias": null,
-  "description": "扩位简称"
- },
- {
-  "name": "ExtendedSpelling",
-  "category": "证券信息",
-  "source_table": "dwd.secumain",
-  "column": "ExtendedSpelling",
-  "panel_alias": null,
-  "description": "拼音扩位简称"
+  "panel_alias": "fund_NetOperateCashFlow_q",
+  "description": "单季经营活动产生的现金流量净额(元)",
+  "period_type": "flow_q",
+  "derived_from": "NetOperateCashFlow"
+ },
+ {
+  "name": "CashEquialentIncrease_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "CashEquialentIncrease",
+  "panel_alias": "fund_CashEquialentIncrease_q",
+  "description": "单季现金及现金等价物净增加额(元)",
+  "period_type": "flow_q",
+  "derived_from": "CashEquialentIncrease"
+ },
+ {
+  "name": "OperatingProfit_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "OperatingProfit",
+  "panel_alias": "fund_OperatingProfit_q",
+  "description": "单季营业利润(元)",
+  "period_type": "flow_q",
+  "derived_from": "OperatingProfit"
+ },
+ {
+  "name": "TotalProfit_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "TotalProfit",
+  "panel_alias": "fund_TotalProfit_q",
+  "description": "单季利润总额(元)",
+  "period_type": "flow_q",
+  "derived_from": "TotalProfit"
+ },
+ {
+  "name": "IncomeTaxCost_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "IncomeTaxCost",
+  "panel_alias": "fund_IncomeTaxCost_q",
+  "description": "单季所得税(元)",
+  "period_type": "flow_q",
+  "derived_from": "IncomeTaxCost"
+ },
+ {
+  "name": "MinorityProfit_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "MinorityProfit",
+  "panel_alias": "fund_MinorityProfit_q",
+  "description": "单季少数股东损益(元)",
+  "period_type": "flow_q",
+  "derived_from": "MinorityProfit"
+ },
+ {
+  "name": "NetProfit_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "NetProfit",
+  "panel_alias": "fund_NetProfit_q",
+  "description": "单季",
+  "period_type": "flow_q",
+  "derived_from": "NetProfit"
+ },
+ {
+  "name": "NetInvestCashFlow_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "NetInvestCashFlow",
+  "panel_alias": "fund_NetInvestCashFlow_q",
+  "description": "单季投资活动产生的现金流量净额(元)",
+  "period_type": "flow_q",
+  "derived_from": "NetInvestCashFlow"
+ },
+ {
+  "name": "NetFinanceCashFlow_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "NetFinanceCashFlow",
+  "panel_alias": "fund_NetFinanceCashFlow_q",
+  "description": "单季筹资活动产生的现金流量净额(元)",
+  "period_type": "flow_q",
+  "derived_from": "NetFinanceCashFlow"
+ },
+ {
+  "name": "ExchanRateChangeEffect_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "ExchanRateChangeEffect",
+  "panel_alias": "fund_ExchanRateChangeEffect_q",
+  "description": "单季汇率变动对现金及现金等价物的影响",
+  "period_type": "flow_q",
+  "derived_from": "ExchanRateChangeEffect"
+ },
+ {
+  "name": "FinancialExpense_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "FinancialExpense",
+  "panel_alias": "fund_FinancialExpense_q",
+  "description": "单季财务费用(元)",
+  "period_type": "flow_q",
+  "derived_from": "FinancialExpense"
+ },
+ {
+  "name": "InvestIncome_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "InvestIncome",
+  "panel_alias": "fund_InvestIncome_q",
+  "description": "单季投资净收益(元)",
+  "period_type": "flow_q",
+  "derived_from": "InvestIncome"
+ },
+ {
+  "name": "NonRecurringProfitLoss_q",
+  "category": "财务原始",
+  "source_table": "ods_dps_target.lc_maindatanew",
+  "column": "NonRecurringProfitLoss",
+  "panel_alias": "fund_NonRecurringProfitLoss_q",
+  "description": "单季非经常性损益(元)",
+  "period_type": "flow_q",
+  "derived_from": "NonRecurringProfitLoss"
  },
  {
   "name": "PB",
@@ -3536,28 +843,36 @@
   "description": "市净率"
  },
  {
+  "name": "PCF",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PCF",
+  "panel_alias": "val_PCF",
+  "description": "市现率"
+ },
+ {
+  "name": "PS",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PS",
+  "panel_alias": "val_PS",
+  "description": "市销率"
+ },
+ {
+  "name": "DividendRatio",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "DividendRatio",
+  "panel_alias": "val_DividendRatio",
+  "description": "股息率"
+ },
+ {
   "name": "PSTTM",
   "category": "估值",
   "source_table": "dws.f10_finance_index_fd",
   "column": "PSTTM",
   "panel_alias": "val_PSTTM",
-  "description": "市销率(TTM)"
- },
- {
-  "name": "PCFTTM",
-  "category": "估值",
-  "source_table": "dws.f10_finance_index_fd",
-  "column": "PCFTTM",
-  "panel_alias": "val_PCFTTM",
-  "description": "市现率(TTM)"
- },
- {
-  "name": "DividendRatioLYR",
-  "category": "估值",
-  "source_table": "dws.f10_finance_index_fd",
-  "column": "DividendRatioLYR",
-  "panel_alias": "val_DividendRatioLYR",
-  "description": "股息率(LYR)"
+  "description": "滚动市销率"
  },
  {
   "name": "TotalMV",
@@ -3566,5 +881,2277 @@
   "column": "TotalMV",
   "panel_alias": "val_TotalMV",
   "description": "总市值"
+ },
+ {
+  "name": "NegotiableMV",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "NegotiableMV",
+  "panel_alias": "val_NegotiableMV",
+  "description": "流通市值"
+ },
+ {
+  "name": "PELYR",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PELYR",
+  "panel_alias": "val_PELYR",
+  "description": "静态市盈率"
+ },
+ {
+  "name": "PCFTTM",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PCFTTM",
+  "panel_alias": "val_PCFTTM",
+  "description": "滚动市现率(经营现金流)"
+ },
+ {
+  "name": "PCFS",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PCFS",
+  "panel_alias": "val_PCFS",
+  "description": "静态市现率(现金流净额)"
+ },
+ {
+  "name": "PCFSTTM",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PCFSTTM",
+  "panel_alias": "val_PCFSTTM",
+  "description": "滚动市现率(现金流净额)"
+ },
+ {
+  "name": "DividendRatioLYR",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "DividendRatioLYR",
+  "panel_alias": "val_DividendRatioLYR",
+  "description": "静态股息率"
+ },
+ {
+  "name": "EnterpriseValueW",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "EnterpriseValueW",
+  "panel_alias": "val_EnterpriseValueW",
+  "description": "企业价值(含货币资金)"
+ },
+ {
+  "name": "EnterpriseValueN",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "EnterpriseValueN",
+  "panel_alias": "val_EnterpriseValueN",
+  "description": "企业价值(剔除货币资金)"
+ },
+ {
+  "name": "TotalMV2",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "TotalMV2",
+  "panel_alias": "val_TotalMV2",
+  "description": "公司总市值"
+ },
+ {
+  "name": "TotalASMV",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "TotalASMV",
+  "panel_alias": "val_TotalASMV",
+  "description": "A/B股总市值"
+ },
+ {
+  "name": "PETTMCut",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PETTMCut",
+  "panel_alias": "val_PETTMCut",
+  "description": "扣非后滚动市盈率"
+ },
+ {
+  "name": "ForwardPEQA",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "ForwardPEQA",
+  "panel_alias": "val_ForwardPEQA",
+  "description": "动态市盈率_季度外推"
+ },
+ {
+  "name": "ForwardPEHR",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "ForwardPEHR",
+  "panel_alias": "val_ForwardPEHR",
+  "description": "动态市盈率_历史占比"
+ },
+ {
+  "name": "PEG",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PEG",
+  "panel_alias": "val_PEG",
+  "description": "PEG"
+ },
+ {
+  "name": "PETTMToORRate",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PETTMToORRate",
+  "panel_alias": "val_PETTMToORRate",
+  "description": "滚动市盈率/营业收入三年复合增长率"
+ },
+ {
+  "name": "ForwardPCFQA",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "ForwardPCFQA",
+  "panel_alias": "val_ForwardPCFQA",
+  "description": "动态市现率(经营现金流)_季度外推"
+ },
+ {
+  "name": "ForwardPCFHR",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "ForwardPCFHR",
+  "panel_alias": "val_ForwardPCFHR",
+  "description": "动态市现率(经营现金流)_历史占比"
+ },
+ {
+  "name": "ForwardPCFSQA",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "ForwardPCFSQA",
+  "panel_alias": "val_ForwardPCFSQA",
+  "description": "动态市现率(现金流净额)_季度外推"
+ },
+ {
+  "name": "ForwardPCFSHR",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "ForwardPCFSHR",
+  "panel_alias": "val_ForwardPCFSHR",
+  "description": "动态市现率(现金流净额)_历史占比"
+ },
+ {
+  "name": "ForwardPSQA",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "ForwardPSQA",
+  "panel_alias": "val_ForwardPSQA",
+  "description": "动态市销率_季度外推"
+ },
+ {
+  "name": "ForwardPSHR",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "ForwardPSHR",
+  "panel_alias": "val_ForwardPSHR",
+  "description": "动态市销率_历史占比"
+ },
+ {
+  "name": "EVToEBITDA",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "EVToEBITDA",
+  "panel_alias": "val_EVToEBITDA",
+  "description": "企业价值倍数(剔除货币资金)"
+ },
+ {
+  "name": "EVToOR",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "EVToOR",
+  "panel_alias": "val_EVToOR",
+  "description": "企业价值(剔除货币资金)/营业收入"
+ },
+ {
+  "name": "EVToFCFF",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "EVToFCFF",
+  "panel_alias": "val_EVToFCFF",
+  "description": "企业价值(剔除货币资金)/企业自由现金流"
+ },
+ {
+  "name": "EVToCFO",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "EVToCFO",
+  "panel_alias": "val_EVToCFO",
+  "description": "企业价值(剔除货币资金)/经营现金流"
+ },
+ {
+  "name": "EVToGP",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "EVToGP",
+  "panel_alias": "val_EVToGP",
+  "description": "企业价值(剔除货币资金)/毛利"
+ },
+ {
+  "name": "PER",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PER",
+  "panel_alias": "val_PER",
+  "description": "总市值/研发支出前利润"
+ },
+ {
+  "name": "EVToEBITDARANDD",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "EVToEBITDARANDD",
+  "panel_alias": "val_EVToEBITDARANDD",
+  "description": "企业价值(剔除货币资金)/(EBITDA+研发费用)"
+ },
+ {
+  "name": "TotalMVToRANDD",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "TotalMVToRANDD",
+  "panel_alias": "val_TotalMVToRANDD",
+  "description": "市值/研发费用"
+ },
+ {
+  "name": "MVA",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "MVA",
+  "panel_alias": "val_MVA",
+  "description": "市场附加价值(MVA)(元)"
+ },
+ {
+  "name": "FloatMVA",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "FloatMVA",
+  "panel_alias": "val_FloatMVA",
+  "description": "流通盘市场附加价值(元)"
+ },
+ {
+  "name": "MarketValueToDebt1",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "MarketValueToDebt1",
+  "panel_alias": "val_MarketValueToDebt1",
+  "description": "总市值/总负债"
+ },
+ {
+  "name": "MarketValueToDebt2",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "MarketValueToDebt2",
+  "panel_alias": "val_MarketValueToDebt2",
+  "description": "公司总市值/总负债"
+ },
+ {
+  "name": "DebtToAssetValue1",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "DebtToAssetValue1",
+  "panel_alias": "val_DebtToAssetValue1",
+  "description": "总负债/总资产市值"
+ },
+ {
+  "name": "DebtToAssetValue2",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "DebtToAssetValue2",
+  "panel_alias": "val_DebtToAssetValue2",
+  "description": "总负债/公司总资产市值"
+ },
+ {
+  "name": "PE",
+  "category": "估值",
+  "source_table": "dws.f10_finance_index_fd",
+  "column": "PE",
+  "panel_alias": "val_PE",
+  "description": "市盈率"
+ },
+ {
+  "name": "idx_EPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EPS",
+  "panel_alias": "deriv_EPS",
+  "description": "每股收益_期末股本摊薄(元/股)"
+ },
+ {
+  "name": "idx_BasicEPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "BasicEPS",
+  "panel_alias": "deriv_BasicEPS",
+  "description": "基本每股收益(元/股)"
+ },
+ {
+  "name": "idx_DilutedEPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DilutedEPS",
+  "panel_alias": "deriv_DilutedEPS",
+  "description": "稀释每股收益(元/股)"
+ },
+ {
+  "name": "idx_NetAssetPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetAssetPS",
+  "panel_alias": "deriv_NetAssetPS",
+  "description": "每股净资产(元/股)"
+ },
+ {
+  "name": "idx_MainIncomePS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "MainIncomePS",
+  "panel_alias": "deriv_MainIncomePS",
+  "description": "每股营业收入(元/股)"
+ },
+ {
+  "name": "idx_OperProfitPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperProfitPS",
+  "panel_alias": "deriv_OperProfitPS",
+  "description": "每股营业利润(元/股)"
+ },
+ {
+  "name": "idx_EBITPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITPS",
+  "panel_alias": "deriv_EBITPS",
+  "description": "每股息税前利润(元/股)"
+ },
+ {
+  "name": "idx_CapitalSurplusFundPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CapitalSurplusFundPS",
+  "panel_alias": "deriv_CapitalSurplusFundPS",
+  "description": "每股资本公积金(元/股)"
+ },
+ {
+  "name": "idx_OperCashFlowPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperCashFlowPS",
+  "panel_alias": "deriv_OperCashFlowPS",
+  "description": "每股经营活动产生的现金流量净额(元/股)"
+ },
+ {
+  "name": "idx_CashFlowPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashFlowPS",
+  "panel_alias": "deriv_CashFlowPS",
+  "description": "每股现金流量净额(元/股)"
+ },
+ {
+  "name": "idx_NetProfit",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetProfit",
+  "panel_alias": "deriv_NetProfit",
+  "description": "归属母公司净利润(元)"
+ },
+ {
+  "name": "idx_NetProfitCut",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetProfitCut",
+  "panel_alias": "deriv_NetProfitCut",
+  "description": "扣除非经常性损益后的归母净利润(元)"
+ },
+ {
+  "name": "idx_EBIT",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBIT",
+  "panel_alias": "deriv_EBIT",
+  "description": "息税前利润(元)"
+ },
+ {
+  "name": "idx_EBITDA",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITDA",
+  "panel_alias": "deriv_EBITDA",
+  "description": "息税折旧摊销前利润(元)"
+ },
+ {
+  "name": "idx_OperatingProfitRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingProfitRatio",
+  "panel_alias": "deriv_OperatingProfitRatio",
+  "description": "营业利润率(%)"
+ },
+ {
+  "name": "idx_GrossIncomeRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "GrossIncomeRatio",
+  "panel_alias": "deriv_GrossIncomeRatio",
+  "description": "销售毛利率(%)"
+ },
+ {
+  "name": "idx_NetProfitRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetProfitRatio",
+  "panel_alias": "deriv_NetProfitRatio",
+  "description": "销售净利率(%)"
+ },
+ {
+  "name": "idx_TotalProfitCostRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalProfitCostRatio",
+  "panel_alias": "deriv_TotalProfitCostRatio",
+  "description": "成本费用利润率(%)"
+ },
+ {
+  "name": "idx_ROA",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROA",
+  "panel_alias": "deriv_ROA",
+  "description": "总资产净利率(%)"
+ },
+ {
+  "name": "idx_ROECut",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROECut",
+  "panel_alias": "deriv_ROECut",
+  "description": "净资产收益率_扣除,摊薄(%)"
+ },
+ {
+  "name": "idx_ROECutWeighted",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROECutWeighted",
+  "panel_alias": "deriv_ROECutWeighted",
+  "description": "净资产收益率_扣除,加权(%)"
+ },
+ {
+  "name": "idx_ROIC",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROIC",
+  "panel_alias": "deriv_ROIC",
+  "description": "投入资本回报率(%)"
+ },
+ {
+  "name": "idx_CurrentRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CurrentRatio",
+  "panel_alias": "deriv_CurrentRatio",
+  "description": "流动比率"
+ },
+ {
+  "name": "idx_QuickRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "QuickRatio",
+  "panel_alias": "deriv_QuickRatio",
+  "description": "速动比率"
+ },
+ {
+  "name": "idx_SuperQuickRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SuperQuickRatio",
+  "panel_alias": "deriv_SuperQuickRatio",
+  "description": "超速动比率"
+ },
+ {
+  "name": "idx_OperCashInToCurrentDebt",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperCashInToCurrentDebt",
+  "panel_alias": "deriv_OperCashInToCurrentDebt",
+  "description": "现金流动负债比"
+ },
+ {
+  "name": "idx_InterestCover",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "InterestCover",
+  "panel_alias": "deriv_InterestCover",
+  "description": "利息保障倍数(倍)"
+ },
+ {
+  "name": "idx_DebtAssetsRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DebtAssetsRatio",
+  "panel_alias": "deriv_DebtAssetsRatio",
+  "description": "资产负债率(%)"
+ },
+ {
+  "name": "idx_DebtEquityRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DebtEquityRatio",
+  "panel_alias": "deriv_DebtEquityRatio",
+  "description": "产权比率(%)"
+ },
+ {
+  "name": "idx_DebtTangibleEquityRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DebtTangibleEquityRatio",
+  "panel_alias": "deriv_DebtTangibleEquityRatio",
+  "description": "有形净值债务率(%)"
+ },
+ {
+  "name": "idx_LongDebtToWorkingCapital",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "LongDebtToWorkingCapital",
+  "panel_alias": "deriv_LongDebtToWorkingCapital",
+  "description": "非流动负债/营运资金(%)"
+ },
+ {
+  "name": "idx_OperatingRevenueGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingRevenueGrowRate",
+  "panel_alias": "deriv_OperatingRevenueGrowRate",
+  "description": "营业收入同比增长(%)"
+ },
+ {
+  "name": "idx_OperProfitGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperProfitGrowRate",
+  "panel_alias": "deriv_OperProfitGrowRate",
+  "description": "营业利润同比增长(%)"
+ },
+ {
+  "name": "idx_TotalProfeiGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalProfeiGrowRate",
+  "panel_alias": "deriv_TotalProfeiGrowRate",
+  "description": "利润总额同比增长(%)"
+ },
+ {
+  "name": "idx_NetProfitGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetProfitGrowRate",
+  "panel_alias": "deriv_NetProfitGrowRate",
+  "description": "净利润同比增长(%)"
+ },
+ {
+  "name": "idx_NetAssetGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetAssetGrowRate",
+  "panel_alias": "deriv_NetAssetGrowRate",
+  "description": "净资产同比增长(%)"
+ },
+ {
+  "name": "idx_TotalAssetGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalAssetGrowRate",
+  "panel_alias": "deriv_TotalAssetGrowRate",
+  "description": "总资产同比增长(%)"
+ },
+ {
+  "name": "idx_OperCashPSGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperCashPSGrowRate",
+  "panel_alias": "deriv_OperCashPSGrowRate",
+  "description": "每股经营活动产生的现金流量净额同比增长(%)"
+ },
+ {
+  "name": "idx_SustainableGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SustainableGrowRate",
+  "panel_alias": "deriv_SustainableGrowRate",
+  "description": "可持续增长率(%)"
+ },
+ {
+  "name": "idx_ARTRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ARTRate",
+  "panel_alias": "deriv_ARTRate",
+  "description": "应收账款周转率(次)"
+ },
+ {
+  "name": "idx_ARTDays",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ARTDays",
+  "panel_alias": "deriv_ARTDays",
+  "description": "应收账款周转天数(天/次)"
+ },
+ {
+  "name": "idx_InventoryTRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "InventoryTRate",
+  "panel_alias": "deriv_InventoryTRate",
+  "description": "存货周转率(次)"
+ },
+ {
+  "name": "idx_InventoryTDays",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "InventoryTDays",
+  "panel_alias": "deriv_InventoryTDays",
+  "description": "存货周转天数(天/次)"
+ },
+ {
+  "name": "idx_FixedAssetTRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FixedAssetTRate",
+  "panel_alias": "deriv_FixedAssetTRate",
+  "description": "固定资产周转率(次)"
+ },
+ {
+  "name": "idx_EquityTRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EquityTRate",
+  "panel_alias": "deriv_EquityTRate",
+  "description": "股东权益周转率(次)"
+ },
+ {
+  "name": "idx_TotalAssetTRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalAssetTRate",
+  "panel_alias": "deriv_TotalAssetTRate",
+  "description": "总资产周转率(次)"
+ },
+ {
+  "name": "idx_OperCycle",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperCycle",
+  "panel_alias": "deriv_OperCycle",
+  "description": "营业周期(天/次)"
+ },
+ {
+  "name": "idx_CashEquivalentIncrease",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashEquivalentIncrease",
+  "panel_alias": "deriv_CashEquivalentIncrease",
+  "description": "现金及现金等价物净增加额(元)"
+ },
+ {
+  "name": "idx_NetOperateCashFlow",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetOperateCashFlow",
+  "panel_alias": "deriv_NetOperateCashFlow",
+  "description": "经营活动产生的现金流量净额(元)"
+ },
+ {
+  "name": "idx_GoodsSaleServiceRenderCash",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "GoodsSaleServiceRenderCash",
+  "panel_alias": "deriv_GoodsSaleServiceRenderCash",
+  "description": "销售商品提供劳务收到的现金(元)"
+ },
+ {
+  "name": "idx_FreeCashFlow",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FreeCashFlow",
+  "panel_alias": "deriv_FreeCashFlow",
+  "description": "自由现金流量(元)"
+ },
+ {
+  "name": "idx_NetProfitCashCover",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetProfitCashCover",
+  "panel_alias": "deriv_NetProfitCashCover",
+  "description": "净利润现金含量(%)"
+ },
+ {
+  "name": "idx_OperatingRevenueCashCover",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingRevenueCashCover",
+  "panel_alias": "deriv_OperatingRevenueCashCover",
+  "description": "营业收入现金含量(%)"
+ },
+ {
+  "name": "idx_CashRateOfSales",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashRateOfSales",
+  "panel_alias": "deriv_CashRateOfSales",
+  "description": "经营活动产生的现金流量净额/营业收入(%)"
+ },
+ {
+  "name": "idx_OperCashInToAsset",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperCashInToAsset",
+  "panel_alias": "deriv_OperCashInToAsset",
+  "description": "总资产现金回收率(%)"
+ },
+ {
+  "name": "idx_CashEquivalentPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashEquivalentPS",
+  "panel_alias": "deriv_CashEquivalentPS",
+  "description": "每股现金及现金等价物余额(元/股)"
+ },
+ {
+  "name": "idx_UndividedProfit",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "UndividedProfit",
+  "panel_alias": "deriv_UndividedProfit",
+  "description": "每股未分配利润(元/股)"
+ },
+ {
+  "name": "idx_AccumulationFundPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AccumulationFundPS",
+  "panel_alias": "deriv_AccumulationFundPS",
+  "description": "每股公积金(元/股)"
+ },
+ {
+  "name": "idx_RetainedEarningRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "RetainedEarningRatio",
+  "panel_alias": "deriv_RetainedEarningRatio",
+  "description": "留存盈余比率(%)"
+ },
+ {
+  "name": "idx_WorkingCapital",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "WorkingCapital",
+  "panel_alias": "deriv_WorkingCapital",
+  "description": "营运资金(元)"
+ },
+ {
+  "name": "idx_EquityToAsset",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EquityToAsset",
+  "panel_alias": "deriv_EquityToAsset",
+  "description": "股东权益比率(%)"
+ },
+ {
+  "name": "idx_LongDebtToEquity",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "LongDebtToEquity",
+  "panel_alias": "deriv_LongDebtToEquity",
+  "description": "长期负债/股东权益合计"
+ },
+ {
+  "name": "idx_LongAssetFitRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "LongAssetFitRate",
+  "panel_alias": "deriv_LongAssetFitRate",
+  "description": "长期资产适合率"
+ },
+ {
+  "name": "idx_FixAssetRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FixAssetRatio",
+  "panel_alias": "deriv_FixAssetRatio",
+  "description": "固定资产比率(%)"
+ },
+ {
+  "name": "idx_IntangibleAssetRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "IntangibleAssetRatio",
+  "panel_alias": "deriv_IntangibleAssetRatio",
+  "description": "无形资产比率(%)"
+ },
+ {
+  "name": "idx_EquityMultipler",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EquityMultipler",
+  "panel_alias": "deriv_EquityMultipler",
+  "description": "权益乘数"
+ },
+ {
+  "name": "idx_EPSTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EPSTTM",
+  "panel_alias": "deriv_EPSTTM",
+  "description": "每股收益_TTM(元/股)"
+ },
+ {
+  "name": "idx_TotalOperatingRevenuePS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalOperatingRevenuePS",
+  "panel_alias": "deriv_TotalOperatingRevenuePS",
+  "description": "每股营业总收入(元/股)"
+ },
+ {
+  "name": "idx_OperatingRevenuePSTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingRevenuePSTTM",
+  "panel_alias": "deriv_OperatingRevenuePSTTM",
+  "description": "每股营业收入_TTM(元/股)"
+ },
+ {
+  "name": "idx_SurplusReserveFundPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SurplusReserveFundPS",
+  "panel_alias": "deriv_SurplusReserveFundPS",
+  "description": "每股盈余公积(元/股)"
+ },
+ {
+  "name": "idx_RetainedEarningsPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "RetainedEarningsPS",
+  "panel_alias": "deriv_RetainedEarningsPS",
+  "description": "每股留存收益(元/股)"
+ },
+ {
+  "name": "idx_OperCashFlowPSTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperCashFlowPSTTM",
+  "panel_alias": "deriv_OperCashFlowPSTTM",
+  "description": "每股经营活动产生的现金流量净额_TTM(元/股)"
+ },
+ {
+  "name": "idx_CashFlowPSTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashFlowPSTTM",
+  "panel_alias": "deriv_CashFlowPSTTM",
+  "description": "每股现金流量净额_TTM(元/股)"
+ },
+ {
+  "name": "idx_EnterpriseFCFPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EnterpriseFCFPS",
+  "panel_alias": "deriv_EnterpriseFCFPS",
+  "description": "每股企业自由现金流量(元/股)"
+ },
+ {
+  "name": "idx_ShareHolderFCFPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ShareHolderFCFPS",
+  "panel_alias": "deriv_ShareHolderFCFPS",
+  "description": "每股股东自由现金流量(元/股)"
+ },
+ {
+  "name": "idx_ROEAvg",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROEAvg",
+  "panel_alias": "deriv_ROEAvg",
+  "description": "净资产收益率_平均,计算值(%)"
+ },
+ {
+  "name": "idx_ROEWeighted",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROEWeighted",
+  "panel_alias": "deriv_ROEWeighted",
+  "description": "净资产收益率_加权,公布值(%)"
+ },
+ {
+  "name": "idx_ROE",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROE",
+  "panel_alias": "deriv_ROE",
+  "description": "净资产收益率_摊薄,公布值(%)"
+ },
+ {
+  "name": "idx_ROETTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROETTM",
+  "panel_alias": "deriv_ROETTM",
+  "description": "净资产收益率_TTM(%)"
+ },
+ {
+  "name": "idx_ROA_EBIT",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROA_EBIT",
+  "panel_alias": "deriv_ROA_EBIT",
+  "description": "总资产报酬率(%)"
+ },
+ {
+  "name": "idx_ROA_EBITTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROA_EBITTTM",
+  "panel_alias": "deriv_ROA_EBITTTM",
+  "description": "总资产报酬率_TTM(%)"
+ },
+ {
+  "name": "idx_ROATTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROATTM",
+  "panel_alias": "deriv_ROATTM",
+  "description": "总资产净利率_TTM(%)"
+ },
+ {
+  "name": "idx_NetProfitRatioTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetProfitRatioTTM",
+  "panel_alias": "deriv_NetProfitRatioTTM",
+  "description": "销售净利率_TTM(%)"
+ },
+ {
+  "name": "idx_GrossIncomeRatioTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "GrossIncomeRatioTTM",
+  "panel_alias": "deriv_GrossIncomeRatioTTM",
+  "description": "销售毛利率_TTM(%)"
+ },
+ {
+  "name": "idx_SalesCostRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SalesCostRatio",
+  "panel_alias": "deriv_SalesCostRatio",
+  "description": "销售成本率(%)"
+ },
+ {
+  "name": "idx_PeriodCostsRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "PeriodCostsRate",
+  "panel_alias": "deriv_PeriodCostsRate",
+  "description": "销售期间费用率(%)"
+ },
+ {
+  "name": "idx_PeriodCostsRateTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "PeriodCostsRateTTM",
+  "panel_alias": "deriv_PeriodCostsRateTTM",
+  "description": "销售期间费用率_TTM(%)"
+ },
+ {
+  "name": "idx_NPToTOR",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPToTOR",
+  "panel_alias": "deriv_NPToTOR",
+  "description": "净利润/营业总收入(%)"
+ },
+ {
+  "name": "idx_NPToTORTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPToTORTTM",
+  "panel_alias": "deriv_NPToTORTTM",
+  "description": "净利润/营业总收入_TTM(%)"
+ },
+ {
+  "name": "idx_OperatingProfitToTOR",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingProfitToTOR",
+  "panel_alias": "deriv_OperatingProfitToTOR",
+  "description": "营业利润/营业总收入(%)"
+ },
+ {
+  "name": "idx_OperatingProfitToTORTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingProfitToTORTTM",
+  "panel_alias": "deriv_OperatingProfitToTORTTM",
+  "description": "营业利润/营业总收入_TTM(%)"
+ },
+ {
+  "name": "idx_EBITToTOR",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITToTOR",
+  "panel_alias": "deriv_EBITToTOR",
+  "description": "息税前利润/营业总收入_杜邦分析(%)"
+ },
+ {
+  "name": "idx_TOperatingCostToTOR",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TOperatingCostToTOR",
+  "panel_alias": "deriv_TOperatingCostToTOR",
+  "description": "营业总成本/营业总收入(%)"
+ },
+ {
+  "name": "idx_TOperatingCostToTORTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TOperatingCostToTORTTM",
+  "panel_alias": "deriv_TOperatingCostToTORTTM",
+  "description": "营业总成本/营业总收入_TTM(%)"
+ },
+ {
+  "name": "idx_OperatingExpenseRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingExpenseRate",
+  "panel_alias": "deriv_OperatingExpenseRate",
+  "description": "销售费用/营业总收入(%)"
+ },
+ {
+  "name": "idx_OperatingExpenseRateTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingExpenseRateTTM",
+  "panel_alias": "deriv_OperatingExpenseRateTTM",
+  "description": "销售费用/营业总收入_TTM(%)"
+ },
+ {
+  "name": "idx_AdminiExpenseRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AdminiExpenseRate",
+  "panel_alias": "deriv_AdminiExpenseRate",
+  "description": "管理费用/营业总收入(%)"
+ },
+ {
+  "name": "idx_AdminiExpenseRateTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AdminiExpenseRateTTM",
+  "panel_alias": "deriv_AdminiExpenseRateTTM",
+  "description": "管理费用/营业总收入_TTM(%)"
+ },
+ {
+  "name": "idx_FinancialExpenseRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FinancialExpenseRate",
+  "panel_alias": "deriv_FinancialExpenseRate",
+  "description": "财务费用/营业总收入(%)"
+ },
+ {
+  "name": "idx_FinancialExpenseRateTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FinancialExpenseRateTTM",
+  "panel_alias": "deriv_FinancialExpenseRateTTM",
+  "description": "财务费用/营业总收入_TTM(%)"
+ },
+ {
+  "name": "idx_AssetImpaLossToTOR",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AssetImpaLossToTOR",
+  "panel_alias": "deriv_AssetImpaLossToTOR",
+  "description": "资产减值损失/营业总收入(%)"
+ },
+ {
+  "name": "idx_AssetImpaLossToTORTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AssetImpaLossToTORTTM",
+  "panel_alias": "deriv_AssetImpaLossToTORTTM",
+  "description": "资产减值损失/营业总收入_TTM(%)"
+ },
+ {
+  "name": "idx_SEWithoutMIToTL",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SEWithoutMIToTL",
+  "panel_alias": "deriv_SEWithoutMIToTL",
+  "description": "归属母公司股东的权益/负债合计(%)"
+ },
+ {
+  "name": "idx_SEWMIToInterestBearDebt",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SEWMIToInterestBearDebt",
+  "panel_alias": "deriv_SEWMIToInterestBearDebt",
+  "description": "归属母公司股东的权益/带息债务(%)"
+ },
+ {
+  "name": "idx_TangibleAToInteBearDebt",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TangibleAToInteBearDebt",
+  "panel_alias": "deriv_TangibleAToInteBearDebt",
+  "description": "有形净值/带息债务(%)"
+ },
+ {
+  "name": "idx_EBITDAToTLiability",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITDAToTLiability",
+  "panel_alias": "deriv_EBITDAToTLiability",
+  "description": "息税折旧摊销前利润/负债合计"
+ },
+ {
+  "name": "idx_NOCFToTLiability",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NOCFToTLiability",
+  "panel_alias": "deriv_NOCFToTLiability",
+  "description": "经营活动产生现金流量净额/负债合计"
+ },
+ {
+  "name": "idx_NOCFToInterestBearDebt",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NOCFToInterestBearDebt",
+  "panel_alias": "deriv_NOCFToInterestBearDebt",
+  "description": "经营活动产生现金流量净额/带息债务"
+ },
+ {
+  "name": "idx_NOCFToCurrentLiability",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NOCFToCurrentLiability",
+  "panel_alias": "deriv_NOCFToCurrentLiability",
+  "description": "经营活动产生现金流量净额/流动负债"
+ },
+ {
+  "name": "idx_BasicEPSYOY",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "BasicEPSYOY",
+  "panel_alias": "deriv_BasicEPSYOY",
+  "description": "基本每股收益同比增长(%)"
+ },
+ {
+  "name": "idx_DilutedEPSYOY",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DilutedEPSYOY",
+  "panel_alias": "deriv_DilutedEPSYOY",
+  "description": "稀释每股收益同比增长(%)"
+ },
+ {
+  "name": "idx_NPParentCompanyYOY",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPParentCompanyYOY",
+  "panel_alias": "deriv_NPParentCompanyYOY",
+  "description": "归属母公司股东的净利润同比增长(%)"
+ },
+ {
+  "name": "idx_NPParentCompanyCutYOY",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPParentCompanyCutYOY",
+  "panel_alias": "deriv_NPParentCompanyCutYOY",
+  "description": "归属母公司股东的净利润(扣除)同比增长(%)"
+ },
+ {
+  "name": "idx_NetOperateCashFlowYOY",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetOperateCashFlowYOY",
+  "panel_alias": "deriv_NetOperateCashFlowYOY",
+  "description": "经营活动产生的现金流量净额同比增长(%)"
+ },
+ {
+  "name": "idx_NAORYOY",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NAORYOY",
+  "panel_alias": "deriv_NAORYOY",
+  "description": "净资产收益率(摊薄)同比增长(%)"
+ },
+ {
+  "name": "idx_EPSGrowRateYTD",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EPSGrowRateYTD",
+  "panel_alias": "deriv_EPSGrowRateYTD",
+  "description": "每股净资产相对年初增长率(%)"
+ },
+ {
+  "name": "idx_SEWithoutMIGrowRateYTD",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SEWithoutMIGrowRateYTD",
+  "panel_alias": "deriv_SEWithoutMIGrowRateYTD",
+  "description": "归属母公司股东的权益相对年初增长率(%)"
+ },
+ {
+  "name": "idx_TAGrowRateYTD",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TAGrowRateYTD",
+  "panel_alias": "deriv_TAGrowRateYTD",
+  "description": "资产总计相对年初增长率(%)"
+ },
+ {
+  "name": "idx_AccountsPayablesTRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AccountsPayablesTRate",
+  "panel_alias": "deriv_AccountsPayablesTRate",
+  "description": "应付账款周转率(次)"
+ },
+ {
+  "name": "idx_AccountsPayablesTDays",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AccountsPayablesTDays",
+  "panel_alias": "deriv_AccountsPayablesTDays",
+  "description": "应付账款周转天数(天/次)"
+ },
+ {
+  "name": "idx_CurrentAssetsTRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CurrentAssetsTRate",
+  "panel_alias": "deriv_CurrentAssetsTRate",
+  "description": "流动资产周转率(次)"
+ },
+ {
+  "name": "idx_SaleServiceCashToOR",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SaleServiceCashToOR",
+  "panel_alias": "deriv_SaleServiceCashToOR",
+  "description": "销售商品提供劳务收到的现金/营业收入(%)"
+ },
+ {
+  "name": "idx_SaleServiceCashToORTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SaleServiceCashToORTTM",
+  "panel_alias": "deriv_SaleServiceCashToORTTM",
+  "description": "销售商品提供劳务收到的现金/营业收入_TTM(%)"
+ },
+ {
+  "name": "idx_CashRateOfSalesTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashRateOfSalesTTM",
+  "panel_alias": "deriv_CashRateOfSalesTTM",
+  "description": "经营活动产生的现金流量净额/营业收入_TTM(%)"
+ },
+ {
+  "name": "idx_NOCFToOperatingNI",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NOCFToOperatingNI",
+  "panel_alias": "deriv_NOCFToOperatingNI",
+  "description": "经营活动产生的现金流量净额/经营活动净收益(%)"
+ },
+ {
+  "name": "idx_NOCFToOperatingNITTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NOCFToOperatingNITTM",
+  "panel_alias": "deriv_NOCFToOperatingNITTM",
+  "description": "经营活动产生的现金流量净额/经营活动净收益_TTM(%)"
+ },
+ {
+  "name": "idx_CapitalExpenditureToDM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CapitalExpenditureToDM",
+  "panel_alias": "deriv_CapitalExpenditureToDM",
+  "description": "资本支出/折旧和摊销"
+ },
+ {
+  "name": "idx_CurrentAssetsToTA",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CurrentAssetsToTA",
+  "panel_alias": "deriv_CurrentAssetsToTA",
+  "description": "流动资产/总资产(%)"
+ },
+ {
+  "name": "idx_NonCurrentAssetsToTA",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NonCurrentAssetsToTA",
+  "panel_alias": "deriv_NonCurrentAssetsToTA",
+  "description": "非流动资产/总资产(%)"
+ },
+ {
+  "name": "idx_SEWithoutMIToTotalCapital",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "SEWithoutMIToTotalCapital",
+  "panel_alias": "deriv_SEWithoutMIToTotalCapital",
+  "description": "归属母公司股东的权益/全部投入资本(%)"
+ },
+ {
+  "name": "idx_InteBearDebtToTotalCapital",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "InteBearDebtToTotalCapital",
+  "panel_alias": "deriv_InteBearDebtToTotalCapital",
+  "description": "带息债务/全部投入资本(%)"
+ },
+ {
+  "name": "idx_CurrentLiabilityToTL",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CurrentLiabilityToTL",
+  "panel_alias": "deriv_CurrentLiabilityToTL",
+  "description": "流动负债/负债合计(%)"
+ },
+ {
+  "name": "idx_NonCurrentLiabilityToTL",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NonCurrentLiabilityToTL",
+  "panel_alias": "deriv_NonCurrentLiabilityToTL",
+  "description": "非流动负债/负债合计(%)"
+ },
+ {
+  "name": "idx_OperatingNIToTP",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingNIToTP",
+  "panel_alias": "deriv_OperatingNIToTP",
+  "description": "经营活动净收益/利润总额(%)"
+ },
+ {
+  "name": "idx_OperatingMIToTPTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingMIToTPTTM",
+  "panel_alias": "deriv_OperatingMIToTPTTM",
+  "description": "经营活动净收益/利润总额_TTM(%)"
+ },
+ {
+  "name": "idx_ValueChangeNIToTP",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ValueChangeNIToTP",
+  "panel_alias": "deriv_ValueChangeNIToTP",
+  "description": "价值变动净收益/利润总额(%)"
+ },
+ {
+  "name": "idx_ValueChangeNIToTPTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ValueChangeNIToTPTTM",
+  "panel_alias": "deriv_ValueChangeNIToTPTTM",
+  "description": "价值变动净收益/利润总额_TTM(%)"
+ },
+ {
+  "name": "idx_NetNonOperatingIncomeToTP",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetNonOperatingIncomeToTP",
+  "panel_alias": "deriv_NetNonOperatingIncomeToTP",
+  "description": "营业外收支净额/利润总额(%)"
+ },
+ {
+  "name": "idx_NetNonOIToTPTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetNonOIToTPTTM",
+  "panel_alias": "deriv_NetNonOIToTPTTM",
+  "description": "营业外收支净额/利润总额_TTM(%)"
+ },
+ {
+  "name": "idx_TaxesToTP",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TaxesToTP",
+  "panel_alias": "deriv_TaxesToTP",
+  "description": "所得税/利润总额(%)"
+ },
+ {
+  "name": "idx_NPCutToTP",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPCutToTP",
+  "panel_alias": "deriv_NPCutToTP",
+  "description": "扣除非经常损益后的归母净利润/净利润(%)"
+ },
+ {
+  "name": "idx_EquityMultipler_DuPont",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EquityMultipler_DuPont",
+  "panel_alias": "deriv_EquityMultipler_DuPont",
+  "description": "权益乘数_杜邦分析"
+ },
+ {
+  "name": "idx_NPPCToNP_DuPont",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPPCToNP_DuPont",
+  "panel_alias": "deriv_NPPCToNP_DuPont",
+  "description": "归属母公司股东的净利润/净利润(%)_杜邦分析"
+ },
+ {
+  "name": "idx_NPToTOR_DuPont",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPToTOR_DuPont",
+  "panel_alias": "deriv_NPToTOR_DuPont",
+  "description": "净利润/营业总收入_杜邦分析(%)"
+ },
+ {
+  "name": "idx_NPToTP_DuPont",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPToTP_DuPont",
+  "panel_alias": "deriv_NPToTP_DuPont",
+  "description": "净利润/利润总额_杜邦分析(%)"
+ },
+ {
+  "name": "idx_TPToEBIT_DuPont",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TPToEBIT_DuPont",
+  "panel_alias": "deriv_TPToEBIT_DuPont",
+  "description": "利润总额/息税前利润_杜邦分析(%)"
+ },
+ {
+  "name": "idx_EBITToTOR_DuPont",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITToTOR_DuPont",
+  "panel_alias": "deriv_EBITToTOR_DuPont",
+  "description": "息税前利润/营业总收入_杜邦分析(%)"
+ },
+ {
+  "name": "idx_AvgNPYOYPastFiveYear",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AvgNPYOYPastFiveYear",
+  "panel_alias": "deriv_AvgNPYOYPastFiveYear",
+  "description": "过去五年同期归属母公司净利润平均增幅(%)"
+ },
+ {
+  "name": "idx_ORComGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ORComGrowRate3Y",
+  "panel_alias": "deriv_ORComGrowRate3Y",
+  "description": "营业收入3年复合增长率(%)"
+ },
+ {
+  "name": "idx_NPPCCGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPPCCGrowRate3Y",
+  "panel_alias": "deriv_NPPCCGrowRate3Y",
+  "description": "归属母公司股东的净利润3年复合增长率(%)"
+ },
+ {
+  "name": "idx_EVWtoEBITDA",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EVWtoEBITDA",
+  "panel_alias": "deriv_EVWtoEBITDA",
+  "description": "EVW/EBITDA(含货币资金)"
+ },
+ {
+  "name": "idx_EVNtoEBITDA",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EVNtoEBITDA",
+  "panel_alias": "deriv_EVNtoEBITDA",
+  "description": "EVN/EBITDA(剔除货币资金)"
+ },
+ {
+  "name": "idx_InteBearDebtToTL",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "InteBearDebtToTL",
+  "panel_alias": "deriv_InteBearDebtToTL",
+  "description": "带息债务率(%)"
+ },
+ {
+  "name": "idx_BasicEPSGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "BasicEPSGrowRate3Y",
+  "panel_alias": "deriv_BasicEPSGrowRate3Y",
+  "description": "基本每股收益3年复合增长率(%)"
+ },
+ {
+  "name": "idx_DilutedEPSGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DilutedEPSGrowRate3Y",
+  "panel_alias": "deriv_DilutedEPSGrowRate3Y",
+  "description": "稀释每股收益3年复合增长率(%)"
+ },
+ {
+  "name": "idx_TORGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TORGrowRate",
+  "panel_alias": "deriv_TORGrowRate",
+  "description": "营业总收入同比增长率(%)"
+ },
+ {
+  "name": "idx_TORGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TORGrowRate3Y",
+  "panel_alias": "deriv_TORGrowRate3Y",
+  "description": "营业总收入3年复合增长率(%)"
+ },
+ {
+  "name": "idx_OperProfitGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperProfitGrowRate3Y",
+  "panel_alias": "deriv_OperProfitGrowRate3Y",
+  "description": "营业利润3年复合增长率(%)"
+ },
+ {
+  "name": "idx_TPGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TPGrowRate3Y",
+  "panel_alias": "deriv_TPGrowRate3Y",
+  "description": "利润总额3年复合增长率(%)"
+ },
+ {
+  "name": "idx_NetProfitGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetProfitGrowRate3Y",
+  "panel_alias": "deriv_NetProfitGrowRate3Y",
+  "description": "净利润3年复合增长率(%)"
+ },
+ {
+  "name": "idx_NPParentCompanyCut3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NPParentCompanyCut3Y",
+  "panel_alias": "deriv_NPParentCompanyCut3Y",
+  "description": "归属母公司股东的净利润(扣除)3年复合增长率(%)"
+ },
+ {
+  "name": "idx_NetOperateCashFlow3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetOperateCashFlow3Y",
+  "panel_alias": "deriv_NetOperateCashFlow3Y",
+  "description": "经营活动产生的现金流量净额3年复合增长率(%)"
+ },
+ {
+  "name": "idx_OperCashPSGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperCashPSGrowRate3Y",
+  "panel_alias": "deriv_OperCashPSGrowRate3Y",
+  "description": "每股经营活动产生的现金流量净额3年复合增长率(%)"
+ },
+ {
+  "name": "idx_NAORGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NAORGrowRate3Y",
+  "panel_alias": "deriv_NAORGrowRate3Y",
+  "description": "净资产收益率(摊薄)3年复合增长率(%)"
+ },
+ {
+  "name": "idx_NetAssetGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetAssetGrowRate3Y",
+  "panel_alias": "deriv_NetAssetGrowRate3Y",
+  "description": "净资产3年复合增长率(%)"
+ },
+ {
+  "name": "idx_TotalAssetGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalAssetGrowRate3Y",
+  "panel_alias": "deriv_TotalAssetGrowRate3Y",
+  "description": "总资产3年复合增长率(%)"
+ },
+ {
+  "name": "idx_FreeCashFlowToNPPC",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FreeCashFlowToNPPC",
+  "panel_alias": "deriv_FreeCashFlowToNPPC",
+  "description": "自由现金流与归属母公司净利润比率"
+ },
+ {
+  "name": "idx_CashWorkingIndex",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashWorkingIndex",
+  "panel_alias": "deriv_CashWorkingIndex",
+  "description": "现金营运指数"
+ },
+ {
+  "name": "idx_ROACut",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROACut",
+  "panel_alias": "deriv_ROACut",
+  "description": "总资产净利率_不含少数股东损益(%)"
+ },
+ {
+  "name": "idx_ROACutTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROACutTTM",
+  "panel_alias": "deriv_ROACutTTM",
+  "description": "总资产净利率_不含少数股东损益_TTM(%)"
+ },
+ {
+  "name": "idx_EBITDAPS",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITDAPS",
+  "panel_alias": "deriv_EBITDAPS",
+  "description": "每股息税折旧前利润(元/股)"
+ },
+ {
+  "name": "idx_AnnualizedROE",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AnnualizedROE",
+  "panel_alias": "deriv_AnnualizedROE",
+  "description": "年化净资产收益率(%)"
+ },
+ {
+  "name": "idx_AnnualizedROAEBIT",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AnnualizedROAEBIT",
+  "panel_alias": "deriv_AnnualizedROAEBIT",
+  "description": "年化总资产报酬率(%)"
+ },
+ {
+  "name": "idx_AnnualizedROA",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AnnualizedROA",
+  "panel_alias": "deriv_AnnualizedROA",
+  "description": "年化总资产净利率(%)"
+ },
+ {
+  "name": "idx_ROICTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ROICTTM",
+  "panel_alias": "deriv_ROICTTM",
+  "description": "投入资本回报率_TTM(%)"
+ },
+ {
+  "name": "idx_AssetILossToOProfit",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "AssetILossToOProfit",
+  "panel_alias": "deriv_AssetILossToOProfit",
+  "description": "资产减值损失/营业利润(%)"
+ },
+ {
+  "name": "idx_NetProfToOpRevenTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetProfToOpRevenTTM",
+  "panel_alias": "deriv_NetProfToOpRevenTTM",
+  "description": "归属母公司股东的净利润/营业收入_TTM(%)"
+ },
+ {
+  "name": "idx_EBITToToAssetsTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITToToAssetsTTM",
+  "panel_alias": "deriv_EBITToToAssetsTTM",
+  "description": "息税前利润/总资产_TTM(%)"
+ },
+ {
+  "name": "idx_EBITDAToTOR",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITDAToTOR",
+  "panel_alias": "deriv_EBITDAToTOR",
+  "description": "息税折旧前利润/营业总收入(%)"
+ },
+ {
+  "name": "idx_OperatingProRatioTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperatingProRatioTTM",
+  "panel_alias": "deriv_OperatingProRatioTTM",
+  "description": "营业利润率_TTM(%)"
+ },
+ {
+  "name": "idx_MainProfitProportion",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "MainProfitProportion",
+  "panel_alias": "deriv_MainProfitProportion",
+  "description": "主营业务比率(%)"
+ },
+ {
+  "name": "idx_TangibleAToTL",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TangibleAToTL",
+  "panel_alias": "deriv_TangibleAToTL",
+  "description": "有形资产/负债合计(%)"
+ },
+ {
+  "name": "idx_NOCFToTotalNonCurLia",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NOCFToTotalNonCurLia",
+  "panel_alias": "deriv_NOCFToTotalNonCurLia",
+  "description": "经营活动产生现金流量净额/非流动负债(%)"
+ },
+ {
+  "name": "idx_NOCFInterestCover",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NOCFInterestCover",
+  "panel_alias": "deriv_NOCFInterestCover",
+  "description": "现金流量利息保障倍数(倍)"
+ },
+ {
+  "name": "idx_CashRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashRatio",
+  "panel_alias": "deriv_CashRatio",
+  "description": "现金比率(%)"
+ },
+ {
+  "name": "idx_OperCashInToDueDebt",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperCashInToDueDebt",
+  "panel_alias": "deriv_OperCashInToDueDebt",
+  "description": "现金到期债务比"
+ },
+ {
+  "name": "idx_NetAssetLiabilityRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetAssetLiabilityRatio",
+  "panel_alias": "deriv_NetAssetLiabilityRatio",
+  "description": "净资产负债率(%)"
+ },
+ {
+  "name": "idx_NetLiabilityRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetLiabilityRatio",
+  "panel_alias": "deriv_NetLiabilityRatio",
+  "description": "净负债率(%)"
+ },
+ {
+  "name": "idx_NetNoFCFToCLiability",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetNoFCFToCLiability",
+  "panel_alias": "deriv_NetNoFCFToCLiability",
+  "description": "非筹资性现金净流量与流动负债的比率(%)"
+ },
+ {
+  "name": "idx_NetNoFCFToTLiability",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetNoFCFToTLiability",
+  "panel_alias": "deriv_NetNoFCFToTLiability",
+  "description": "非筹资性现金净流量与负债总额的比率(%)"
+ },
+ {
+  "name": "idx_LongDebtRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "LongDebtRatio",
+  "panel_alias": "deriv_LongDebtRatio",
+  "description": "长期负债占比"
+ },
+ {
+  "name": "idx_EBITDAToIntBearDebt",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITDAToIntBearDebt",
+  "panel_alias": "deriv_EBITDAToIntBearDebt",
+  "description": "息税折旧前利润/带息债务(%)"
+ },
+ {
+  "name": "idx_EBITDAToInttFinExp",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITDAToInttFinExp",
+  "panel_alias": "deriv_EBITDAToInttFinExp",
+  "description": "息税折旧前利润/利息费用(%)"
+ },
+ {
+  "name": "idx_EntireliabToEBITDA",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EntireliabToEBITDA",
+  "panel_alias": "deriv_EntireliabToEBITDA",
+  "description": "全部债务/息税折旧前利润"
+ },
+ {
+  "name": "idx_CashToCurliability",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashToCurliability",
+  "panel_alias": "deriv_CashToCurliability",
+  "description": "货币资金/短期债务(%)"
+ },
+ {
+  "name": "idx_ToOpCostGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ToOpCostGrowRate",
+  "panel_alias": "deriv_ToOpCostGrowRate",
+  "description": "营业总成本同比增长(%)"
+ },
+ {
+  "name": "idx_ToLiabGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ToLiabGrowRate",
+  "panel_alias": "deriv_ToLiabGrowRate",
+  "description": "总负债同比增长(%)"
+ },
+ {
+  "name": "idx_CashEqIncreaseYOY",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashEqIncreaseYOY",
+  "panel_alias": "deriv_CashEqIncreaseYOY",
+  "description": "现金净流量同比增长(%)"
+ },
+ {
+  "name": "idx_CashEquivalGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashEquivalGrowRate",
+  "panel_alias": "deriv_CashEquivalGrowRate",
+  "description": "货币资金增长率(%)"
+ },
+ {
+  "name": "idx_FAExpansionRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FAExpansionRate",
+  "panel_alias": "deriv_FAExpansionRate",
+  "description": "固定资产投资扩张率(%)"
+ },
+ {
+  "name": "idx_NetOperCycle",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetOperCycle",
+  "panel_alias": "deriv_NetOperCycle",
+  "description": "净营业周期(天/次)"
+ },
+ {
+  "name": "idx_WorkingCapitalTurDays",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "WorkingCapitalTurDays",
+  "panel_alias": "deriv_WorkingCapitalTurDays",
+  "description": "营运资金周转天数(天/次)"
+ },
+ {
+  "name": "idx_TotalAssetTRateTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalAssetTRateTTM",
+  "panel_alias": "deriv_TotalAssetTRateTTM",
+  "description": "总资产周转率_TTM(次)"
+ },
+ {
+  "name": "idx_WorkingCaitalTRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "WorkingCaitalTRate",
+  "panel_alias": "deriv_WorkingCaitalTRate",
+  "description": "营运资本周转率(次)"
+ },
+ {
+  "name": "idx_NonCurrentATRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NonCurrentATRate",
+  "panel_alias": "deriv_NonCurrentATRate",
+  "description": "非流动资产周转率(次)"
+ },
+ {
+  "name": "idx_NetOperCFToOperProfTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetOperCFToOperProfTTM",
+  "panel_alias": "deriv_NetOperCFToOperProfTTM",
+  "description": "经营活动产生的现金流量净额/营业利润_TTM(%)"
+ },
+ {
+  "name": "idx_NetOperCFToToOperReve",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetOperCFToToOperReve",
+  "panel_alias": "deriv_NetOperCFToToOperReve",
+  "description": "经营现金净流量/营业总收入(%)"
+ },
+ {
+  "name": "idx_NetOperCFToToAssets",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetOperCFToToAssets",
+  "panel_alias": "deriv_NetOperCFToToAssets",
+  "description": "全部资产现金回收率(%)"
+ },
+ {
+  "name": "idx_DebtARatioCutADRecp",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DebtARatioCutADRecp",
+  "panel_alias": "deriv_DebtARatioCutADRecp",
+  "description": "剔除预收账款后的资产负债率(%)"
+ },
+ {
+  "name": "idx_DebtARatioCutADReNo",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DebtARatioCutADReNo",
+  "panel_alias": "deriv_DebtARatioCutADReNo",
+  "description": "剔除预收账款后的资产负债率_公告口径(%)"
+ },
+ {
+  "name": "idx_NetTangibleAToTA",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetTangibleAToTA",
+  "panel_alias": "deriv_NetTangibleAToTA",
+  "description": "有形资产/总资产(%)"
+ },
+ {
+  "name": "idx_TotalCLiaToSEWMI",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalCLiaToSEWMI",
+  "panel_alias": "deriv_TotalCLiaToSEWMI",
+  "description": "流动负债权益比率(%)"
+ },
+ {
+  "name": "idx_TotalNonCLiaToSEWMI",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalNonCLiaToSEWMI",
+  "panel_alias": "deriv_TotalNonCLiaToSEWMI",
+  "description": "非流动负债权益比率(%)"
+ },
+ {
+  "name": "idx_TotalNonCurLiaToSEWMI",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalNonCurLiaToSEWMI",
+  "panel_alias": "deriv_TotalNonCurLiaToSEWMI",
+  "description": "长期资本负债率(%)"
+ },
+ {
+  "name": "idx_TotalNonCurAToSEWMI",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TotalNonCurAToSEWMI",
+  "panel_alias": "deriv_TotalNonCurAToSEWMI",
+  "description": "资本固定化比率(%)"
+ },
+ {
+  "name": "idx_ToProfToOperProfitTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ToProfToOperProfitTTM",
+  "panel_alias": "deriv_ToProfToOperProfitTTM",
+  "description": "营业利润/利润总额_TTM(%)"
+ },
+ {
+  "name": "idx_ToProfToOperRevenueTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ToProfToOperRevenueTTM",
+  "panel_alias": "deriv_ToProfToOperRevenueTTM",
+  "description": "利润总额/营业收入_TTM(%)"
+ },
+ {
+  "name": "idx_DebtEquityRatio_DuPont",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DebtEquityRatio_DuPont",
+  "panel_alias": "deriv_DebtEquityRatio_DuPont",
+  "description": "产权比率_杜邦分析(%)"
+ },
+ {
+  "name": "idx_EPSCut",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EPSCut",
+  "panel_alias": "deriv_EPSCut",
+  "description": "基本每股收益(扣除)(元/股)"
+ },
+ {
+  "name": "idx_EBITAssetRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBITAssetRatio",
+  "panel_alias": "deriv_EBITAssetRatio",
+  "description": "息税前利润/资产总额(%)"
+ },
+ {
+  "name": "idx_EBIAT",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EBIAT",
+  "panel_alias": "deriv_EBIAT",
+  "description": "息前税后利润(元)"
+ },
+ {
+  "name": "idx_TaxRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "TaxRatio",
+  "panel_alias": "deriv_TaxRatio",
+  "description": "销售税金率(%)"
+ },
+ {
+  "name": "idx_EVW",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EVW",
+  "panel_alias": "deriv_EVW",
+  "description": "EVW(含货币资金)"
+ },
+ {
+  "name": "idx_EVN",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EVN",
+  "panel_alias": "deriv_EVN",
+  "description": "EVN(剔除货币资金)"
+ },
+ {
+  "name": "idx_NonRecurrGLProportion",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NonRecurrGLProportion",
+  "panel_alias": "deriv_NonRecurrGLProportion",
+  "description": "非经常性损益比率(%)"
+ },
+ {
+  "name": "idx_CapitalReturn",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CapitalReturn",
+  "panel_alias": "deriv_CapitalReturn",
+  "description": "资本收益率(%)"
+ },
+ {
+  "name": "idx_EquityGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EquityGrowRate",
+  "panel_alias": "deriv_EquityGrowRate",
+  "description": "资本保值增值率(%)"
+ },
+ {
+  "name": "idx_RetainedEarningAsset",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "RetainedEarningAsset",
+  "panel_alias": "deriv_RetainedEarningAsset",
+  "description": "留存收益/资产总额(%)"
+ },
+ {
+  "name": "idx_RepaymentCover",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "RepaymentCover",
+  "panel_alias": "deriv_RepaymentCover",
+  "description": "偿债倍数(倍)"
+ },
+ {
+  "name": "idx_WorkingCapitalAsset",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "WorkingCapitalAsset",
+  "panel_alias": "deriv_WorkingCapitalAsset",
+  "description": "营运资金/资产总额"
+ },
+ {
+  "name": "idx_EPSYOY",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EPSYOY",
+  "panel_alias": "deriv_EPSYOY",
+  "description": "每股收益同比增长(%)"
+ },
+ {
+  "name": "idx_EPSGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EPSGrowRate3Y",
+  "panel_alias": "deriv_EPSGrowRate3Y",
+  "description": "每股收益3年复合增长率(%)"
+ },
+ {
+  "name": "idx_PBVGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "PBVGrowRate",
+  "panel_alias": "deriv_PBVGrowRate",
+  "description": "每股净资产同比增长(%)"
+ },
+ {
+  "name": "idx_PBVGrowRate3Y",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "PBVGrowRate3Y",
+  "panel_alias": "deriv_PBVGrowRate3Y",
+  "description": "每股净资产3年复合增长率(%)"
+ },
+ {
+  "name": "idx_ARTRGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ARTRGrowRate",
+  "panel_alias": "deriv_ARTRGrowRate",
+  "description": "应收账款周转率增长率(%)"
+ },
+ {
+  "name": "idx_FATRGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FATRGrowRate",
+  "panel_alias": "deriv_FATRGrowRate",
+  "description": "固定资产周转率增长率(%)"
+ },
+ {
+  "name": "idx_InventoryTRGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "InventoryTRGrowRate",
+  "panel_alias": "deriv_InventoryTRGrowRate",
+  "description": "存货周转率增长率(%)"
+ },
+ {
+  "name": "idx_CashEqGroRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashEqGroRate",
+  "panel_alias": "deriv_CashEqGroRate",
+  "description": "现金及现金等价物增长率(%)"
+ },
+ {
+  "name": "idx_CashPayStaffRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashPayStaffRatio",
+  "panel_alias": "deriv_CashPayStaffRatio",
+  "description": "支付给职工的现金比率(%)"
+ },
+ {
+  "name": "idx_FinancingCashGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FinancingCashGrowRate",
+  "panel_alias": "deriv_FinancingCashGrowRate",
+  "description": "筹资活动产生的现金流量净额增长率(%)"
+ },
+ {
+  "name": "idx_InvestCashGrowRate",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "InvestCashGrowRate",
+  "panel_alias": "deriv_InvestCashGrowRate",
+  "description": "投资活动产生的现金流量净额增长率(%)"
+ },
+ {
+  "name": "idx_NetOperateCashProfit",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "NetOperateCashProfit",
+  "panel_alias": "deriv_NetOperateCashProfit",
+  "description": "经营活动现金净流量与净利润差(元)"
+ },
+ {
+  "name": "idx_CashToMeetInvestNeeds",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "CashToMeetInvestNeeds",
+  "panel_alias": "deriv_CashToMeetInvestNeeds",
+  "description": "现金满足投资比率(%)"
+ },
+ {
+  "name": "idx_ExternalFinanceRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "ExternalFinanceRatio",
+  "panel_alias": "deriv_ExternalFinanceRatio",
+  "description": "外部融资比率(%)"
+ },
+ {
+  "name": "idx_OperCashStability",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "OperCashStability",
+  "panel_alias": "deriv_OperCashStability",
+  "description": "营业现金稳定性"
+ },
+ {
+  "name": "idx_DividendTTM",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "DividendTTM",
+  "panel_alias": "deriv_DividendTTM",
+  "description": "股息TTM(元)"
+ },
+ {
+  "name": "idx_EquityFixedAssetRatio",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "EquityFixedAssetRatio",
+  "panel_alias": "deriv_EquityFixedAssetRatio",
+  "description": "股东权益与固定资产比率(%)"
+ },
+ {
+  "name": "idx_FinancialLeverage",
+  "category": "财务衍生",
+  "source_table": "dws.f10_derivative_index_fd",
+  "column": "FinancialLeverage",
+  "panel_alias": "deriv_FinancialLeverage",
+  "description": "财务杠杆效率"
  }
 ]

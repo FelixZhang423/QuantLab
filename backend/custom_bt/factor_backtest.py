@@ -112,9 +112,9 @@ def backtest_accepted_factors(
         raise ValueError("factor run source signature does not match data source")
 
     codes = load_pool_codes(pools_root, pool_id)
+    run_fields = [str(field) for field in (run_manifest.get("fields") or [])]
     if source == "clickhouse":
-        # 因子运行里用到的财务/估值字段要一起加载，否则表达式解析不到。
-        run_fields = [str(field) for field in (run_manifest.get("fields") or [])]
+        # 因子运行里用到的财务/估值/衍生字段要一起加载，否则表达式解析不到。
         fund_fields = [
             field[len(company_source.FUNDAMENTAL_PREFIX):]
             for field in run_fields
@@ -125,14 +125,22 @@ def backtest_accepted_factors(
             for field in run_fields
             if field.startswith(company_source.VALUATION_PREFIX)
         ]
+        deriv_fields = [
+            field[len(company_source.DERIVATIVE_PREFIX):]
+            for field in run_fields
+            if field.startswith(company_source.DERIVATIVE_PREFIX)
+        ]
         panel = company_source.load_panel(
             codes,
             backtest_config.get("start_date"),
             backtest_config.get("end_date"),
             fundamentals=fund_fields or None,
             valuation=val_fields or None,
+            derivatives=deriv_fields or None,
         )
     else:
+        if any(field.startswith(company_source.DERIVATIVE_PREFIX) for field in run_fields):
+            raise ValueError("derivative fields require clickhouse data source")
         panel = load_pool_panel(master_store, codes, backtest_config.get("start_date"), backtest_config.get("end_date"))
     if panel.empty:
         raise ValueError("no panel rows remain for factor backtest")

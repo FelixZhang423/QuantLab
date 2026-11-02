@@ -12,6 +12,12 @@ import { api, useApiData, type ApiState, type FieldInfo, type OperatorInfo, type
 export type PageNav = (p: string, id?: number, runKey?: string) => void;
 export type TaskAdder = (task: Omit<Task, "id"> & { id?: number }) => number;
 
+const PERIOD_TYPE_LABELS: Record<string, string> = {
+  flow: "累计",
+  flow_q: "单季",
+  stock: "时点",
+  ratio: "比率",
+};
 const fmtInt = (value: number | null | undefined) => (value == null ? "—" : value.toLocaleString("zh-CN"));
 const fmtPrice = (value: number | null) => (value == null ? "—" : value.toFixed(2));
 
@@ -134,7 +140,7 @@ export function FieldsPage() {
   const [pageSize, setPageSize] = useState(20);
   const fieldsApi = useApiData(api.fields);
   const fields = fieldsApi.data?.fields ?? [];
-  const categoryOrder = ["行情与技术", "估值", "财务原始", "财务衍生", "证券信息", "其他"];
+  const categoryOrder = ["行情与技术", "估值", "财务原始", "财务衍生", "其他"];
   const categories = categoryOrder.filter((item) => fields.some((field) => fieldCategory(field).label === item));
 
   const filtered = fields
@@ -166,6 +172,16 @@ export function FieldsPage() {
         const item = fieldCategory(record);
         return <Tag color={item.color}>{item.label}</Tag>;
       },
+    },
+    {
+      title: "口径",
+      key: "period_type",
+      width: 90,
+      render: (_, record) => (
+        record.period_type
+          ? <Tag>{PERIOD_TYPE_LABELS[record.period_type] ?? record.period_type}</Tag>
+          : <Text type="secondary">—</Text>
+      ),
     },
     { title: "状态", key: "status", width: 110, render: () => <Tag color="green">可用</Tag> },
     {

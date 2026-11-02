@@ -71,7 +71,7 @@ FIELD_DOC_PATH = next(
     iter(WORKSPACE_ROOT.glob("v_stock_daily_full_*.md")),
     WORKSPACE_ROOT / "v_stock_daily_full_字段说明.md",
 )
-# 数据字段页的 446 条目录（441 条业务字段 + 5 个每日估值字段）
+# 数据字段页的 123 条目录（行情 60 + 财务原始 58 + 估值 5）
 FIELD_CATALOG_PATH = PROJECT_ROOT / "configs" / "field_catalog.json"
 
 logger = logging.getLogger(__name__)
@@ -157,7 +157,7 @@ _CATALOG_CACHE: Dict[str, Any] = {}
 
 
 def _field_catalog() -> List[Dict[str, Any]]:
-    """读取 446 条字段目录；文件变化时重新加载。"""
+    """读取 123 条字段目录；文件变化时重新加载。"""
     stat = FIELD_CATALOG_PATH.stat()
     key = (stat.st_mtime_ns, stat.st_size)
     if _CATALOG_CACHE.get("key") != key:
@@ -198,9 +198,7 @@ def _catalog_status(entry: Dict[str, Any], found: Optional[bool]) -> str:
     if category == "财务原始":
         return "usable" if entry.get("panel_alias") else "pending"
     if category == "财务衍生":
-        return "pending"
-    if category == "证券信息":
-        return "unavailable"
+        return "usable" if entry.get("panel_alias") else "pending"
     field = entry.get("panel_alias") or entry.get("name", "")
     return "usable" if company_source.is_expression_field(field) else "unavailable"
 
@@ -316,6 +314,8 @@ def get_fields() -> Dict[str, Any]:
                 "status": status,
                 "panel_alias": entry.get("panel_alias"),
                 "found_in_db": found,
+                "period_type": entry.get("period_type"),
+                "derived_from": entry.get("derived_from"),
             }
         )
     counts = Counter(field["status"] for field in fields)

@@ -5,8 +5,6 @@ export const FIELD_CATEGORY: Record<string, { label: string; color: string }> = 
   "dws.ll_stock_daily_sharing": { label: "行情与技术", color: "blue" },
   "ods_dps_target.lc_maindatanew": { label: "财务原始", color: "purple" },
   "dws.f10_derivative_index_fd": { label: "财务衍生", color: "geekblue" },
-  "dwd.secumain": { label: "证券信息", color: "cyan" },
-  "dim.stock_main_info_fd": { label: "证券信息", color: "cyan" },
   "dws.f10_finance_index_fd": { label: "估值", color: "gold" },
 };
 
@@ -14,7 +12,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   行情与技术: "blue",
   财务原始: "purple",
   财务衍生: "geekblue",
-  证券信息: "cyan",
   估值: "gold",
 };
 

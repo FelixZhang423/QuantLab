@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -71,36 +72,78 @@ FUNDAMENTAL_CODE_TABLE = "dwd.secumain"
 # 只保留合并报表（Mark=2）的定期报告（BulletinType=20），避免母公司报表/业绩快报混入。
 FUNDAMENTAL_MARK = 2
 FUNDAMENTAL_BULLETIN = "20"
+# 1=新会计准则；同一报告期没有 1 时才回退旧准则。
+FUNDAMENTAL_STANDARD_NEW = 1
 FUNDAMENTAL_LOOKBACK_DAYS = 550
 FUNDAMENTAL_PREFIX = "fund_"
-# 30 个核心财务原始字段；衍生指标（idx_*）不在这一批，见后续阶段。
+# 51 个核心财务原始字段；EPS 与零值率 >50% 的科目已移除，衍生指标（idx_*）不再接入。
 FUNDAMENTAL_FIELDS: Tuple[str, ...] = (
-    "BasicEPS", "DilutedEPS", "EPS", "ROEByReport", "ROE", "ROECut",
-    "WROE", "WROECut", "OperatingReenue", "NPFromParentCompanyOwners",
+    "ROE", "ROECut", "WROE", "OperatingReenue", "NPFromParentCompanyOwners",
     "NetProfitCut", "NetProfit", "OperatingProfit", "TotalProfit",
-    "IncomeTaxCost", "FairValueChangeIncome", "RetainedProfit",
+    "IncomeTaxCost", "RetainedProfit",
     "NetOperateCashFlow", "NetInvestCashFlow", "NetFinanceCashFlow",
     "TotalAssets", "TotalCurrentAssets", "TotalNonCurrentAssets",
     "TotalLiability", "TotalCurrentLiability", "TotalNonCurrentLiability",
     "SEWithoutMI", "TotalShareholderEquity", "Inventories", "AccountReceivables",
+    "ExchanRateChangeEffect", "BillReceivable",
+    "EndPeriodCashEquivalent", "NonCurrentLiabilityIn1Year", "NonRecurringProfitLoss",
+    "LongtermEquityInvest", "BillAccReceivable", "OtherReceivableED",
+    "MinorityProfit", "OtherReceivable", "MinorityInterests", "ShortTermLoan",
+    "OtherPayableED", "OtherPayable",
+    "InvestIncome", "NAPS", "IntangibleAssets", "FinancialExpense",
+    "CashEquialentIncrease", "SalariesPayable",
+    "SurplusReserveFund", "CapitalResereFund", "TaxsPayable", "CashEquialents",
+    "PaidInCapital", "TotalLiabilityAndEquity", "TotalShares",
 )
+
+# 利润表/现金流量表的可加总流量字段；其余为时点值或比率。
+FUNDAMENTAL_FLOW_FIELDS: Tuple[str, ...] = (
+    "OperatingReenue", "NPFromParentCompanyOwners", "NetProfitCut", "NetProfit",
+    "OperatingProfit", "TotalProfit", "IncomeTaxCost",
+    "NetOperateCashFlow", "NetInvestCashFlow", "NetFinanceCashFlow",
+    "NonRecurringProfitLoss", "MinorityProfit", "InvestIncome",
+    "FinancialExpense", "ExchanRateChangeEffect", "CashEquialentIncrease",
+)
+# 由累计值派生的单季字段：<base>_q。
+DERIVED_FUNDAMENTAL_FIELDS: Dict[str, str] = {
+    f"{name}_q": name for name in FUNDAMENTAL_FLOW_FIELDS
+}
 
 # 每日估值字段：SecuCode + data_time 直接对齐日频，无披露日问题。
 VALUATION_TABLE = "dws.f10_finance_index_fd"
 VALUATION_PREFIX = "val_"
+
+# 财务衍生指标：按 CompanyCode + EndDate 对齐，披露日回连 lc_maindatanew。
+DERIVATIVE_TABLE = "dws.f10_derivative_index_fd"
+DERIVATIVE_PREFIX = "deriv_"
+DERIVATIVE_LOOKBACK_DAYS = 550
+_FIELD_CATALOG_PATH = Path(__file__).resolve().parents[1] / "configs" / "field_catalog.json"
+
+
+def derivative_fields() -> frozenset[str]:
+    """当前目录中允许接入的财务衍生列；避免接受任意 SQL 标识符。"""
+    catalog = json.loads(_FIELD_CATALOG_PATH.read_text(encoding="utf-8"))
+    return frozenset(
+        str(entry["column"])
+        for entry in catalog
+        if entry.get("category") == "财务衍生" and entry.get("panel_alias")
+    )
 VALUATION_FIELDS: Tuple[str, ...] = (
-    "PB", "PSTTM", "PCFTTM", "DividendRatioLYR", "TotalMV",
+    "PE", "PB", "PCF", "PS", "DividendRatio", "PSTTM", "TotalMV", "NegotiableMV",
+    "PELYR", "PCFTTM", "PCFS", "PCFSTTM", "DividendRatioLYR",
+    "EnterpriseValueW", "EnterpriseValueN", "TotalMV2", "TotalASMV",
+    "PETTMCut", "ForwardPEQA", "ForwardPEHR", "PEG", "PETTMToORRate",
+    "ForwardPCFQA", "ForwardPCFHR", "ForwardPCFSQA", "ForwardPCFSHR",
+    "ForwardPSQA", "ForwardPSHR", "EVToEBITDA", "EVToOR", "EVToFCFF",
+    "EVToCFO", "EVToGP", "PER", "EVToEBITDARANDD", "TotalMVToRANDD",
+    "MVA", "FloatMVA", "MarketValueToDebt1", "MarketValueToDebt2",
+    "DebtToAssetValue1", "DebtToAssetValue2",
 )
-# 字段页展示用中文名，与 441 字段说明表保持一致。
+# 字段页展示用中文名。
 FUNDAMENTAL_LABELS: Dict[str, str] = {
-    "BasicEPS": "基本每股收益",
-    "DilutedEPS": "稀释每股收益",
-    "EPS": "每股收益",
-    "ROEByReport": "净资产收益率(报告值)",
     "ROE": "净资产收益率(摊薄)",
     "ROECut": "净资产收益率(摊薄-扣除)",
     "WROE": "加权净资产收益率",
-    "WROECut": "加权净资产收益率(扣除)",
     "OperatingReenue": "营业收入",
     "NPFromParentCompanyOwners": "归母净利润",
     "NetProfitCut": "扣非净利润",
@@ -108,7 +151,6 @@ FUNDAMENTAL_LABELS: Dict[str, str] = {
     "OperatingProfit": "营业利润",
     "TotalProfit": "利润总额",
     "IncomeTaxCost": "所得税费用",
-    "FairValueChangeIncome": "公允价值变动收益",
     "RetainedProfit": "未分配利润",
     "NetOperateCashFlow": "经营活动现金流净额",
     "NetInvestCashFlow": "投资活动现金流净额",
@@ -123,13 +165,80 @@ FUNDAMENTAL_LABELS: Dict[str, str] = {
     "TotalShareholderEquity": "股东权益合计",
     "Inventories": "存货",
     "AccountReceivables": "应收账款",
+    "ExchanRateChangeEffect": "汇率变动对现金及现金等价物的影响",
+    "BillReceivable": "应收票据",
+    "EndPeriodCashEquivalent": "期末现金及现金等价物余额",
+    "NonCurrentLiabilityIn1Year": "一年内到期的非流动负债(元)",
+    "NonRecurringProfitLoss": "非经常性损益(元)",
+    "LongtermEquityInvest": "长期股权投资(元)",
+    "BillAccReceivable": "应收票据及应收账款",
+    "OtherReceivableED": "其他应收款(含利息和股利)",
+    "MinorityProfit": "少数股东损益(元)",
+    "OtherReceivable": "其他应收款(元)",
+    "MinorityInterests": "少数股东权益(元)",
+    "ShortTermLoan": "短期借款(元)",
+    "OtherPayableED": "其他应付款(含利息和股利)",
+    "OtherPayable": "其他应付款(元)",
+    "InvestIncome": "投资净收益(元)",
+    "NAPS": "每股净资产(元)",
+    "IntangibleAssets": "无形资产(元)",
+    "FinancialExpense": "财务费用(元)",
+    "CashEquialentIncrease": "现金及现金等价物净增加额(元)",
+    "SalariesPayable": "应付职工薪酬(元)",
+    "SurplusReserveFund": "盈余公积(元)",
+    "CapitalResereFund": "资本公积(元)",
+    "TaxsPayable": "应交税费(元)",
+    "CashEquialents": "货币资金(元)",
+    "PaidInCapital": "实收资本(或股本)(元)",
+    "TotalLiabilityAndEquity": "负债和所有者权益总计(元)",
+    "TotalShares": "总股本(股)",
 }
+for _flow_field in FUNDAMENTAL_FLOW_FIELDS:
+    FUNDAMENTAL_LABELS[f"{_flow_field}_q"] = f"单季{FUNDAMENTAL_LABELS[_flow_field]}"
+del _flow_field
 VALUATION_LABELS: Dict[str, str] = {
+    "PE": "市盈率",
     "PB": "市净率",
-    "PSTTM": "市销率(TTM)",
-    "PCFTTM": "市现率(TTM)",
-    "DividendRatioLYR": "股息率(LYR)",
+    "PCF": "市现率",
+    "PS": "市销率",
+    "DividendRatio": "股息率",
+    "PSTTM": "滚动市销率",
     "TotalMV": "总市值",
+    "NegotiableMV": "流通市值",
+    "PELYR": "静态市盈率",
+    "PCFTTM": "滚动市现率(经营现金流)",
+    "PCFS": "静态市现率(现金流净额)",
+    "PCFSTTM": "滚动市现率(现金流净额)",
+    "DividendRatioLYR": "静态股息率",
+    "EnterpriseValueW": "企业价值(含货币资金)",
+    "EnterpriseValueN": "企业价值(剔除货币资金)",
+    "TotalMV2": "公司总市值",
+    "TotalASMV": "A/B股总市值",
+    "PETTMCut": "扣非后滚动市盈率",
+    "ForwardPEQA": "动态市盈率_季度外推",
+    "ForwardPEHR": "动态市盈率_历史占比",
+    "PEG": "PEG",
+    "PETTMToORRate": "滚动市盈率/营业收入三年复合增长率",
+    "ForwardPCFQA": "动态市现率(经营现金流)_季度外推",
+    "ForwardPCFHR": "动态市现率(经营现金流)_历史占比",
+    "ForwardPCFSQA": "动态市现率(现金流净额)_季度外推",
+    "ForwardPCFSHR": "动态市现率(现金流净额)_历史占比",
+    "ForwardPSQA": "动态市销率_季度外推",
+    "ForwardPSHR": "动态市销率_历史占比",
+    "EVToEBITDA": "企业价值倍数(剔除货币资金)",
+    "EVToOR": "企业价值(剔除货币资金)/营业收入",
+    "EVToFCFF": "企业价值(剔除货币资金)/企业自由现金流",
+    "EVToCFO": "企业价值(剔除货币资金)/经营现金流",
+    "EVToGP": "企业价值(剔除货币资金)/毛利",
+    "PER": "总市值/研发支出前利润",
+    "EVToEBITDARANDD": "企业价值(剔除货币资金)/(EBITDA+研发费用)",
+    "TotalMVToRANDD": "市值/研发费用",
+    "MVA": "市场附加价值(MVA)(元)",
+    "FloatMVA": "流通盘市场附加价值(元)",
+    "MarketValueToDebt1": "总市值/总负债",
+    "MarketValueToDebt2": "公司总市值/总负债",
+    "DebtToAssetValue1": "总负债/总资产市值",
+    "DebtToAssetValue2": "总负债/公司总资产市值",
 }
 
 _IDENTIFIER_FIELDS = {"date", "code"}
@@ -505,6 +614,7 @@ def load_panel(
     client: Optional[live_db.ClickHouseHTTPClient] = None,
     fundamentals: Optional[Sequence[str]] = None,
     valuation: Optional[Sequence[str]] = None,
+    derivatives: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
     """从公司库加载股票池面板（与本地 ``load_pool_panel`` 等价的字段集合）。
 
@@ -552,6 +662,11 @@ def load_panel(
             raise ValueError("valuation requires start_date and end_date")
         values = load_valuation(codes, start_date, end_date, valuation, settings=settings, client=client)
         panel = attach_valuation(panel, values)
+    if derivatives:
+        if start_date is None or end_date is None:
+            raise ValueError("derivatives requires start_date and end_date")
+        values = load_derivatives(codes, start_date, end_date, derivatives, settings=settings, client=client)
+        panel = attach_derivatives(panel, values)
     return panel
 
 
@@ -580,18 +695,70 @@ def build_fundamentals_sql(
         "toString(f.CompanyCode) AS company_code",
         "toDate(f.EndDate) AS end_date",
         "toDate(f.InfoPublDate) AS info_date",
+        "toInt32(f.AccountingStandards) AS accounting_standards",
+        "toInt64(f.ID) AS row_id",
+        "toInt64(toUnixTimestamp(f.UpdateTime)) AS update_ts",
         *[f"toFloat64OrNull(toString(f.{field})) AS {field}" for field in selected],
     ]
     start = _quote(_ymd(start_date, "start_date"))
     end = _quote(_ymd(end_date, "end_date"))
+    # 不在这里只取 1：load_fundamentals 需要同时看到 1 和 9，才能按公司/报告期
+    # 优先新准则、没有新准则时回退旧准则。
     return (
         f"SELECT {', '.join(selects)} FROM {FUNDAMENTAL_TABLE} AS f "
         f"WHERE f.CompanyCode IN ({codes}) "
         f"AND f.Mark = {FUNDAMENTAL_MARK} AND f.BulletinType = '{FUNDAMENTAL_BULLETIN}' "
         f"AND f.InfoPublDate <= toDate({end}) "
         f"AND f.InfoPublDate >= toDate({start}) - INTERVAL {int(lookback_days)} DAY "
-        "ORDER BY f.CompanyCode, f.InfoPublDate"
+        "ORDER BY f.CompanyCode, f.EndDate, f.InfoPublDate, f.ID"
     )
+
+
+def _select_fundamental_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    """同一公司同一报告期：优先新准则(1)，否则回退旧准则；再取最新披露。
+
+    同一披露日再按 UpdateTime、ID 做确定性 tie-break，避免重复数据随机入选。
+    """
+    if frame.empty:
+        return frame
+    work = frame.copy()
+    work["_std_priority"] = (work["accounting_standards"] != FUNDAMENTAL_STANDARD_NEW).astype(int)
+    work = work.sort_values(
+        ["company_code", "end_date", "_std_priority", "info_date", "update_ts", "row_id"],
+        ascending=[True, True, False, True, True, True],
+        kind="mergesort",
+    )
+    work = work.drop_duplicates(["company_code", "end_date"], keep="last")
+    return work.drop(columns=["_std_priority"])
+
+
+def _dedupe_fundamental_ids(frame: pd.DataFrame) -> pd.DataFrame:
+    """源表同一 ID 可能重复投递；按 ID 只保留 UpdateTime 最新的一条。"""
+    if frame.empty:
+        return frame
+    work = frame.sort_values(
+        ["row_id", "update_ts"], ascending=[True, False], kind="mergesort"
+    )
+    positive = work[work["row_id"] > 0].drop_duplicates(["row_id"], keep="first")
+    others = work[work["row_id"] <= 0]
+    return pd.concat([positive, others], ignore_index=True)
+
+
+def _single_quarter_series(frame: pd.DataFrame, field: str) -> pd.Series:
+    """累计流量 → 单季流量：Q1 原值，Q2/Q3/Q4 减去上一报告期累计值。"""
+    work = frame[["code", "end_date", field]].copy()
+    work["end_date"] = pd.to_datetime(work["end_date"])
+    work["year"] = work["end_date"].dt.year
+    work["quarter"] = work["end_date"].dt.month // 3
+    valid = work["end_date"].dt.month.isin([3, 6, 9, 12])
+    prev = work[["code", "year", "quarter", field]].copy()
+    prev["quarter"] = prev["quarter"] + 1
+    prev = prev.rename(columns={field: "_prev_value"})
+    merged = work.merge(prev, on=["code", "year", "quarter"], how="left", sort=False)
+    result = merged[field] - merged["_prev_value"]
+    result = result.where(merged["quarter"] > 1, merged[field])
+    result = result.where(valid.to_numpy(), float("nan"))
+    return pd.Series(result.to_numpy(), index=frame.index)
 
 
 def load_fundamentals(
@@ -604,12 +771,23 @@ def load_fundamentals(
     client: Optional[live_db.ClickHouseHTTPClient] = None,
     lookback_days: int = FUNDAMENTAL_LOOKBACK_DAYS,
 ) -> pd.DataFrame:
-    """按证券代码取财务原始字段，返回 [code, info_date, end_date, *fields]。"""
+    """按证券代码取财务字段，返回 [code, info_date, end_date, *fields]。
+
+    字段名以 ``_q`` 结尾时返回由累计值派生的单季值。
+    """
     codes = [normalize_code(code) for code in codes]
     selected = list(dict.fromkeys(fields or FUNDAMENTAL_FIELDS))
-    unknown = [field for field in selected if field not in FUNDAMENTAL_FIELDS]
+    unknown = [
+        field for field in selected
+        if field not in FUNDAMENTAL_FIELDS and field not in DERIVED_FUNDAMENTAL_FIELDS
+    ]
     if unknown:
         raise ValueError(f"unsupported fundamental fields: {unknown}")
+    raw_selected = [field for field in selected if field in FUNDAMENTAL_FIELDS]
+    derived_selected = [field for field in selected if field in DERIVED_FUNDAMENTAL_FIELDS]
+    base_fields = list(dict.fromkeys(
+        raw_selected + [DERIVED_FUNDAMENTAL_FIELDS[field] for field in derived_selected]
+    ))
     columns = ["code", "info_date", "end_date", *selected]
     if not codes:
         return pd.DataFrame(columns=columns)
@@ -625,7 +803,7 @@ def load_fundamentals(
     if not by_company:
         return pd.DataFrame(columns=columns)
 
-    sql = build_fundamentals_sql(by_company, selected, start_date, end_date, lookback_days)
+    sql = build_fundamentals_sql(by_company, base_fields, start_date, end_date, lookback_days)
     handle = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
     temp_path = Path(handle.name)
     handle.close()
@@ -646,8 +824,16 @@ def load_fundamentals(
     frame["company_code"] = frame["company_code"].astype(str)
     frame["info_date"] = _date_column(frame["info_date"])
     frame["end_date"] = _date_column(frame["end_date"])
-    for field in selected:
+    frame["accounting_standards"] = pd.to_numeric(
+        frame["accounting_standards"], errors="coerce"
+    ).fillna(0).astype("int64")
+    frame["row_id"] = pd.to_numeric(frame["row_id"], errors="coerce").fillna(0).astype("int64")
+    frame["update_ts"] = pd.to_numeric(frame["update_ts"], errors="coerce").fillna(0).astype("int64")
+    for field in base_fields:
         frame[field] = pd.to_numeric(frame[field], errors="coerce")
+    frame = _dedupe_fundamental_ids(frame)
+    frame = frame.dropna(subset=["info_date"])
+    frame = _select_fundamental_rows(frame)
 
     # 一个公司可能对应多个证券代码（A/B 股等），按映射展开。
     parts = []
@@ -661,6 +847,10 @@ def load_fundamentals(
     merged = pd.concat(parts, ignore_index=True).dropna(subset=["info_date"])
     merged = merged.sort_values(["code", "info_date", "end_date"])
     merged = merged.drop_duplicates(["code", "info_date", "end_date"], keep="last")
+    for derived in derived_selected:
+        merged[derived] = _single_quarter_series(
+            merged, DERIVED_FUNDAMENTAL_FIELDS[derived]
+        )
     return merged[columns].reset_index(drop=True)
 
 
@@ -680,6 +870,11 @@ def attach_fundamentals(panel: pd.DataFrame, fundamentals: Optional[pd.DataFrame
     rename["end_date"] = f"{FUNDAMENTAL_PREFIX}end_date"
     right = right.rename(columns=rename)
     right_key = f"{FUNDAMENTAL_PREFIX}info_date"
+    # 同一披露日可能同时发布多期报告；先保留报告期最新的一条。
+    right = right.sort_values(
+        [right_key, f"{FUNDAMENTAL_PREFIX}end_date", "code"], kind="mergesort"
+    )
+    right = right.drop_duplicates(["code", right_key], keep="last")
     left = left.sort_values(["date", "code"])
     right = right.sort_values([right_key, "code"])
     merged = pd.merge_asof(
@@ -774,6 +969,124 @@ def attach_valuation(panel: pd.DataFrame, valuation: Optional[pd.DataFrame]) -> 
     return left.merge(right, on=["date", "code"], how="left")
 
 
+def build_derivative_sql(
+    codes: Iterable[str],
+    fields: Iterable[str],
+    start_date: Any,
+    end_date: Any,
+    lookback_days: int = DERIVATIVE_LOOKBACK_DAYS,
+) -> str:
+    """财务衍生指标 SQL：按 CompanyCode + EndDate 回连披露日，再做 as-of。"""
+    selected = list(fields)
+    allowed = derivative_fields()
+    unknown = [field for field in selected if field not in allowed]
+    if unknown:
+        raise ValueError(f"unsupported derivative fields: {unknown}")
+    selects = [
+        "toString(d.SecuCode) AS code",
+        "toDate(d.EndDate) AS end_date",
+        "toDate(l.info_date) AS info_date",
+        *[f"toFloat64OrNull(toString(d.`{field}`)) AS `{field}`" for field in selected],
+    ]
+    start = _quote(_ymd(start_date, "start_date"))
+    end = _quote(_ymd(end_date, "end_date"))
+    return (
+        f"SELECT {', '.join(selects)} FROM {DERIVATIVE_TABLE} AS d "
+        "LEFT JOIN ("
+        "SELECT toString(CompanyCode) AS company_code, toDate(EndDate) AS end_date, "
+        "max(InfoPublDate) AS info_date "
+        f"FROM {FUNDAMENTAL_TABLE} "
+        f"WHERE Mark = {FUNDAMENTAL_MARK} AND BulletinType = '{FUNDAMENTAL_BULLETIN}' "
+        "GROUP BY company_code, end_date"
+        ") AS l ON toString(d.CompanyCode) = l.company_code "
+        "AND toDate(d.EndDate) = l.end_date "
+        f"WHERE d.SecuCode IN {_code_list_sql(codes)} "
+        f"AND d.EndDate >= toDate({start}) - INTERVAL {int(lookback_days)} DAY "
+        f"AND d.EndDate <= toDate({end}) "
+        "ORDER BY d.SecuCode, d.EndDate"
+    )
+
+
+def load_derivatives(
+    codes: Iterable[str],
+    start_date: Any,
+    end_date: Any,
+    fields: Optional[Sequence[str]] = None,
+    *,
+    settings: Optional[live_db.LiveDBSettings] = None,
+    client: Optional[live_db.ClickHouseHTTPClient] = None,
+) -> pd.DataFrame:
+    """按证券代码取财务衍生字段，返回 [code, info_date, end_date, *fields]。"""
+    codes = [normalize_code(code) for code in codes]
+    selected = list(dict.fromkeys(fields or sorted(derivative_fields())))
+    allowed = derivative_fields()
+    unknown = [field for field in selected if field not in allowed]
+    if unknown:
+        raise ValueError(f"unsupported derivative fields: {unknown}")
+    columns = ["code", "info_date", "end_date", *selected]
+    if not codes:
+        return pd.DataFrame(columns=columns)
+    settings = settings or live_db.resolve_settings()
+    client = live_db._client(settings, client)
+    handle = tempfile.NamedTemporaryFile(suffix=".parquet", delete=False)
+    temp_path = Path(handle.name)
+    handle.close()
+    try:
+        client.query_to_file(
+            build_derivative_sql(codes, selected, start_date, end_date),
+            temp_path,
+            timeout=settings.panel_timeout,
+            max_execution_time=settings.panel_max_execution_time,
+            max_memory_usage=settings.panel_max_memory,
+        )
+        frame = pd.read_parquet(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    if frame.empty:
+        return pd.DataFrame(columns=columns)
+    frame["code"] = frame["code"].astype(str)
+    frame["info_date"] = _date_column(frame["info_date"])
+    frame["end_date"] = _date_column(frame["end_date"])
+    for field in selected:
+        frame[field] = pd.to_numeric(frame[field], errors="coerce")
+    frame = frame.dropna(subset=["code", "info_date"])
+    frame = frame.sort_values(["code", "info_date", "end_date"])
+    frame = frame.drop_duplicates(["code", "info_date", "end_date"], keep="last")
+    return frame[columns].reset_index(drop=True)
+
+
+def attach_derivatives(panel: pd.DataFrame, derivatives: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """按 InfoPublDate 合并财务衍生字段，列名加 deriv_ 前缀。"""
+    if derivatives is None or derivatives.empty:
+        return panel
+    left = panel.copy()
+    left["code"] = left["code"].astype(str)
+    left["date"] = pd.to_datetime(left["date"]).astype("datetime64[ns]")
+    right = derivatives.copy()
+    right["code"] = right["code"].astype(str)
+    right["info_date"] = pd.to_datetime(right["info_date"]).astype("datetime64[ns]")
+    right["end_date"] = pd.to_datetime(right["end_date"])
+    rename = {
+        field: f"{DERIVATIVE_PREFIX}{field}"
+        for field in right.columns
+        if field not in {"code", "info_date", "end_date"}
+    }
+    rename["info_date"] = f"{DERIVATIVE_PREFIX}info_date"
+    rename["end_date"] = f"{DERIVATIVE_PREFIX}end_date"
+    right = right.rename(columns=rename)
+    key = f"{DERIVATIVE_PREFIX}info_date"
+    right = right.sort_values(
+        [key, f"{DERIVATIVE_PREFIX}end_date", "code"], kind="mergesort"
+    )
+    right = right.drop_duplicates(["code", key], keep="last")
+    left = left.sort_values(["date", "code"])
+    right = right.sort_values([key, "code"])
+    merged = pd.merge_asof(
+        left, right, left_on="date", right_on=key, by="code", direction="backward"
+    )
+    return merged.reset_index(drop=True)
+
+
 def _rewrite_dates(raw_path: Path, final_path: Path) -> None:
     """把 ClickHouse 的 Date/DateTime 整数列重写成 Arrow timestamp。
 
@@ -820,8 +1133,8 @@ def write_pool_panel(
 ) -> Dict[str, Any]:
     """生成因子运行用的 ``panel.parquet``（直接由公司库流式写入）。
 
-    ``fields`` 里带 ``fund_`` 前缀的字段会按 InfoPublDate as-of 合并进来，
-    其余字段走日频面板 SQL；这样因子生成和回测能共用同一份字段空间。
+    ``fields`` 里带 ``fund_`` / ``val_`` / ``deriv_`` 前缀的字段会分别按
+    InfoPublDate as-of、交易日、披露日 as-of 合并进来，其余字段走日频面板 SQL。
     """
     codes = [normalize_code(code) for code in codes]
     selected = list(dict.fromkeys(_panel_name(field) for field in fields))
@@ -837,20 +1150,32 @@ def write_pool_panel(
         for field in selected
         if field.startswith(VALUATION_PREFIX)
     ]
+    deriv_fields = [
+        field[len(DERIVATIVE_PREFIX):]
+        for field in selected
+        if field.startswith(DERIVATIVE_PREFIX)
+    ]
     daily_fields = [
         field
         for field in selected
-        if not field.startswith((FUNDAMENTAL_PREFIX, VALUATION_PREFIX))
+        if not field.startswith((FUNDAMENTAL_PREFIX, VALUATION_PREFIX, DERIVATIVE_PREFIX))
     ]
     if not daily_fields:
         raise ValueError("panel fields must contain at least one daily field")
     _validate_fields(daily_fields)
-    unknown = [field for field in fund_fields if field not in FUNDAMENTAL_FIELDS]
+    unknown = [
+        field for field in fund_fields
+        if field not in FUNDAMENTAL_FIELDS and field not in DERIVED_FUNDAMENTAL_FIELDS
+    ]
     if unknown:
         raise ValueError(f"unsupported fundamental fields: {unknown}")
     unknown = [field for field in val_fields if field not in VALUATION_FIELDS]
     if unknown:
         raise ValueError(f"unsupported valuation fields: {unknown}")
+    allowed_derivative = derivative_fields()
+    unknown = [field for field in deriv_fields if field not in allowed_derivative]
+    if unknown:
+        raise ValueError(f"unsupported derivative fields: {unknown}")
     settings = settings or live_db.resolve_settings()
     client = live_db._client(settings, client)
     panel_path = Path(output_path).expanduser().resolve()
@@ -868,9 +1193,9 @@ def write_pool_panel(
             max_memory_usage=settings.panel_max_memory,
         )
         _rewrite_dates(raw_path, panel_path)
-        if fund_fields or val_fields:
+        if fund_fields or val_fields or deriv_fields:
             if start_date is None or end_date is None:
-                raise ValueError("fundamental/valuation fields require start_date and end_date")
+                raise ValueError("fundamental/valuation/derivative fields require start_date and end_date")
             frame = pd.read_parquet(panel_path)
             if fund_fields:
                 fund = load_fundamentals(codes, start_date, end_date, fund_fields, settings=settings, client=client)
@@ -878,6 +1203,9 @@ def write_pool_panel(
             if val_fields:
                 valuation = load_valuation(codes, start_date, end_date, val_fields, settings=settings, client=client)
                 frame = attach_valuation(frame, valuation)
+            if deriv_fields:
+                derivatives = load_derivatives(codes, start_date, end_date, deriv_fields, settings=settings, client=client)
+                frame = attach_derivatives(frame, derivatives)
             frame.to_parquet(panel_path, index=False)
         table = pq.read_table(panel_path, columns=["date", "code"])
         rows = table.num_rows

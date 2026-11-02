@@ -1113,6 +1113,10 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
       return true;
     });
   }, [fieldsApi.data]);
+  const fieldMetaByValue = useMemo(
+    () => new Map(fieldOptions.map((field) => [field.value, field])),
+    [fieldOptions]
+  );
   const fieldCategories = [...new Set(fieldOptions.map((field) => fieldCategory(field).label))];
   const visibleFields = fieldOptions.filter((field) => {
     if (onlyUsable && field.expression === false) return false;
@@ -1230,6 +1234,16 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
 
   const submit = (values: Record<string, unknown>) => {
     const fields = (values.fields as string[]) ?? [];
+    const rawFlowFields = fields.filter(
+      (name) => fieldMetaByValue.get(name)?.period_type === "flow"
+    );
+    const quarterFlowFields = fields.filter(
+      (name) => fieldMetaByValue.get(name)?.period_type === "flow_q"
+    );
+    if (rawFlowFields.length > 0 && quarterFlowFields.length > 0) {
+      message.error("财务流量字段不能同时使用累计和单季口径，请只保留一种。");
+      return;
+    }
     const pickedOperators = (values.operators as string[]) ?? [];
     const operators = algorithm === "ppo"
       ? pickedOperators.filter((name) => genOperators.some((operator) => operator.name === name))
@@ -1362,7 +1376,11 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                 <Col span={12}><Form.Item label="股票池" name="pool" rules={[{ required: true }]}><Select options={[{ value: "liquid_500", label: "liquid_500 · 500只" }]} /></Form.Item></Col>
                 <Col span={12}><Form.Item label="运行名称" name="name" rules={[{ required: true, message: "请输入运行名称" }]}><Input /></Form.Item></Col>
               </Row>
-              <Form.Item label={`可用字段（已选 ${selectedFields.length}）`} required>
+              <Form.Item
+                label={`可用字段（已选 ${selectedFields.length}）`}
+                required
+                extra="财务流量字段需统一口径：累计（fund_X）与单季（fund_X_q）不能在同一任务中混用。"
+              >
                 <Flex gap={6} wrap align="center">
                   {selectedFields.slice(0, 8).map((field) => <Tag key={field}>{field}</Tag>)}
                   {selectedFields.length > 8 && <Tag>+{selectedFields.length - 8}</Tag>}

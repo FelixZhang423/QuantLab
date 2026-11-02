@@ -111,6 +111,32 @@ def export_pool_panel(
     }
 
 
+def fundamental_period_mode(fields: Iterable[str]) -> str:
+    """同一生成任务只能选一种财务流量口径：累计或单季。"""
+    prefix = company_source.FUNDAMENTAL_PREFIX
+    raw_flow = set()
+    quarter_flow = set()
+    for field in fields:
+        if not field.startswith(prefix):
+            continue
+        name = field[len(prefix):]
+        if name in company_source.FUNDAMENTAL_FLOW_FIELDS:
+            raw_flow.add(name)
+        elif name in company_source.DERIVED_FUNDAMENTAL_FIELDS:
+            quarter_flow.add(name)
+    if raw_flow and quarter_flow:
+        raise ValueError(
+            "forward financial fields cannot mix cumulative and single-quarter "
+            f"modes: cumulative={sorted(raw_flow)[:3]}, "
+            f"single_quarter={sorted(quarter_flow)[:3]}"
+        )
+    if quarter_flow:
+        return "single_quarter"
+    if raw_flow:
+        return "cumulative"
+    return "none"
+
+
 def prepare_factor_runtime(
     master_store: str | Path,
     pools_root: str | Path,
@@ -127,10 +153,17 @@ def prepare_factor_runtime(
     if not splits:
         raise ValueError("splits must not be empty")
     selected_fields = list(dict.fromkeys(str(field) for field in fields))
-    if "close" not in selected_fields:
-        raise ValueError("factor runtime fields must include close")
+    if not selected_fields:
+        raise ValueError("factor runtime fields must not be empty")
+    period_mode = fundamental_period_mode(selected_fields)
+    # close 只用于构造未来收益 target；用户没选它时不进入 PPO 特征空间。
+    panel_fields = list(dict.fromkeys([*selected_fields, "close"]))
     pool_manifest = load_pool_manifest(pools_root, pool_id)
     source = company_source.resolve_data_source(data_source, pool_manifest)
+    if source != "clickhouse" and any(
+        field.startswith(company_source.DERIVATIVE_PREFIX) for field in selected_fields
+    ):
+        raise ValueError("derivative fields require clickhouse data source")
     if source == "clickhouse":
         meta = company_source.meta()
     else:
@@ -144,6 +177,7 @@ def prepare_factor_runtime(
     runtime_key = {
         "pool_id": pool_id,
         "fields": selected_fields,
+        "panel_fields": panel_fields,
         "splits": split_payload,
         "max_backtrack_days": max_backtrack_days,
         "target_horizon": target_horizon,
@@ -161,7 +195,7 @@ def prepare_factor_runtime(
     if source == "clickhouse":
         panel_result = company_source.write_pool_panel(
             pool_codes,
-            selected_fields,
+            panel_fields,
             processed_dir / "panel.parquet",
             panel_start,
             panel_end,
@@ -170,7 +204,7 @@ def prepare_factor_runtime(
         panel_result = export_pool_panel(
             master_store,
             pool_codes,
-            selected_fields,
+            panel_fields,
             processed_dir / "panel.parquet",
             start_date=panel_start,
             end_date=panel_end,
@@ -186,7 +220,7 @@ def prepare_factor_runtime(
             processed_dir=processed_dir,
             output_dir=cache_dir,
             codes=pool_codes,
-            fields=selected_fields,
+            fields=panel_fields,
             start=split["cache_start"],
             end=split["cache_end"],
         )
@@ -204,6 +238,8 @@ def prepare_factor_runtime(
         "data_source": source,
         "source_signature": meta.get("source_signature"),
         "fields": selected_fields,
+        "panel_fields": panel_fields,
+        "fundamental_period_mode": period_mode,
         "pool_codes": pool_codes,
         "max_backtrack_days": max_backtrack_days,
         "target_horizon": target_horizon,
@@ -312,6 +348,8 @@ def run_factor_generation(
         "source_signature": runtime["source_signature"],
         "runtime_id": runtime_id,
         "fields": runtime.get("fields"),
+        "panel_fields": runtime.get("panel_fields"),
+        "fundamental_period_mode": runtime.get("fundamental_period_mode"),
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "accepted_count": int(getattr(runner, "accepted_count", 0)),
         "attempts": int(getattr(runner, "attempts", 0)),

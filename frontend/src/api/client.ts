@@ -41,6 +41,10 @@ export type FieldInfo = {
   panel_alias?: string | null;
   /** 库里是否能找到该列；离线时为 null */
   found_in_db?: boolean | null;
+  /** flow=累计流量，flow_q=单季流量，stock=时点值，ratio=比率 */
+  period_type?: "flow" | "flow_q" | "stock" | "ratio" | null;
+  /** 单季字段的来源累计字段 */
+  derived_from?: string | null;
 };
 
 export type StockInfo = {

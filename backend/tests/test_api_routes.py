@@ -97,15 +97,11 @@ def _catalog_entry(name, category, table, column, alias=None, description="测�
 
 
 def test_fields_endpoint_merges_catalog_and_metadata(monkeypatch):
-    deriv = "dws.f10_derivative_index_fd"
     catalog = [
         _catalog_entry("vol", "行情与技术", live_db.DAILY_TABLE, "vol", "volume"),
         _catalog_entry("ma_signal", "行情与技术", live_db.DAILY_TABLE, "ma_signal"),
         _catalog_entry("ROE", "财务原始", company_source.FUNDAMENTAL_TABLE, "ROE", "fund_ROE"),
         _catalog_entry("WROE", "财务原始", company_source.FUNDAMENTAL_TABLE, "WROE"),
-        _catalog_entry("idx_ROE", "财务衍生", deriv, "ROE"),
-        _catalog_entry("idx_InfoPublDate", "财务衍生", deriv, "InfoPublDate"),
-        _catalog_entry("ListedDate", "证券信息", "dwd.secumain", "ListedDate"),
         _catalog_entry("PB", "估值", company_source.VALUATION_TABLE, "PB", "val_PB"),
     ]
     metadata = {
@@ -113,27 +109,21 @@ def test_fields_endpoint_merges_catalog_and_metadata(monkeypatch):
         (live_db.DAILY_TABLE, "ma_signal"): {"dtype": "String", "comment": ""},
         (company_source.FUNDAMENTAL_TABLE, "ROE"): {"dtype": "Decimal(20, 0)", "comment": ""},
         (company_source.FUNDAMENTAL_TABLE, "WROE"): {"dtype": "Decimal(20, 0)", "comment": ""},
-        (deriv, "ROE"): {"dtype": "Decimal(38, 4)", "comment": ""},
-        ("dwd.secumain", "ListedDate"): {"dtype": "Date", "comment": ""},
         (company_source.VALUATION_TABLE, "PB"): {"dtype": "Decimal(18, 4)", "comment": ""},
     }
     monkeypatch.setattr(main, "_field_catalog", lambda: catalog)
     monkeypatch.setattr(main, "_field_metadata", lambda: (metadata, None))
     payload = main.get_fields()
     by_name = {field["name"]: field for field in payload["fields"]}
-    assert payload["total"] == 8
+    assert payload["total"] == 5
     assert payload["offline"] is False
     assert by_name["vol"]["status"] == "usable"
     assert by_name["vol"]["panel_alias"] == "volume"
     assert by_name["ma_signal"]["status"] == "unavailable"
     assert by_name["ROE"]["status"] == "usable" and by_name["ROE"]["panel_alias"] == "fund_ROE"
     assert by_name["WROE"]["status"] == "pending"
-    assert by_name["idx_ROE"]["status"] == "pending"
-    assert by_name["idx_InfoPublDate"]["status"] == "unavailable"
-    assert by_name["idx_InfoPublDate"]["found_in_db"] is False
-    assert by_name["ListedDate"]["status"] == "unavailable"
     assert by_name["PB"]["status"] == "usable" and by_name["PB"]["dtype"] == "Decimal(18, 4)"
-    assert payload["status_counts"] == {"usable": 3, "pending": 2, "unavailable": 3}
+    assert payload["status_counts"] == {"usable": 3, "pending": 1, "unavailable": 1}
 
 
 def test_fields_endpoint_offline_fallback(monkeypatch):
@@ -153,11 +143,68 @@ def test_fields_endpoint_offline_fallback(monkeypatch):
 
 def test_field_catalog_file_has_expected_categories():
     catalog = main._field_catalog()
-    assert len(catalog) == 446
+    assert len(catalog) == 384
     counts = {}
     for entry in catalog:
         counts[entry["category"]] = counts.get(entry["category"], 0) + 1
-    assert counts == {"行情与技术": 68, "财务原始": 87, "财务衍生": 267, "证券信息": 19, "估值": 5}
+    assert counts == {"行情与技术": 27, "财务原始": 67, "财务衍生": 248, "估值": 42}
+    assert not any(entry["name"] in {"BasicEPS", "DilutedEPS", "EPS"} for entry in catalog)
+    assert not any(entry["category"] == "证券信息" for entry in catalog)
+    assert not any(
+        entry["name"] in {"market_code", "category", "code", "timestamps",
+                          "ma_signal", "macd_signal", "kdj_signal", "strategy"}
+        for entry in catalog
+    )
+    valuation_columns = {
+        entry["column"] for entry in catalog
+        if entry["source_table"] == company_source.VALUATION_TABLE
+    }
+    assert len(company_source.VALUATION_FIELDS) == 42
+    assert valuation_columns == set(company_source.VALUATION_FIELDS)
+    assert not {"DividendRatioLYR2", "DividendRatio2", "HoldProportionPAccount"} & valuation_columns
+    assert "PE" in valuation_columns
+    assert len(company_source.FUNDAMENTAL_FIELDS) == 51
+    assert len(company_source.DERIVED_FUNDAMENTAL_FIELDS) == 16
+    assert sum(1 for entry in catalog if entry.get("panel_alias")) == 384
+    derivative_columns = {
+        entry["column"] for entry in catalog if entry["category"] == "财务衍生"
+    }
+    assert len(derivative_columns) == 248
+    assert "EndDate" not in derivative_columns
+    assert "InfoPublDate" not in derivative_columns
+    assert all(
+        entry.get("panel_alias")
+        for entry in catalog if entry["category"] == "财务衍生"
+    )
+    assert {
+        entry["name"] for entry in catalog if entry.get("period_type") == "flow_q"
+    } == set(company_source.DERIVED_FUNDAMENTAL_FIELDS)
+    assert not {
+        "ROEByReport", "InvestmentProperty", "FairValueChangeIncome",
+        "NAPSAdjusted", "DividendPayable", "TradingAssets", "WROECut",
+        "FairValueChangeIncome_q",
+    } & {entry["name"] for entry in catalog}
+    assert not {
+        "Ifsuspend", "if_up", "if_flat", "if_down", "FallOnDebut", "FallOnNAPS",
+        "StockBoard", "LimitBoard", "SurgedLimit", "DeclineLimit",
+    } & {entry["name"] for entry in catalog}
+    assert not {
+        "dif", "LowestPrice", "HighestPrice", "LowestPriceRY", "HighestPriceRY",
+        "LowestPriceRMSix", "HighestPriceRMSix", "LowestPriceYTD", "HighestPriceYTD",
+        "HighestPriceRMThree", "LowestPriceRMThree", "LowestPriceRM", "HighestPriceRM",
+        "HighestPriceTM", "LowestPriceTM", "HighestPriceRW", "LowestPriceRW",
+        "HighestPriceTW", "dea", "LowestPriceTW", "macd", "FallingDownDays",
+        "RisingUpDays",
+    } & {entry["name"] for entry in catalog}
+    aliased_raw_columns = {
+        entry["column"] for entry in catalog
+        if entry["category"] == "财务原始" and entry.get("panel_alias")
+    }
+    assert aliased_raw_columns == set(company_source.FUNDAMENTAL_FIELDS)
+    assert sum(
+        1 for entry in catalog
+        if entry["category"] == "财务原始" and not entry.get("panel_alias")
+    ) == 0
 
 
 def _stub_universe(monkeypatch, items=None):

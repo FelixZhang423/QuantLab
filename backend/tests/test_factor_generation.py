@@ -5,11 +5,29 @@ from pathlib import Path
 import pandas as pd
 
 from custom_bt.data import build_master_store
-from custom_bt.factor_generation import prepare_factor_runtime, run_factor_generation
+from custom_bt.factor_generation import (
+    fundamental_period_mode,
+    prepare_factor_runtime,
+    run_factor_generation,
+)
 from custom_bt.pools import create_pool
 
 
 class FactorGenerationTests(unittest.TestCase):
+    def test_fundamental_period_mode_rejects_mixed_basis(self):
+        self.assertEqual(
+            fundamental_period_mode(["close", "fund_OperatingReenue"]),
+            "cumulative",
+        )
+        self.assertEqual(
+            fundamental_period_mode(["close", "fund_OperatingReenue_q"]),
+            "single_quarter",
+        )
+        with self.assertRaises(ValueError):
+            fundamental_period_mode([
+                "close", "fund_OperatingReenue", "fund_OperatingReenue_q",
+            ])
+
     def test_prepare_factor_runtime_creates_pool_bound_split_caches(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -48,7 +66,7 @@ class FactorGenerationTests(unittest.TestCase):
                 pools_root=root / "pools",
                 pool_id=pool["pool_id"],
                 runtime_root=root / "factor_runtime",
-                fields=["close", "volume", "amount"],
+                fields=["volume", "amount"],
                 splits={
                     "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-04"},
                     "valid": {"cache_start": "2024-01-02", "cache_end": "2024-01-05"},
@@ -56,6 +74,8 @@ class FactorGenerationTests(unittest.TestCase):
             )
 
             self.assertEqual(result["pool_id"], pool["pool_id"])
+            self.assertEqual(result["fields"], ["volume", "amount"])
+            self.assertIn("close", result["panel_fields"])
             self.assertTrue((Path(result["processed_dir"]) / "panel.parquet").exists())
             self.assertTrue((Path(result["splits"]["train"]["cache_dir"]) / "manifest.json").exists())
             self.assertTrue((Path(result["splits"]["valid"]["cache_dir"]) / "manifest.json").exists())
