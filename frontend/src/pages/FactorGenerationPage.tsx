@@ -59,6 +59,15 @@ const STAGE_LABELS: Record<string, string> = Object.fromEntries(
 const generationFieldName = (field: FieldInfo) =>
   field.panel_alias ?? (field.name === "vol" ? "volume" : field.name);
 
+const FIELD_PERIOD_LABELS: Record<string, string> = {
+  flow: "累计",
+  flow_q: "单季",
+  stock: "时点",
+  ratio: "比率",
+  daily: "日频",
+  derived: "派生",
+};
+
 const HiddenValue = () => null;
 
 const asNumber = (value: unknown, fallback = 0): number => {
@@ -190,6 +199,9 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
   const [fieldDraft, setFieldDraft] = useState<string[]>([]);
   const [operatorDraft, setOperatorDraft] = useState<string[]>([]);
   const [fieldCategoryFilter, setFieldCategoryFilter] = useState("all");
+  const [fieldThemeFilter, setFieldThemeFilter] = useState("all");
+  const [fieldPeriodFilter, setFieldPeriodFilter] = useState("all");
+  const [fieldUnitFilter, setFieldUnitFilter] = useState("all");
   const [onlyUsable, setOnlyUsable] = useState(true);
   const [fieldSearch, setFieldSearch] = useState("");
   const [operatorCategory, setOperatorCategory] = useState("all");
@@ -226,10 +238,19 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
     [fieldOptions],
   );
   const fieldCategories = [...new Set(fieldOptions.map((field) => fieldCategory(field).label))];
+  const fieldScope = fieldCategoryFilter === "all"
+    ? fieldOptions
+    : fieldOptions.filter((field) => fieldCategory(field).label === fieldCategoryFilter);
+  const fieldThemes = [...new Set(fieldScope.map((field) => field.theme).filter(Boolean))].sort() as string[];
+  const fieldPeriods = [...new Set(fieldScope.map((field) => field.period_type).filter(Boolean))].sort() as string[];
+  const fieldUnits = [...new Set(fieldScope.map((field) => field.unit).filter(Boolean))].sort() as string[];
   const visibleFields = fieldOptions.filter((field) => {
     if (onlyUsable && field.expression === false) return false;
     if (fieldCategoryFilter !== "all" && fieldCategory(field).label !== fieldCategoryFilter) return false;
-    return `${field.name}${field.description}`.toLowerCase().includes(fieldSearch.toLowerCase());
+    if (fieldThemeFilter !== "all" && field.theme !== fieldThemeFilter) return false;
+    if (fieldPeriodFilter !== "all" && field.period_type !== fieldPeriodFilter) return false;
+    if (fieldUnitFilter !== "all" && field.unit !== fieldUnitFilter) return false;
+    return `${field.name}${field.description}${field.theme ?? ""}`.toLowerCase().includes(fieldSearch.toLowerCase());
   });
 
   const allOperators = useMemo(() => operatorsApi.data?.operators ?? [], [operatorsApi.data]);
@@ -1025,8 +1046,36 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
           <FilterChips
             items={[{ key: "all", label: "全部", count: fieldOptions.length }, ...fieldCategories.map((category) => ({ key: category, label: category, count: fieldOptions.filter((field) => fieldCategory(field).label === category).length }))]}
             value={fieldCategoryFilter}
-            onChange={setFieldCategoryFilter}
+            onChange={(value) => {
+              setFieldCategoryFilter(value);
+              setFieldThemeFilter("all");
+              setFieldPeriodFilter("all");
+              setFieldUnitFilter("all");
+            }}
           />
+          <Flex gap={8} wrap align="center">
+            <Select
+              size="small"
+              value={fieldThemeFilter}
+              onChange={setFieldThemeFilter}
+              style={{ width: 170 }}
+              options={[{ value: "all", label: "全部主题" }, ...fieldThemes.map((item) => ({ value: item, label: item }))]}
+            />
+            <Select
+              size="small"
+              value={fieldPeriodFilter}
+              onChange={setFieldPeriodFilter}
+              style={{ width: 120 }}
+              options={[{ value: "all", label: "全部口径" }, ...fieldPeriods.map((item) => ({ value: item, label: FIELD_PERIOD_LABELS[item] ?? item }))]}
+            />
+            <Select
+              size="small"
+              value={fieldUnitFilter}
+              onChange={setFieldUnitFilter}
+              style={{ width: 110 }}
+              options={[{ value: "all", label: "全部单位" }, ...fieldUnits.map((item) => ({ value: item, label: item }))]}
+            />
+          </Flex>
           <Flex justify="space-between" gap={12} wrap align="center">
             <Space size={8}><Switch size="small" checked={onlyUsable} onChange={setOnlyUsable} /><Text type="secondary">仅显示可用于因子表达式的字段</Text></Space>
             <Input.Search allowClear value={fieldSearch} onChange={(event) => setFieldSearch(event.target.value)} placeholder="搜索字段名 / 说明" style={{ width: 260 }} />

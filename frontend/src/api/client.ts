@@ -41,8 +41,16 @@ export type FieldInfo = {
   panel_alias?: string | null;
   /** 库里是否能找到该列；离线时为 null */
   found_in_db?: boolean | null;
-  /** flow=累计流量，flow_q=单季流量，stock=时点值，ratio=比率 */
-  period_type?: "flow" | "flow_q" | "stock" | "ratio" | null;
+  /** flow=累计流量，flow_q=单季流量，stock=时点值，ratio=比率，daily=日频，derived=派生指标 */
+  period_type?: "flow" | "flow_q" | "stock" | "ratio" | "daily" | "derived" | null;
+  /** 二级业务主题，例如 利润表/盈利能力、成长能力、偿债能力 */
+  theme?: string | null;
+  /** 单位，例如 元、元/股、%、倍、天 */
+  unit?: string | null;
+  /** 量纲，例如 money、price、percent、ratio、shares、count */
+  dimension?: string | null;
+  /** 是否为 _q 派生字段 */
+  derived?: boolean;
   /** 单季字段的来源累计字段 */
   derived_from?: string | null;
 };
