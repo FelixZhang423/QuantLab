@@ -315,6 +315,10 @@ def get_fields() -> Dict[str, Any]:
                 "panel_alias": entry.get("panel_alias"),
                 "found_in_db": found,
                 "period_type": entry.get("period_type"),
+                "theme": entry.get("theme"),
+                "unit": entry.get("unit"),
+                "dimension": entry.get("dimension"),
+                "derived": bool(entry.get("derived")),
                 "derived_from": entry.get("derived_from"),
             }
         )

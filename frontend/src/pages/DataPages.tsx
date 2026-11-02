@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Alert, Button, Card, Checkbox, Col, Descriptions, Flex, Form, Input, InputNumber, message, Pagination, Row, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
+  Alert, Button, Card, Checkbox, Col, Descriptions, Flex, Form, Input, InputNumber, message, Pagination, Row, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
 } from "antd";
 import type { TableColumnsType } from "antd";
 import { CloudUploadOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
@@ -17,6 +17,8 @@ const PERIOD_TYPE_LABELS: Record<string, string> = {
   flow_q: "单季",
   stock: "时点",
   ratio: "比率",
+  daily: "日频",
+  derived: "派生",
 };
 const fmtInt = (value: number | null | undefined) => (value == null ? "—" : value.toLocaleString("zh-CN"));
 const fmtPrice = (value: number | null) => (value == null ? "—" : value.toFixed(2));
@@ -135,6 +137,9 @@ function FilterChips<T extends string>({ items, value, onChange }: { items: { ke
 
 export function FieldsPage() {
   const [category, setCategory] = useState("all");
+  const [theme, setTheme] = useState("all");
+  const [periodType, setPeriodType] = useState("all");
+  const [unit, setUnit] = useState("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -142,11 +147,20 @@ export function FieldsPage() {
   const fields = fieldsApi.data?.fields ?? [];
   const categoryOrder = ["行情与技术", "估值", "财务原始", "财务衍生", "其他"];
   const categories = categoryOrder.filter((item) => fields.some((field) => fieldCategory(field).label === item));
+  const categoryFields = category === "all"
+    ? fields
+    : fields.filter((field) => fieldCategory(field).label === category);
+  const themes = [...new Set(categoryFields.map((field) => field.theme).filter(Boolean))].sort() as string[];
+  const periodTypes = [...new Set(categoryFields.map((field) => field.period_type).filter(Boolean))].sort() as string[];
+  const units = [...new Set(categoryFields.map((field) => field.unit).filter(Boolean))].sort() as string[];
 
   const filtered = fields
     .filter((field) => {
       if (category !== "all" && fieldCategory(field).label !== category) return false;
-      const haystack = `${field.name}${field.description}${field.panel_alias ?? ""}${field.source}`.toLowerCase();
+      if (theme !== "all" && field.theme !== theme) return false;
+      if (periodType !== "all" && field.period_type !== periodType) return false;
+      if (unit !== "all" && field.unit !== unit) return false;
+      const haystack = `${field.name}${field.description}${field.panel_alias ?? ""}${field.source}${field.theme ?? ""}`.toLowerCase();
       return haystack.includes(search.toLowerCase());
     })
     .sort((a, b) => {
@@ -155,10 +169,20 @@ export function FieldsPage() {
       return a.name.localeCompare(b.name);
     });
 
-  const active = category !== "all" || search !== "";
+  const active = category !== "all" || theme !== "all" || periodType !== "all" || unit !== "all" || search !== "";
   const reset = () => {
     setCategory("all");
+    setTheme("all");
+    setPeriodType("all");
+    setUnit("all");
     setSearch("");
+    setPage(1);
+  };
+  const resetCategory = (key: string) => {
+    setCategory(key);
+    setTheme("all");
+    setPeriodType("all");
+    setUnit("all");
     setPage(1);
   };
 
@@ -174,6 +198,12 @@ export function FieldsPage() {
       },
     },
     {
+      title: "主题",
+      dataIndex: "theme",
+      width: 130,
+      render: (value) => (value ? <Tag color="purple">{value}</Tag> : <Text type="secondary">—</Text>),
+    },
+    {
       title: "口径",
       key: "period_type",
       width: 90,
@@ -183,7 +213,12 @@ export function FieldsPage() {
           : <Text type="secondary">—</Text>
       ),
     },
-    { title: "状态", key: "status", width: 110, render: () => <Tag color="green">可用</Tag> },
+    {
+      title: "单位",
+      dataIndex: "unit",
+      width: 80,
+      render: (value) => (value ? <Text>{value}</Text> : <Text type="secondary">—</Text>),
+    },
     {
       title: (
         <Tooltip title="因子/回测面板里实际使用的列名；与来源列不同时会加前缀（ROE→fund_ROE、PB→val_PB、vol→volume）。“—”表示暂未接入面板。">
@@ -215,7 +250,33 @@ export function FieldsPage() {
             <FilterChips
               items={[{ key: "all", label: "全部", count: fields.length }, ...categories.map((item) => ({ key: item, label: item, count: fields.filter((field) => fieldCategory(field).label === item).length }))]}
               value={category}
-              onChange={(key) => { setCategory(key); setPage(1); }}
+              onChange={resetCategory}
+            />
+          </Flex>
+          <Flex gap={12} align="center" wrap>
+            <Text type="secondary" style={{ width: 48 }}>主题</Text>
+            <Select
+              size="small"
+              value={theme}
+              onChange={(value) => { setTheme(value); setPage(1); }}
+              style={{ width: 180 }}
+              options={[{ value: "all", label: "全部主题" }, ...themes.map((item) => ({ value: item, label: item }))]}
+            />
+            <Text type="secondary">口径</Text>
+            <Select
+              size="small"
+              value={periodType}
+              onChange={(value) => { setPeriodType(value); setPage(1); }}
+              style={{ width: 130 }}
+              options={[{ value: "all", label: "全部口径" }, ...periodTypes.map((item) => ({ value: item, label: PERIOD_TYPE_LABELS[item] ?? item }))]}
+            />
+            <Text type="secondary">单位</Text>
+            <Select
+              size="small"
+              value={unit}
+              onChange={(value) => { setUnit(value); setPage(1); }}
+              style={{ width: 120 }}
+              options={[{ value: "all", label: "全部单位" }, ...units.map((item) => ({ value: item, label: item }))]}
             />
           </Flex>
           <Flex justify="space-between" gap={16} wrap align="center">

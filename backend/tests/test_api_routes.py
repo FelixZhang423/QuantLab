@@ -148,6 +148,7 @@ def test_field_catalog_file_has_expected_categories():
     for entry in catalog:
         counts[entry["category"]] = counts.get(entry["category"], 0) + 1
     assert counts == {"行情与技术": 27, "财务原始": 67, "财务衍生": 248, "估值": 42}
+    assert all(entry.get("theme") and entry.get("unit") and entry.get("dimension") for entry in catalog)
     assert not any(entry["name"] in {"BasicEPS", "DilutedEPS", "EPS"} for entry in catalog)
     assert not any(entry["category"] == "证券信息" for entry in catalog)
     assert not any(
