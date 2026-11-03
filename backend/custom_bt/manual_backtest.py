@@ -14,7 +14,7 @@ import re
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 
 import pandas as pd
 
@@ -105,6 +105,8 @@ def run_manual_backtest(
     data_source: Optional[str] = None,
     backtest_id: Optional[str] = None,
     master_store: Optional[str | Path] = None,
+    pool_manifest: Optional[Mapping[str, Any]] = None,
+    pool_codes: Optional[Iterable[str]] = None,
     progress_callback: Optional[ProgressCallback] = None,
 ) -> Dict[str, Any]:
     """执行一次手动回测，返回可写入任务状态的摘要。"""
@@ -115,7 +117,11 @@ def run_manual_backtest(
         raise ValueError("backtest_config must be a mapping")
     config = BacktestConfig(**dict(backtest_config))
 
-    pool_manifest = load_pool_manifest(pools_root, pool_id)
+    pool_manifest = (
+        dict(pool_manifest)
+        if pool_manifest is not None
+        else load_pool_manifest(pools_root, pool_id)
+    )
     source = company_source.resolve_data_source(data_source, pool_manifest)
     if source == "clickhouse":
         source_meta = company_source.meta()
@@ -125,7 +131,13 @@ def run_manual_backtest(
     if pool_manifest.get("source_signature") != source_signature:
         raise ValueError("pool source signature does not match data source")
 
-    codes = load_pool_codes(pools_root, pool_id)
+    codes = (
+        [str(code).strip() for code in pool_codes if str(code).strip()]
+        if pool_codes is not None
+        else load_pool_codes(pools_root, pool_id)
+    )
+    if not codes:
+        raise ValueError("pool has no stock codes")
     _emit(
         progress_callback,
         {

@@ -48,7 +48,7 @@
 | `GET /api/factor-runs` `/{run_id}` | 因子回测（运行选择）/ 因子生成（运行历史） | **本地 `factor_runs/` + MySQL `factor_runs` 合并**：本地 `factor_run.json` + `accepted_factors.jsonl`，MySQL 提供训练元数据与跨机器记录 | 合格因子清单、生成指标、训练时长 / 设备 / 超参数 |
 | `POST /api/factor-backtests` | 因子回测（提交） | 复用 `backtest_accepted_factors`，按 pool/run 的 `data_source` 读公司库面板（旧本地池仍读 `data_cache/master`） | 202 + `job_id`（后台任务） |
 | `GET /api/factor-backtests` `/{backtest_id}` `/.../files/{file}` | 因子回测（批次结果） | `outputs/saved_backtests/factor/<pool>/<run>/<backtest_id>/` | 批次汇总行、失败明细与 CSV 下载 |
-| `POST /api/manual-backtests` | 手动回测（提交） | 按股票池 manifest 读公司库面板（旧本地池仍读 `data_cache/master`），后台执行 `run_manual_backtest` | 202 + `job_id`（后台任务） |
+| `POST /api/manual-backtests` | 手动回测（提交） | 股票池本地目录优先、MySQL 兜底；按 manifest 读公司库面板（旧本地池仍读 `data_cache/master`），后台执行 `run_manual_backtest` | 202 + `job_id`（后台任务） |
 | `GET /api/jobs/{job_id}` | 手动回测（进度） | `outputs/jobs/<job_id>/status.json` 的 `progress.stage` + `message` | loading_panel → evaluating → running → finished |
 | `GET /api/results/detail?run_key=...`、`GET /api/results/file` | 手动 / 因子回测结果 | 任意层级的结果目录（`run_key` 相对路径） | 手动结果 `manual/<job_id>/<run_name>` 直接复用详情/下载 |
 | `GET /api/results` `/{run_name}` `/{run_name}/files/{file}` | 回测结果（兼容旧扁平名） | `outputs/saved_backtests/*/` | 1 个已保存回测（含净值/指标/文件下载） |

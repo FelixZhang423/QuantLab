@@ -134,6 +134,43 @@ class ManualBacktestTests(unittest.TestCase):
                 ["loading_panel", "evaluating", "running", "finished"],
             )
 
+    def test_accepts_pool_manifest_and_codes_without_local_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = {
+                "pool_id": "pool_mysql",
+                "name": "mysql_only",
+                "data_source": "clickhouse",
+                "source_signature": company_source.SOURCE_SIGNATURE,
+                "selection_start": "2024-01-01",
+                "selection_end": "2024-01-25",
+            }
+            with patch.object(
+                company_source,
+                "meta",
+                return_value={
+                    "data_source": "clickhouse",
+                    "source_signature": company_source.SOURCE_SIGNATURE,
+                    "date_min": "2024-01-01",
+                    "date_max": "2024-01-25",
+                },
+            ), patch.object(company_source, "load_panel", return_value=_panel()) as load_panel:
+                result = run_manual_backtest(
+                    root / "pools",
+                    root / "outputs",
+                    "mysql_pool_run",
+                    "close",
+                    _config(),
+                    "pool_mysql",
+                    backtest_id="job_mysql",
+                    pool_manifest=manifest,
+                    pool_codes=["000001", "600000"],
+                )
+
+            self.assertEqual(result["pool_id"], "pool_mysql")
+            load_panel.assert_called_once()
+            self.assertEqual(load_panel.call_args.args[0], ["000001", "600000"])
+
     def test_local_pool_falls_back_to_master_store(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

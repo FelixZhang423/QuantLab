@@ -929,9 +929,9 @@ def _pool_generation_window(
 def _generation_pool_source(
     pool_id: str,
 ) -> tuple[Dict[str, Any], List[str], str]:
-    """读取因子生成所需的池清单与代码：本地目录优先，MySQL 兜底。
+    """读取因子生成/手动回测所需的池清单与代码：本地目录优先，MySQL 兜底。
 
-    股票池列表以 MySQL 为准并合并本地池，因此仅存在于 MySQL 的池也必须能生成因子。
+    股票池列表以 MySQL 为准并合并本地池，因此仅存在于 MySQL 的池也必须能生成因子或回测。
     """
     pool_dir = _safe_child(POOLS_ROOT, pool_id)
     manifest_path = pool_dir / "manifest.json"
@@ -2231,8 +2231,7 @@ def create_manual_backtest(request: ManualBacktestRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     expression = _validate_manual_expression(request.expression)
 
-    pool_dir = _safe_child(POOLS_ROOT, request.pool_id)
-    pool_manifest = _manifest_or_404(pool_dir, "manifest.json", "pool")
+    pool_manifest, pool_codes, _pool_storage = _generation_pool_source(request.pool_id)
     source = company_source.resolve_data_source(None, pool_manifest)
     if source == "clickhouse":
         try:
@@ -2301,6 +2300,8 @@ def create_manual_backtest(request: ManualBacktestRequest) -> Dict[str, Any]:
         "run_name": run_name,
         "expression": expression,
         "backtest_config": backtest_config,
+        "pool_manifest": pool_manifest,
+        "pool_codes": pool_codes,
     }
 
     try:

@@ -1433,6 +1433,47 @@ def test_create_manual_backtest_builds_company_payload(master, tmp_path, monkeyp
     assert response["request_summary"]["top_k"] == 5
 
 
+def test_create_manual_backtest_uses_mysql_pool_when_local_files_are_missing(master, monkeypatch):
+    _stub_company_meta(monkeypatch)
+    monkeypatch.setattr(
+        main.mysql_store,
+        "fetch_pool",
+        lambda pool_id: {
+            "manifest": {
+                "pool_id": pool_id,
+                "name": "mysql_only",
+                "data_source": "clickhouse",
+                "source_signature": company_source.SOURCE_SIGNATURE,
+                "selection_start": "2024-01-01",
+                "selection_end": "2024-01-25",
+            },
+            "codes": ["000001", "600000"],
+        },
+    )
+    captured = {}
+
+    def fake_create(jobs_root, operation, payload):
+        captured["payload"] = payload
+        return _make_job_dir(jobs_root)
+
+    monkeypatch.setattr(main, "create_platform_job", fake_create)
+    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+
+    response = main.create_manual_backtest(
+        main.ManualBacktestRequest(
+            expression="close",
+            pool_id="pool_mysql",
+            run_name="mysql_pool_run",
+            start_date="2024-01-01",
+            end_date="2024-01-25",
+        )
+    )
+
+    assert response["job_id"] == "job_123"
+    assert captured["payload"]["pool_codes"] == ["000001", "600000"]
+    assert captured["payload"]["pool_manifest"]["source_signature"] == company_source.SOURCE_SIGNATURE
+
+
 def test_create_manual_backtest_warns_when_range_exceeds_company_source(master, tmp_path, monkeypatch):
     _write_manual_pool(main.POOLS_ROOT)
     _stub_company_meta(monkeypatch)
