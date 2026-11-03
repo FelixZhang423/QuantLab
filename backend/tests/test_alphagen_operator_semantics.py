@@ -27,6 +27,7 @@ from single_factor._vendor.alphagen.data.expression import (  # noqa: E402
     Not,
     NotEqual,
     Or,
+    Pow,
     Quantile,
     Reverse,
     Scale,
@@ -73,6 +74,30 @@ def test_signed_power():
         torch.tensor([0.5, 2.0, 0.5]),
     )
     assert_close(actual, torch.tensor([-2.0, -1.0, 2.0]))
+
+
+def test_power_guards_clamp_exponent_and_reject_overflow():
+    pow_operator = Pow(Constant(1.0), Constant(1.0))
+    assert_close(
+        pow_operator._apply(torch.tensor([2.0]), torch.tensor([10.0])),
+        torch.tensor([8.0]),
+    )
+    assert_close(
+        pow_operator._apply(torch.tensor([200.0]), torch.tensor([3.0])),
+        torch.tensor([NAN]),
+        equal_nan=True,
+    )
+
+    signed = SignedPower(Constant(1.0), Constant(1.0))
+    assert_close(
+        signed._apply(torch.tensor([-2.0]), torch.tensor([-10.0])),
+        torch.tensor([-0.125]),
+    )
+    assert_close(
+        signed._apply(torch.tensor([-200.0]), torch.tensor([3.0])),
+        torch.tensor([NAN]),
+        equal_nan=True,
+    )
 
 
 def test_cross_section_zscore_and_scale():

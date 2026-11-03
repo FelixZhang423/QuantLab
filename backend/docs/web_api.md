@@ -86,7 +86,7 @@
 > 2026-10-14 起，这两个函数的实现已搬到独立库 **`quantops/`**（算子唯一实现，库路径 `../quantops`）：`custom_bt/expressions.py` 与 `custom_bt/operator_registry.py` 只剩转发，`expressions.OPERATORS is quantops.operators.OPERATORS`。**本端点响应逐字节不变**（迁移前后 `/api/operators` JSON diff 为空）。改算子请去 `quantops/quantops/operators.py`；`custom_bt/docs.py` 仍是中文元数据的源头（`quantops/metadata.py` 存副本，两边由 `tests/test_quantops_metadata_parity.py` 锁死）。
 
 - 分类分布：时间序列 36、数学运算 18、逻辑判断 12、横截面 6、分组 6、信号转换 2、向量 2
-- 其中 **64 个**可进入因子生成（页面显示「可生成」标签）
+- 其中 **62 个**可进入因子生成（页面显示「可生成」标签）
 
 ### 2.5 股票池（1 个：liquid_500）
 

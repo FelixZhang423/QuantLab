@@ -13,6 +13,7 @@ from custom_bt.factor_generation import (
     run_factor_generation,
 )
 from custom_bt.pools import create_pool
+from quantops.registry import generation_operator_names
 
 
 class FactorGenerationTests(unittest.TestCase):
@@ -58,11 +59,13 @@ class FactorGenerationTests(unittest.TestCase):
 
         default_classes, default_names = resolve_generation_operators(None)
         self.assertIsNone(default_classes)
-        self.assertEqual(len(default_names), 22)
+        self.assertEqual(len(default_names), len(generation_operator_names()))
         self.assertIn("ts_corr", default_names)
 
         with self.assertRaisesRegex(ValueError, "unsupported"):
             resolve_generation_operators(["not_an_operator"])
+        with self.assertRaisesRegex(ValueError, "not enabled"):
+            resolve_generation_operators(["ts_product"])
 
     def test_prepare_factor_runtime_creates_pool_bound_split_caches(self):
         with tempfile.TemporaryDirectory() as tmp:

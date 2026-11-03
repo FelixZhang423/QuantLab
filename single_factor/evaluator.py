@@ -20,6 +20,7 @@ class SegmentMetrics:
     icir: float
     coverage: float
     valid_days: int
+    degenerate: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,24 @@ class SingleFactorEvaluator:
                 icir=float("nan"),
                 coverage=coverage,
                 valid_days=0,
+            )
+
+        # 横截面几乎不变或大面积 inf 的表达式没有可交易信号，先判负，避免 IC 噪声。
+        mean = torch.nanmean(values, dim=1, keepdim=True)
+        std = torch.sqrt(torch.nanmean((values - mean) ** 2, dim=1))
+        zero_std_ratio = float((std[valid_days] == 0).float().mean().item())
+        inf_ratio = float(torch.isinf(values).float().mean().item())
+        if zero_std_ratio > 0.8 or inf_ratio > 0.05:
+            return SegmentMetrics(
+                ic=float("nan"),
+                rank_ic=float("nan"),
+                icir=float("nan"),
+                coverage=coverage,
+                valid_days=int(valid_days.sum().item()),
+                degenerate=(
+                    f"degenerate cross-section (zero_std_ratio={zero_std_ratio:.2f}, "
+                    f"inf_ratio={inf_ratio:.2f})"
+                ),
             )
 
         ics = batch_pearsonr(values, target)[valid_days]
@@ -114,6 +133,8 @@ class SingleFactorEvaluator:
 
     def _accept(self, segments: Dict[str, SegmentMetrics]) -> Optional[str]:
         train = segments["train"]
+        if train.degenerate:
+            return train.degenerate
         if train.coverage < self.quality.min_coverage:
             return f"train coverage below {self.quality.min_coverage:.3f}"
         if self._threshold_failed(train.ic, self.quality.min_train_ic):
@@ -124,6 +145,8 @@ class SingleFactorEvaluator:
         for name, threshold in (("valid", self.quality.min_valid_ic), ("test", self.quality.min_test_ic)):
             if name not in segments:
                 continue
+            if segments[name].degenerate:
+                return f"{name}: {segments[name].degenerate}"
             if segments[name].coverage < self.quality.min_coverage:
                 return f"{name} coverage below {self.quality.min_coverage:.3f}"
             if self._threshold_failed(segments[name].ic, threshold):

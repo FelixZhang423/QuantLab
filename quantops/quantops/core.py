@@ -130,8 +130,20 @@ def _densify(x: pd.Series) -> pd.Series:
     return pd.Series(codes, index=x.index)
 
 
+def _guard_power(result: Any) -> Any:
+    # 防止 PPO 搜索被极端幂值主导：超过 1e6 的结果视为无效。
+    if isinstance(result, pd.Series):
+        return result.where(result.abs() <= 1e6)
+    return np.where(np.abs(result) <= 1e6, result, np.nan)
+
+
+def _power(x: pd.Series, y: Any) -> pd.Series:
+    return _guard_power(np.power(x, np.clip(y, -3, 3)))
+
+
 def _signed_power(x: pd.Series, y: Any) -> pd.Series:
-    return np.sign(x) * np.power(np.abs(x), y)
+    exponent = np.clip(y, -3, 3)
+    return _guard_power(np.sign(x) * np.power(np.abs(x), exponent))
 
 
 def _normalize(x: pd.Series, useStd: bool = False, limit: float = 0.0) -> pd.Series:

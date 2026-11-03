@@ -32,9 +32,9 @@ class OperatorRegistryTests(unittest.TestCase):
                 "Sign", "CSRank", "Pow", "Skew", "Kurt", "Rank",
                 "Inverse", "Reverse", "Sqrt", "SignedPower",
                 "ZScore", "Scale", "Winsorize", "Normalize", "Quantile",
-                "DaysFromLastChange", "Hump", "TSStep",
+                "DaysFromLastChange", "Hump",
                 "TSArgMax", "TSArgMin", "TSAvDiff", "TSBackfill",
-                "TSCountNans", "TSDecayLinear", "TSProduct", "TSQuantile",
+                "TSCountNans", "TSDecayLinear", "TSQuantile",
                 "TSScale", "TSZScore", "KthElement", "LastDiffValue",
                 "TSRegression",
                 "And", "Or", "Not", "Equal", "NotEqual",
@@ -42,7 +42,9 @@ class OperatorRegistryTests(unittest.TestCase):
                 "IsNan", "IfElse",
             } <= names
         )
-        self.assertEqual(len(classes), 64)
+        self.assertEqual(len(classes), 62)
+        self.assertNotIn("TSProduct", names)
+        self.assertNotIn("TSStep", names)
 
     def test_new_alphagen_classes_map_to_local_implementations(self):
         expected = {

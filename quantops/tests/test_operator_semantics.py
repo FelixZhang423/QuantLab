@@ -186,6 +186,15 @@ def test_arithmetic_missing_semantics(missing_panel):
     assert np.allclose(values("densify(industry)", missing_panel), [0, 0, 0, 0])
 
 
+def test_power_guards_clamp_exponent_and_reject_overflow(missing_panel):
+    assert np.allclose(values("power(close, 10)", missing_panel), [1, 8, 27, 64])
+    assert np.allclose(values("signed_power(close, -10)", missing_panel), [1, 1 / 8, 1 / 27, 1 / 64])
+
+    big = missing_panel.copy()
+    big.loc[big["code"] == "000001", "close"] = 200.0
+    assert np.isnan(values("power(close, 3)", big)[0])
+
+
 def test_densify_sparse_labels(missing_panel):
     sparse = missing_panel.copy()
     sparse.loc[sparse["code"] == "000002", "industry"] = 2.0

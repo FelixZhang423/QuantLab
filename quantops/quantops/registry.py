@@ -75,7 +75,8 @@ _CORE_DEFINITIONS: Tuple[OperatorDefinition, ...] = (
     OperatorDefinition("ts_backfill", "time_series", "Forward-fill missing values per stock with limit n.", "ts_backfill(close,5)", 2, "TSBackfill", "ts_backfill", True, True, ("TSBackfill",)),
     OperatorDefinition("ts_count_nans", "time_series", "Rolling count of NaN values per stock.", "ts_count_nans(close,20)", 2, "TSCountNans", "ts_count_nans", True, True, ("TSCountNans",)),
     OperatorDefinition("ts_decay_linear", "time_series", "Linearly weighted rolling mean per stock.", "ts_decay_linear(close,10)", 2, "TSDecayLinear", "ts_decay_linear", True, True, ("TSDecayLinear",)),
-    OperatorDefinition("ts_product", "time_series", "Rolling product per stock.", "ts_product(close,5)", 2, "TSProduct", "ts_product", True, True, ("TSProduct",)),
+    # PPO 禁用：长窗口乘积数值爆炸；人工表达式仍可使用。
+    OperatorDefinition("ts_product", "time_series", "Rolling product per stock.", "ts_product(close,5)", 2, "TSProduct", "ts_product", False, True, ("TSProduct",)),
     OperatorDefinition("ts_quantile", "time_series", "Map rolling rank to a gaussian distribution.", "ts_quantile(close,20)", 2, "TSQuantile", "ts_quantile", True, True, ("TSQuantile",)),
     OperatorDefinition("ts_scale", "time_series", "Rolling min-max scale per stock.", "ts_scale(close,20)", 2, "TSScale", "ts_scale", True, True, ("TSScale",)),
     OperatorDefinition("ts_zscore", "time_series", "Rolling z-score per stock.", "ts_zscore(close,20)", 2, "TSZScore", "ts_zscore", True, True, ("TSZScore",)),
@@ -87,7 +88,8 @@ _CORE_DEFINITIONS: Tuple[OperatorDefinition, ...] = (
     OperatorDefinition("ts_covariance", "time_series", "Rolling covariance per stock.", "ts_covariance(close,volume,20)", 3, "Cov", "ts_covariance", True, True, ("Cov",)),
     OperatorDefinition("ts_corr", "time_series", "Rolling correlation per stock.", "ts_corr(close,volume,20)", 3, "Corr", "ts_corr", True, True, ("Corr",)),
     OperatorDefinition("ts_regression", "time_series", "Rolling regression slope of y on x per stock.", "ts_regression(close,volume,20)", 3, "TSRegression", "ts_regression", True, True, ("TSRegression",)),
-    OperatorDefinition("ts_step", "time_series", "Per-stock row number starting from 0.", "ts_step(close)", 1, "TSStep", "ts_step", True, True, ("TSStep",)),
+    # PPO 禁用：每只股票的时间序号与横截面 IC 无关，只会稀释搜索。
+    OperatorDefinition("ts_step", "time_series", "Per-stock row number starting from 0.", "ts_step(close)", 1, "TSStep", "ts_step", False, True, ("TSStep",)),
 )
 
 

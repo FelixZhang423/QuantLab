@@ -476,12 +476,15 @@ class Div(BinaryOperator):
 
 
 class Pow(BinaryOperator):
-    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor: return lhs ** rhs
+    def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor:
+        result = lhs ** rhs.clamp(-3, 3)
+        return torch.where(result.abs() > 1e6, torch.full_like(result, torch.nan), result)
 
 
 class SignedPower(BinaryOperator):
     def _apply(self, lhs: Tensor, rhs: Tensor) -> Tensor:
-        return lhs.sign() * lhs.abs() ** rhs
+        result = lhs.sign() * lhs.abs() ** rhs.clamp(-3, 3)
+        return torch.where(result.abs() > 1e6, torch.full_like(result, torch.nan), result)
 
 
 class Greater(BinaryOperator):
