@@ -1,9 +1,9 @@
 # clickhouse = 直接读公司库；local = 旧本地主缓存（仅保留兼容）
 data_source: clickhouse
-master_store: "../data_cache/master"
-pools_root: "../data_cache/pools"
-runtime_root: "../data_cache/factor_runtime"
-factor_runs_root: "../../factor_runs"
+master_store: "../../var/data_cache/master"
+pools_root: "../../var/data_cache/pools"
+runtime_root: "../../var/data_cache/factor_runtime"
+factor_runs_root: "../../var/factor_runs"
 fields:
   # 来自 field_catalog.json 的 panel_alias；默认累计口径，排除 16 个 flow_q 字段。
   - open

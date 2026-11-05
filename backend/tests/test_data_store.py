@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from custom_bt.data import (
+from repositories.local_store import (
     build_master_store,
     list_store_stocks,
     load_meta,
@@ -155,7 +155,7 @@ class DataStoreTests(unittest.TestCase):
             ).to_csv(csv_path, index=False)
             progress = []
 
-            from custom_bt.data import update_store
+            from repositories.local_store import update_store
 
             update_store(
                 csv_path,

@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from custom_bt import _quantops_boot
+from adapters import _quantops_boot
 
 PROJECT_DIR = Path(_quantops_boot.__file__).resolve().parents[2] / "quantops"
 

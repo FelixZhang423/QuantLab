@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-from custom_bt.expressions import list_operators
+from adapters.expressions import list_operators
 
 
 def _read_json(path: Path) -> dict[str, Any]:

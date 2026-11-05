@@ -49,19 +49,27 @@ pnpm build        # 生产构建，产物在 dist/
 
 ```
 src/
-├── App.tsx              # 入口：登录 + 布局 + 侧边菜单 + 页面切换
-├── api/client.ts        # API 类型、fetch 封装、useApiData / useJobPolling
-├── Charts.tsx           # ECharts 图表（净值/回撤、年度收益）
-├── backtestAnalysis.tsx # 回测批次/单次结果分析组件
-├── mockData.ts          # 任务/结果 mock + 状态模拟调度
-├── mockExtended.ts      # 字段/股票/池/因子/组合/用户/审计 mock
-└── pages/
-    ├── DataPages.tsx        # 数据总览 / 数据字段 / 股票列表 / 操作符 + 共享 LoadGate/FilterChips
-    ├── ResearchPages.tsx    # 股票池 / 因子回测
-    ├── FactorGenerationPage.tsx # 因子生成
-    ├── ManualBacktestPage.tsx   # 手动回测（真实股票池 + 后台任务 + 结果预览）
-    ├── CompositionPage.tsx      # 因子组合（mock）
-    └── SystemPages.tsx          # 用户与权限 / 审计日志（mock）
+├── main.tsx                 # React 入口
+├── app/
+│   ├── App.tsx              # 应用装配：登录态 + 布局 + 菜单 + 页面切换
+│   └── navigation.ts        # Page / Role / PageNav / TaskAdder 类型
+├── shared/
+│   ├── api/base.ts          # fetch 基座、ApiError、useApiData / useJobPolling
+│   └── domain/              # factorCategories / fieldCategories
+├── api/client.ts            # 兼容 barrel（合并各 feature API）
+├── components/              # Brand / Charts / LoadGate / FilterChips
+├── features/                # 每个 feature 自带 index.ts / api.ts / mock.ts
+│   ├── auth/                # 登录
+│   ├── dashboard/           # 总览
+│   ├── tasks/               # 任务中心
+│   ├── data-browser/        # 数据总览 / 字段 / 股票 / 操作符
+│   ├── pools/               # 股票池
+│   ├── factor-generation/   # 因子生成
+│   ├── factor-backtest/     # 因子回测
+│   ├── manual-backtest/     # 手动回测
+│   ├── results/             # 结果详情 / 批次结果 / 结果分析
+│   ├── composition/         # 因子组合（mock）
+│   └── system/              # 用户与审计（mock）
 ```
 
 ## 相关服务
@@ -71,12 +79,12 @@ src/
 | 前端 | `frontend/` | `pnpm dev` | http://localhost:8443 |
 | FastAPI 数据接口 | `backend/` | `py -3 -m api`（见下方说明） | http://localhost:8000 |
 
-后端默认监听 `127.0.0.1:8000`，vite 把 `/api` 代理过去（`QL_API_TARGET` 可覆盖）。**数据总览 / 数据字段 / 股票列表、股票池候选与建池、因子面板与回测全部直接读公司 ClickHouse**，需要在公司网络下并配置凭据（环境变量 `QL_CH_PASSWORD` 优先，其次 `backend/configs/clickhouse.local.env`，该文件已被 .gitignore 忽略）；股票池列表/详情优先读 MySQL，回退本地 `data_cache/pools/`，因子运行与回测结果读本地 `factor_runs/`、`outputs/`，这些页面不需要数据库凭据。
+后端默认监听 `127.0.0.1:8000`，vite 把 `/api` 代理过去（`QL_API_TARGET` 可覆盖）。**数据总览 / 数据字段 / 股票列表、股票池候选与建池、因子面板与回测全部直接读公司 ClickHouse**，需要在公司网络下并配置凭据（环境变量 `QL_CH_PASSWORD` 优先，其次 `backend/configs/clickhouse.local.env`，该文件已被 .gitignore 忽略）；股票池列表/详情优先读 MySQL，回退本地 `var/data_cache/pools/`，因子运行与回测结果读本地 `var/factor_runs/`、`outputs/`，这些页面不需要数据库凭据。
 
-股票池页的「创建股票池」已接真实后端：筛选条件 → 候选预览（支持跨页全选 / 反选 / 部分勾选，默认全选）→ `POST /api/pools`（部分勾选时只提交勾中的代码）→ 轮询 `GET /api/jobs/{job_id}` → 自动刷新列表。候选、选样统计与回测面板都来自公司库，不再与本地 `data_cache/master` 取交集，本地缓存没有的股票同样可以建池。
+股票池页的「创建股票池」已接真实后端：筛选条件 → 候选预览（支持跨页全选 / 反选 / 部分勾选，默认全选）→ `POST /api/pools`（部分勾选时只提交勾中的代码）→ 轮询 `GET /api/jobs/{job_id}` → 自动刷新列表。候选、选样统计与回测面板都来自公司库，不再与本地 `var/data_cache/master` 取交集，本地缓存没有的股票同样可以建池。
 
 手动回测页也已接真实后端：选择股票池（公司库池优先，旧本地池会提示走本地缓存）→ 填 Alpha 表达式 / 区间 / TopK 与交易参数 → `POST /api/manual-backtests` → 轮询 `GET /api/jobs/{job_id}`（loading_panel → evaluating → running → finished）→ 右侧直接用 `run_key` 拉取真实指标、净值、年度表与文件下载；「完整结果」跳到结果详情页。
 
 结果详情页只读 `GET /api/results` 的真实结果：下拉按 `run_key` 切换、默认最新一条，兼容手动（`config.backtest` 嵌套）与因子（扁平 `config`）两种参数结构，展示数据源标签、真实指标/净值/年度与 manifest 白名单文件下载；研究备注仅存本机 `localStorage`，不再有 mock 任务或假下载。
 
-> 说明：任务中心与用户/审计页面仍是 mock；接入真实平台时，把对应 `src/pages/*` 里的 mock 数据替换为 API 调用即可，任务推演控制器与"状态演示"切换器届时移除。
+> 说明：任务中心与用户/审计页面仍是 mock；接入真实平台时，把对应 `src/features/*` 里的 mock 数据替换为 API 调用即可，任务推演控制器与"状态演示"切换器届时移除。

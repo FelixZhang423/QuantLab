@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from custom_bt.data import build_master_store
+from repositories.local_store import build_master_store
 from custom_bt.factor_composition import (
     CompositionCandidate,
     SelectedComponent,
@@ -23,7 +23,7 @@ from custom_bt.factor_composition import (
     compose_factors,
 )
 from custom_bt.pools import create_pool
-from custom_bt.results import list_runs
+from repositories.result_store import list_runs
 
 
 def _toy_panel() -> pd.DataFrame:

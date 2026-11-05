@@ -1,7 +1,7 @@
 """手动回测：按股票池 + 用户输入的 Alpha 表达式执行一次 TopK 回测。
 
 数据源跟随股票池 manifest：
-- 公司库池（``data_source: clickhouse``）→ :mod:`custom_bt.company_source` 实时读面板；
+- 公司库池（``data_source: clickhouse``）→ :mod:`repositories.company_source` 实时读面板；
 - 旧本地池（无 ``data_source``）→ 兼容读取 ``data_cache/master``。
 
 结果写入 ``outputs/saved_backtests/manual/<backtest_id>/<run_name>/``，
@@ -18,13 +18,13 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 
 import pandas as pd
 
-from custom_bt import company_source
+from repositories import company_source
 from custom_bt.canonical_expression import normalize_expression
-from custom_bt.data import load_meta, load_pool_panel
+from repositories.local_store import load_meta, load_pool_panel
 from custom_bt.engine import BacktestConfig, run_backtest
-from custom_bt.expressions import evaluate_expression
+from adapters.expressions import evaluate_expression
 from custom_bt.pools import load_pool_codes, load_pool_manifest
-from custom_bt.results import save_result
+from services.report_service import save_result
 
 logger = logging.getLogger(__name__)
 
@@ -82,17 +82,7 @@ def _validate_backtest_id(backtest_id: Optional[str]) -> Optional[str]:
     return text
 
 
-def _load_panel(
-    source: str,
-    master_store: Optional[str | Path],
-    codes: list[str],
-    config: BacktestConfig,
-) -> pd.DataFrame:
-    if source == "clickhouse":
-        return company_source.load_panel(codes, config.start_date, config.end_date)
-    if not master_store:
-        raise ValueError("local pool requires master_store")
-    return load_pool_panel(master_store, codes, config.start_date, config.end_date)
+from repositories.panel_store import load_panel_for_pool as _load_panel  # noqa: E402
 
 
 def run_manual_backtest(

@@ -1,5 +1,5 @@
 source_csv: "../../../数据/daily_with_maindata_v2.csv"
-master_store: "../data_cache/master"
+master_store: "../../var/data_cache/master"
 chunksize: 200000
 # The current source uses tab separators despite its .csv extension; auto also works.
 delimiter: auto

@@ -10,28 +10,23 @@ from typing import Any, Callable, Dict, Iterable, List
 
 import pandas as pd
 
-from custom_bt import company_source
+from repositories import company_source
 from custom_bt.canonical_expression import canonicalize_alphagen
-from custom_bt.data import load_meta, load_pool_panel
+from repositories.local_store import load_meta, load_pool_panel
 from custom_bt.engine import BacktestConfig, run_backtest
 from custom_bt.factor_adapter import validate_backtest_expression
 from custom_bt.pools import load_pool_codes, load_pool_manifest
-from custom_bt.results import save_result
+from services.report_service import save_result
 
 logger = logging.getLogger(__name__)
 
-_BACKTEST_ID_RE = re.compile(r"[A-Za-z0-9_.-]+")
 ProgressCallback = Callable[[Dict[str, Any]], None]
 
-
-def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    if not path.exists():
-        return []
-    rows: List[Dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            rows.append(json.loads(line))
-    return rows
+from repositories.factor_run_store import (  # noqa: E402
+    read_jsonl as _read_jsonl,
+    saved_results_root as _saved_results_root,
+    validate_backtest_id as _validate_backtest_id,
+)
 
 
 def factor_id(index: int, expression: str) -> str:
@@ -42,24 +37,6 @@ def factor_id(index: int, expression: str) -> str:
 
 def _factor_id(index: int, expression: str) -> str:
     return factor_id(index, expression)
-
-
-def _saved_results_root(outputs_root: str | Path) -> Path:
-    root = Path(outputs_root).expanduser().resolve()
-    if root.name == "saved_backtests":
-        return root
-    if root.name == "factor_backtests":
-        return root.parent / "saved_backtests"
-    return root / "saved_backtests"
-
-
-def _validate_backtest_id(backtest_id: str | None) -> str | None:
-    if backtest_id is None:
-        return None
-    text = str(backtest_id).strip()
-    if not text or not _BACKTEST_ID_RE.fullmatch(text):
-        raise ValueError(f"invalid backtest_id: {backtest_id!r}")
-    return text
 
 
 def _emit(callback: ProgressCallback | None, payload: Dict[str, Any]) -> None:
@@ -210,7 +187,7 @@ def backtest_accepted_factors(
                 )
                 translated = str(record.get("backtest_expression") or canonical_expression)
                 validate_backtest_expression(canonical_expression, panel)
-                alpha = __import__("custom_bt.expressions", fromlist=["evaluate_expression"]).evaluate_expression(
+                alpha = __import__("adapters.expressions", fromlist=["evaluate_expression"]).evaluate_expression(
                     translated,
                     panel,
                     output_name="alpha",
@@ -299,7 +276,7 @@ def backtest_accepted_factors(
         encoding="utf-8",
     )
     try:
-        from custom_bt.mysql_store import persist_factor_backtest_run
+        from repositories.mysql_store import persist_factor_backtest_run
 
         persist_factor_backtest_run(output_dir, job_id=backtest_id)
     except Exception:

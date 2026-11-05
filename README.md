@@ -26,13 +26,13 @@ QuantLab 是一个独立的股票**因子生成与回测平台**（不依赖 Qli
 
 | 层级 | 核心职责 | 主要模块 |
 |---|---|---|
-| 数据层 | 读取原始日频 CSV，标准化，按股票落 Parquet | `custom_bt.data` |
+| 数据层 | 读取原始日频 CSV，标准化，按股票落 Parquet | `repositories.local_store` |
 | 股票池层 | 按成交额/覆盖率/上市天数等规则生成命名股票池 | `custom_bt.pools` |
-| 表达式层 | 本地表达式算子、Brain/AlphaGen 风格表达式转换与校验 | `custom_bt.expressions`、`custom_bt.factor_adapter` |
+| 表达式层 | 本地表达式算子、Brain/AlphaGen 风格表达式转换与校验 | `adapters.expressions`、`custom_bt.factor_adapter` |
 | 生成层 | 池内面板转 PPO 训练数据，调用 single_factor 生成候选因子 | `custom_bt.factor_generation` + `single_factor` |
 | 回测层 | 对手动/合格/组合因子执行 TopK 日频回测 | `custom_bt.engine`、`custom_bt.factor_backtest` |
 | 组合层 | mutual IC 去重、权重优化、多规模组合回测 | `custom_bt.factor_composition` |
-| 平台层 | FastAPI 接口、CLI、后台任务、结果中心 | `api`、`custom_bt.cli`、`platform_jobs`、`results` |
+| 平台层 | FastAPI 接口、CLI、后台任务、结果中心 | `api/routers`、`services`、`workers`、`cli`、`results` |
 
 ### 三个子项目的关系
 
@@ -52,18 +52,29 @@ QuantLab 是一个独立的股票**因子生成与回测平台**（不依赖 Qli
 ```
 生成因子＋回测系统/
 ├── backend/                        # 主平台（FastAPI + 核心逻辑 + CLI）
-│   ├── api/                        #   FastAPI 路由与任务进程入口
-│   ├── custom_bt/                  #   核心包（data/pools/expressions/engine/factor_* 等）
-│   │   └── ai_research/            #   LLM 量化研究 agent（DeepSeek 驱动）
+│   ├── api/                        #   HTTP 路由（routers/）与 app 装配
+│   ├── services/                   #   业务编排层
+│   ├── repositories/               #   数据访问层（ClickHouse / MySQL / 本地文件）
+│   ├── workers/                    #   后台任务进程入口
+│   ├── config/                     #   settings 路径配置与日志
+│   ├── custom_bt/                  #   领域算法与流水线（engine / factor_* / ai_research）
+│   ├── adapters/                   #   quantops 适配层
+│   ├── infra/                      #   图表等基础设施
+│   ├── cli/                        #   命令行入口（python -m cli）
+│   ├── scripts/                    #   一次性迁移/维护脚本
+│   ├── common.py                   #   通用工具（兼容再导出）
+│   ├── errors.py                   #   领域异常
+│   ├── schemas.py                  #   请求 / 响应模型
 │   ├── configs/                    #   平台 / 股票池 / 生成 / 回测配置（yaml）
-│   ├── tests/                      #   pytest 单元测试
-│   ├── data_cache/                 #   数据缓存（master 已入库；stock_daily/sample/pools/factor_runtime 不入库）
-│   └── outputs/                    #   回测 / 组合结果（不入库）
+│   └── tests/                      #   pytest 单元测试
+├── var/                            # 运行期数据根（不入库）
+│   ├── data_cache/                 #   master / pools / factor_runtime
+│   ├── outputs/                    #   jobs / logs / saved_backtests
+│   └── factor_runs/                #   PPO 生成结果
 ├── frontend/                       # React 前端（Vite + Ant Design + ECharts）
 ├── quantops/                       # 独立算子库（可 pip install）
 ├── single_factor/                  # 独立 PPO 生成器（含 _vendor/alphagen 原语）
 ├── research_pipeline/              # 独立研究流水线（源码未入库，暂时保留）
-├── factor_runs/                    # PPO 生成结果（根目录，不入库）
 ├── docs/                           # 设计文档
 ├── 提示词合集/                     # LLM agent 提示词模板
 ├── v_stock_daily_full_字段说明.md
@@ -75,7 +86,7 @@ QuantLab 是一个独立的股票**因子生成与回测平台**（不依赖 Qli
 
 - **产品名**：QuantLab
 - **仓库目录**：`backend/`（后端）、`frontend/`（前端）
-- **Python 包**：`custom_bt`（历史名，保持稳定；命令行入口仍是 `python -m custom_bt.cli`）
+- **Python 包**：`custom_bt`（历史名，保持稳定；命令行入口仍是 `python -m cli`）
 - 文档中不再使用旧名 `custom_backtester/`、`原型/`
 
 详细架构见 [docs/生成因子与回测系统整体逻辑说明书.docx](docs/生成因子与回测系统整体逻辑说明书.docx)。
@@ -129,19 +140,19 @@ pnpm dev
 cd backend
 
 # ① 构建主缓存（需源 CSV 就位，路径见 configs/platform.yaml 的 source_csv）
-python -m custom_bt.cli prepare-master --config configs/platform.yaml
+python -m cli prepare-master --config configs/platform.yaml
 
 # ② 创建股票池
-python -m custom_bt.cli create-pool --config configs/pools/liquid_500.yaml
+python -m cli create-pool --config configs/pools/liquid_500.yaml
 
 # ③ PPO 生成因子
-python -m custom_bt.cli generate-factors --pool <pool_id> --config configs/factor_generation.yaml
+python -m cli generate-factors --pool <pool_id> --config configs/factor_generation.yaml
 
 # ④ 合格因子批量回测
-python -m custom_bt.cli backtest-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
+python -m cli backtest-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
 
 # ⑤ 因子组合
-python -m custom_bt.cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml --sweep-sizes 10,20,30
+python -m cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml --sweep-sizes 10,20,30
 ```
 
 ### 独立 PPO 生成器（服务器守护，自动重启）
@@ -180,15 +191,15 @@ powershell -ExecutionPolicy Bypass -File .\single_factor\run_server.ps1
 > **注意**：`backtest-factors` / `compose-factors` 会从 `--config` 读取 `master_store`、`pools_root`、`backtest`。若 `default.yaml` 缺少前两个键会报 `KeyError`，需补上：
 >
 > ```yaml
-> master_store: "../data_cache/master"
-> pools_root: "../data_cache/pools"
+> master_store: "../var/data_cache/master"
+> pools_root: "../var/data_cache/pools"
 > ```
 
 ## 数据说明
 
 - **源数据**：约 20GB 的日频面板 CSV（tab 分隔，`.csv` 后缀）。必需列 `code/timestamps/open/close/high/low/vol/amount`，字段说明见 [v_stock_daily_full_字段说明.md](v_stock_daily_full_字段说明.md)（共 91 字段）。
-- **主缓存 `data_cache/master`**：按股票拆分的 Parquet + `meta.json`（含 `source_signature`），**已纳入 Git**（约 811MB，5432 只股票）。
-- **不入库的生成产物**（见 `.gitignore`）：`stock_daily`（旧缓存）、`pools`（股票池）、`factor_runtime`（PPO 运行时缓存）、`factor_runs`（历史因子）、`outputs`（回测/组合结果）、`single_factor` 的 `data/cache/run`。
+- **主缓存 `var/data_cache/master`**：按股票拆分的 Parquet + `meta.json`（含 `source_signature`），由 `prepare-master` 从源 CSV 重建，**不入库**。
+- **运行期数据根 `var/`**（见 `.gitignore`）：`data_cache`（master / pools / factor_runtime）、`outputs`（jobs / logs / saved_backtests）、`factor_runs`（历史因子）全部不入库；`single_factor` 的 `data/cache/run` 同样不入库。
 - **敏感配置**：`.env.local`、`config.local.yaml` 不入库，模板见 `.env.example` / `config.example.yaml`。
 
 ### 身份锁（source_signature / pool_id）

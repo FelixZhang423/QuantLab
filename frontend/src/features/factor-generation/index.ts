@@ -1,0 +1,1 @@
+export { FactorGenerationPage } from "./FactorGenerationPage";

@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from custom_bt.operator_registry import get_operator
+from adapters.operator_registry import get_operator
 
 
 CATEGORY_CN = {

@@ -6,7 +6,8 @@ from pathlib import Path
 import pandas as pd
 
 from custom_bt.engine import BacktestResult
-from custom_bt.results import list_runs, save_result
+from repositories.result_store import list_runs
+from services.report_service import save_result
 
 
 class ResultsTests(unittest.TestCase):

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from custom_bt.migrate_results import migrate_factor_results
+from scripts.migrate_results import migrate_factor_results
 
 
 def _write_result(directory: Path, config: dict) -> None:

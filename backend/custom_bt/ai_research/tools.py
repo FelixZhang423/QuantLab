@@ -5,7 +5,7 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
-from custom_bt.expressions import ExpressionError, evaluate_expression
+from adapters.expressions import ExpressionError, evaluate_expression
 
 
 _STRING_CONSTANTS = {"gaussian", "uniform", "cauchy"}

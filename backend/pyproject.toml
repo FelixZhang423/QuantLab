@@ -22,8 +22,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 
+[tool.setuptools]
+py-modules = ["common", "schemas"]
+
 [tool.setuptools.packages.find]
-include = ["custom_bt*", "api*"]
+include = ["custom_bt*", "api*", "services*", "repositories*", "workers*", "config*", "cli*", "scripts*", "infra*", "adapters*"]
 
 [tool.setuptools.package-data]
 custom_bt = ["**/*.yaml", "**/*.json"]

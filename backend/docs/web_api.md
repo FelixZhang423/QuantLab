@@ -9,24 +9,24 @@
 浏览器（React 前端 :8443）
    └─ fetch /api/*  →  Vite dev proxy（/api → 127.0.0.1:8000）
           └─ FastAPI（backend/api，:8000，GET + POST + DELETE）
-                 ├─ 数据总览 / 数据字段 / 股票列表 / 股票池候选 → api/live_db.py
+                 ├─ 数据总览 / 数据字段 / 股票列表 / 股票池候选 → repositories/clickhouse.py
                  │        └─ ClickHouse HTTP（<公司ClickHouse地址>:8123，dws.ll_stock_daily_sharing + dim.stock_main_info_fd，实时）
                  ├─ 建池选样 / 因子面板 / 回测面板 → custom_bt/company_source.py
                  │        └─ 同一 ClickHouse（只读 SELECT；面板直接 FORMAT Parquet 落盘）
-                 ├─ 股票池 → MySQL `pools` / `pool_codes` 优先，连不上回退 data_cache/pools/
+                 ├─ 股票池 → MySQL `pools` / `pool_codes` 优先，连不上回退 var/data_cache/pools/
                  ├─ 操作符 / 因子运行 / 回测结果 → 复用 custom_bt 现有函数 + 直接读本地文件
-                 │        factor_runs/、outputs/saved_backtests/
+                 │        var/factor_runs/、var/outputs/saved_backtests/
                  ├─ POST /api/pools、POST /api/factor-backtests、POST /api/manual-backtests
-                 │        → create_platform_job + api/job_runner.py 子进程
-                 │        outputs/jobs/<job_id>/ → create_pool_from_company / backtest_accepted_factors / run_manual_backtest
+                 │        → create_platform_job + workers/job_runner.py 子进程
+                 │        var/outputs/jobs/<job_id>/ → create_pool_from_company / backtest_accepted_factors / run_manual_backtest
                  └─ DELETE /api/pools/{pool_id}?confirm=true
-                          → 同步删除 MySQL 记录 + data_cache/pools/<pool_id>/（不删因子运行/历史回测）
+                          → 同步删除 MySQL 记录 + var/data_cache/pools/<pool_id>/（不删因子运行/历史回测）
 ```
 
-- **所有数据都实时查公司 ClickHouse**：数据总览 / 字段 / 股票列表 / 股票池候选、建池选样、因子生成面板与因子回测面板全部直接读公司库（只读 HTTP，见 §2.7），不再依赖本地 `data_cache/master`。股票池列表/详情优先读 MySQL，未配置或连不上时回退本地 `data_cache/pools/`；因子运行与回测结果仍读本地文件（结果目录）。
+- **所有数据都实时查公司 ClickHouse**：数据总览 / 字段 / 股票列表 / 股票池候选、建池选样、因子生成面板与因子回测面板全部直接读公司库（只读 HTTP，见 §2.7），不再依赖本地 `var/data_cache/master`。股票池列表/详情优先读 MySQL，未配置或连不上时回退本地 `var/data_cache/pools/`；因子运行与回测结果仍读本地文件（结果目录）。
 - **数据源签名固定**：公司库为 `clickhouse:dws.ll_stock_daily_sharing`；旧本地缓存池的 manifest 没有 `data_source`，仍按本地数据源读取以兼容历史池/因子运行。新建池、因子运行与回测的 manifest 都记录 `data_source`。
 - **写操作有 `POST /api/pools`、`POST /api/factor-backtests`、`POST /api/manual-backtests`、`DELETE /api/pools/{pool_id}`**：三个 POST 只创建后台任务（202 + job_id），由子进程执行，不在 API 进程内同步运行（子进程同样只对 ClickHouse 执行 `SELECT`）；`DELETE` 是同步操作（需 `confirm=true`），同时清理 MySQL 与本地目录，不级联删除因子运行 / 历史回测。因子生成 / 因子组合的提交端点仍未接入（见 §6）。
-- **因子回测结果按批次版本化**：`outputs/saved_backtests/factor/<pool_id>/<run_id>/<backtest_id>/<factor_id>/`，`backtest_id` 即平台任务 job_id；同一因子运行用不同参数重复回测不会覆盖历史批次（§2.9）。
+- **因子回测结果按批次版本化**：`var/outputs/saved_backtests/factor/<pool_id>/<run_id>/<backtest_id>/<factor_id>/`，`backtest_id` 即平台任务 job_id；同一因子运行用不同参数重复回测不会覆盖历史批次（§2.9）。
 - 端口：后端 8000（`QL_API_HOST` / `QL_API_PORT` 可改），前端 8443（`PORT` 可改），代理目标用 `QL_API_TARGET` 覆盖。
 - 实时数据源凭据：环境变量 `QL_CH_PASSWORD`（及可选 `QL_CH_HOST/PORT/USER`）优先，其次 `configs/clickhouse.local.env`（已 gitignore）；未配置时所有依赖公司库的端点（三个展示端点、三个候选端点、`POST /api/pools`、公司库池的 `POST /api/factor-backtests` / `POST /api/manual-backtests`）返回 503 + 中文原因，其余端点不受影响。
 
@@ -41,17 +41,17 @@
 | `GET /api/universe/stocks` | 股票池预览 | **ClickHouse 实时**（同一份快照，Python 过滤 + 分页） | 候选清单 + 服务端分页 |
 | `GET /api/universe/codes` | 股票池预览（全选/反选） | **ClickHouse 实时**（同一份快照，仅返回代码） | 当前筛选下全部匹配代码（跨页勾选） |
 | `POST /api/pools` | 股票池提交 | 候选与选样统计直接查 ClickHouse（`create_pool_from_company`），成功后写 MySQL | 202 + `job_id`（后台任务） |
-| `GET /api/jobs/{job_id}` | 建池任务状态 | `outputs/jobs/<job_id>/status.json` | queued / running / finished / failed |
+| `GET /api/jobs/{job_id}` | 建池任务状态 | `var/outputs/jobs/<job_id>/status.json` | queued / running / finished / failed |
 | `GET /api/operators` | 操作符 | `expressions.list_operators()` + `operator_registry` | 75 个去重算子（82 个手动名字，中文分类/说明） |
-| `GET /api/pools` `/{pool_id}` | 因子股票池 | **MySQL 优先**（`pools.manifest` + `pool_codes`），回退 `data_cache/pools/*/manifest.json` + `codes.txt` | 5 个股票池；响应带 `storage` 标记 |
+| `GET /api/pools` `/{pool_id}` | 因子股票池 | **MySQL 优先**（`pools.manifest` + `pool_codes`），回退 `var/data_cache/pools/*/manifest.json` + `codes.txt` | 5 个股票池；响应带 `storage` 标记 |
 | `DELETE /api/pools/{pool_id}?confirm=true` | 股票池详情抽屉 | 同步删除 MySQL `pools/pool_codes/pool_candidates/pool_stats` + 本地池目录 | 返回 `deleted_local/deleted_mysql/warnings` |
-| `GET /api/factor-runs` `/{run_id}` | 因子回测（运行选择）/ 因子生成（运行历史） | **本地 `factor_runs/` + MySQL `factor_runs` 合并**：本地 `factor_run.json` + `accepted_factors.jsonl`，MySQL 提供训练元数据与跨机器记录 | 合格因子清单、生成指标、训练时长 / 设备 / 超参数 |
-| `POST /api/factor-backtests` | 因子回测（提交） | 复用 `backtest_accepted_factors`，按 pool/run 的 `data_source` 读公司库面板（旧本地池仍读 `data_cache/master`） | 202 + `job_id`（后台任务） |
-| `GET /api/factor-backtests` `/{backtest_id}` `/.../files/{file}` | 因子回测（批次结果） | `outputs/saved_backtests/factor/<pool>/<run>/<backtest_id>/` | 批次汇总行、失败明细与 CSV 下载 |
-| `POST /api/manual-backtests` | 手动回测（提交） | 股票池本地目录优先、MySQL 兜底；按 manifest 读公司库面板（旧本地池仍读 `data_cache/master`），后台执行 `run_manual_backtest` | 202 + `job_id`（后台任务） |
-| `GET /api/jobs/{job_id}` | 手动回测（进度） | `outputs/jobs/<job_id>/status.json` 的 `progress.stage` + `message` | loading_panel → evaluating → running → finished |
+| `GET /api/factor-runs` `/{run_id}` | 因子回测（运行选择）/ 因子生成（运行历史） | **本地 `var/factor_runs/` + MySQL `factor_runs` 合并**：本地 `factor_run.json` + `accepted_factors.jsonl`，MySQL 提供训练元数据与跨机器记录 | 合格因子清单、生成指标、训练时长 / 设备 / 超参数 |
+| `POST /api/factor-backtests` | 因子回测（提交） | 复用 `backtest_accepted_factors`，按 pool/run 的 `data_source` 读公司库面板（旧本地池仍读 `var/data_cache/master`） | 202 + `job_id`（后台任务） |
+| `GET /api/factor-backtests` `/{backtest_id}` `/.../files/{file}` | 因子回测（批次结果） | `var/outputs/saved_backtests/factor/<pool>/<run>/<backtest_id>/` | 批次汇总行、失败明细与 CSV 下载 |
+| `POST /api/manual-backtests` | 手动回测（提交） | 股票池本地目录优先、MySQL 兜底；按 manifest 读公司库面板（旧本地池仍读 `var/data_cache/master`），后台执行 `run_manual_backtest` | 202 + `job_id`（后台任务） |
+| `GET /api/jobs/{job_id}` | 手动回测（进度） | `var/outputs/jobs/<job_id>/status.json` 的 `progress.stage` + `message` | loading_panel → evaluating → running → finished |
 | `GET /api/results/detail?run_key=...`、`GET /api/results/file` | 手动 / 因子回测结果 | 任意层级的结果目录（`run_key` 相对路径） | 手动结果 `manual/<job_id>/<run_name>` 直接复用详情/下载 |
-| `GET /api/results` `/{run_name}` `/{run_name}/files/{file}` | 回测结果（兼容旧扁平名） | `outputs/saved_backtests/*/` | 1 个已保存回测（含净值/指标/文件下载） |
+| `GET /api/results` `/{run_name}` `/{run_name}/files/{file}` | 回测结果（兼容旧扁平名） | `var/outputs/saved_backtests/*/` | 1 个已保存回测（含净值/指标/文件下载） |
 
 ### 2.1 数据总览（实时，实测 2026-10-10）
 
@@ -83,14 +83,14 @@
 
 来源：`expressions.list_operators()` 与 `operator_registry` 合并，经 `enrich_operators` 补中文分类与说明。
 
-> 2026-10-14 起，这两个函数的实现已搬到独立库 **`quantops/`**（算子唯一实现，库路径 `../quantops`）：`custom_bt/expressions.py` 与 `custom_bt/operator_registry.py` 只剩转发，`expressions.OPERATORS is quantops.operators.OPERATORS`。**本端点响应逐字节不变**（迁移前后 `/api/operators` JSON diff 为空）。改算子请去 `quantops/quantops/operators.py`；`custom_bt/docs.py` 仍是中文元数据的源头（`quantops/metadata.py` 存副本，两边由 `tests/test_quantops_metadata_parity.py` 锁死）。
+> 2026-10-14 起，这两个函数的实现已搬到独立库 **`quantops/`**（算子唯一实现，库路径 `../quantops`）：`adapters/expressions.py` 与 `adapters/operator_registry.py` 只剩转发，`expressions.OPERATORS is quantops.operators.OPERATORS`。**本端点响应逐字节不变**（迁移前后 `/api/operators` JSON diff 为空）。改算子请去 `quantops/quantops/operators.py`；`custom_bt/docs.py` 仍是中文元数据的源头（`quantops/metadata.py` 存副本，两边由 `tests/test_quantops_metadata_parity.py` 锁死）。
 
 - 分类分布：时间序列 36、数学运算 18、逻辑判断 12、横截面 6、分组 6、信号转换 2、向量 2
 - 其中 **62 个**可进入因子生成（页面显示「可生成」标签）
 
 ### 2.5 股票池（1 个：liquid_500）
 
-来源：`data_cache/pools/liquid_500_864dc25f/`（manifest.json + codes.txt）。
+来源：`var/data_cache/pools/liquid_500_864dc25f/`（manifest.json + codes.txt）。
 
 | 项目 | 值 |
 | --- | --- |
@@ -107,9 +107,9 @@
 
 ### 2.6 已保存回测（结果列表 / 详情）
 
-来源：`outputs/saved_backtests/`（`rglob` 找到的每个 `manifest.json + summary.json + daily_report.csv`）。当前工作区有 40 条：历史 `web_run`、因子批次结果、手动回测结果；结果页只展示这些真实结果，不再有 mock 演示任务。
+来源：`var/outputs/saved_backtests/`（`rglob` 找到的每个 `manifest.json + summary.json + daily_report.csv`）。当前工作区有 40 条：历史 `web_run`、因子批次结果、手动回测结果；结果页只展示这些真实结果，不再有 mock 演示任务。
 
-- 每条结果都带 `run_key`（结果目录相对 `outputs/saved_backtests` 的路径，也是 MySQL `backtests` 主键），默认按 `created_at` 倒序展示，可下拉切换。
+- 每条结果都带 `run_key`（结果目录相对 `var/outputs/saved_backtests` 的路径，也是 MySQL `backtests` 主键），默认按 `created_at` 倒序展示，可下拉切换。
 - 净值统一归一化为 `daily_report.csv.account / initial_cash`；`drawdown` 与年度指标转百分比。**两种 config 形状必须兼容**：手动回测是 `config.backtest` 嵌套，因子/旧版结果是扁平 config；两者缺 `initial_cash` 时才回退 1.0。
 - 详情额外返回 `data_source`（手动回测写 `clickhouse`，旧结果为空）与 manifest 白名单内的真实文件（名称/大小/更新时间），下载走 `GET /api/results/file?run_key=...`。
 - 前端「研究备注」只写本机 `localStorage`（key 为 `quantlab:result-note:<run_key>`），页面已注明作用域，不会写后端或 MySQL。
@@ -119,7 +119,7 @@
 
 ### 2.7 实时数据源（ClickHouse HTTP 只读）
 
-实现：`api/live_db.py`（**纯 stdlib urllib，无新依赖**）。展示端点与股票池候选共用一份连接与缓存。
+实现：`repositories/clickhouse.py`（**纯 stdlib urllib，无新依赖**）。展示端点与股票池候选共用一份连接与缓存。
 
 | 配置项 | 默认值 | 环境变量 |
 | --- | --- | --- |
@@ -143,7 +143,7 @@
 
 ### 2.8 股票池候选与建池（2026-10-20，2026-10-27 全部切公司库）
 
-候选与建池链路（不再经过 `data_cache/master`）：
+候选与建池链路（不再经过 `var/data_cache/master`）：
 
 ```
 ClickHouse 行情聚合 + dim 行业/上市信息
@@ -188,7 +188,7 @@ ClickHouse 行情聚合 + dim 行业/上市信息
 2. 按公司库筛选；空匹配 → 422 + 中文原因（不再检查本地缓存是否就绪）；
 3. 以显式 `codes` 提交 `create_pool` 任务，payload 带 `data_source:"clickhouse"` 且不需要 `store_dir`（`strict_top_n=False`：候选不足 TopN 时按实际数量建池）；`provenance` 写入 manifest 但不参与 pool_id 哈希；
 4. 子进程 `create_pool_from_company` 直接查公司库统计窗口内交易日数、每只股票有效行数与平均成交额，按同一覆盖率/排序规则选样；manifest 写入 `data_source:"clickhouse"` 与签名 `clickhouse:dws.ll_stock_daily_sharing`；
-5. `api/job_runner.py` 用子进程运行 `custom_bt.cli run-platform-job`，日志写 `outputs/jobs/<job_id>/runner.log`。
+5. `workers/job_runner.py` 用子进程运行 `cli run-platform-job`，日志写 `var/outputs/jobs/<job_id>/runner.log`。
 
 **`GET /api/jobs/{job_id}`**：读 `status.json`，返回 `job_id / operation / status / message / updated_at / result / progress`；不存在或路径穿越 → 404。
 
@@ -198,10 +198,10 @@ ClickHouse 行情聚合 + dim 行业/上市信息
 
 - 未带 `confirm=true` → **400**，防止误删；
 - 先删 MySQL：`pool_stats → pool_candidates → pool_codes → pools`（无外键，按明细到主表顺序；`mysql_store.delete_pool`）；
-- 再删本地目录 `data_cache/pools/<pool_id>/`（只删含 `manifest.json` 的目录，路径经 `_safe_child` 校验）；
+- 再删本地目录 `var/data_cache/pools/<pool_id>/`（只删含 `manifest.json` 的目录，路径经 `_safe_child` 校验）；
 - MySQL 未配置/连不上时只删本地，返回 `mysql_configured=false` 并在 `warnings` 里说明；MySQL 删除抛错时 → **502** 且不动本地文件，避免只删一半；
 - 两侧都不存在 → **404**；只存在一侧（例如同事机器上只有 MySQL 记录）→ 删存在的这一侧并成功返回；
-- `factor_runs/` 与 `outputs/saved_backtests/factor/<pool_id>/` **不级联删除**，只通过 `warnings` 提示仍有 N 个因子运行 / 历史回测引用该池。
+- `var/factor_runs/` 与 `var/outputs/saved_backtests/factor/<pool_id>/` **不级联删除**，只通过 `warnings` 提示仍有 N 个因子运行 / 历史回测引用该池。
 
 返回：
 
@@ -230,15 +230,15 @@ ClickHouse 行情聚合 + dim 行业/上市信息
 链路：
 
 ```
-factor_runs/<run_id>/（factor_run.json + accepted_factors.jsonl）
+var/factor_runs/<run_id>/（factor_run.json + accepted_factors.jsonl）
   → GET /api/factor-runs、GET /api/factor-runs/{run_id}（React 选择运行与合格因子）
   → POST /api/factor-backtests（202 + job_id；可只回测勾选因子）
-  → api/job_runner.py 子进程 → backtest_accepted_factors
-  → outputs/saved_backtests/factor/<pool_id>/<run_id>/<backtest_id>/<factor_id>/
+  → workers/job_runner.py 子进程 → backtest_accepted_factors
+  → var/outputs/saved_backtests/factor/<pool_id>/<run_id>/<backtest_id>/<factor_id>/
   → GET /api/factor-backtests/{backtest_id} 轮询后展示批次结果
 ```
 
-**`GET /api/factor-runs?pool_id=<可选>&limit=100`**：扫描 `factor_runs/`（API 默认工作区根目录下，`QL_FACTOR_RUNS_ROOT` 可覆盖）中含 `factor_run.json` 的目录，同时读 MySQL `factor_runs` 表（`mysql_store.fetch_factor_runs`），按 `run_id` 合并后按 `created_at` 倒序返回：
+**`GET /api/factor-runs?pool_id=<可选>&limit=100`**：扫描 `var/factor_runs/`（API 默认工作区根目录下，`QL_FACTOR_RUNS_ROOT` 可覆盖）中含 `factor_run.json` 的目录，同时读 MySQL `factor_runs` 表（`mysql_store.fetch_factor_runs`），按 `run_id` 合并后按 `created_at` 倒序返回：
 
 ```json
 {
@@ -268,7 +268,7 @@ factor_runs/<run_id>/（factor_run.json + accepted_factors.jsonl）
 - `source="local"` 表示 MySQL 不可用（此时 `mysql_error` 给出原因），列表仍返回本地记录；`storage` 为 `mysql+local` / `mysql` / `local`。
 - `local_available=false` 的记录只存在于 MySQL（例如同事机器的运行）：可以查看元数据，但本机没有 `accepted_factors.jsonl`，不能提交因子回测；前端回测运行列表会过滤掉这类记录。
 - `limit` 默认 100、最大 500；`accepted_count` 优先按 `accepted_factors.jsonl` 实际行数统计。
-- 旧运行没有训练计时时，`training_seconds` 可能为 `null`；`device` / 超参数会从对应 `outputs/jobs/<job_id>/platform_job.json` 的 `payload.generation_config` 回填，`duration_seconds` 由任务开始时间到完成时间计算。
+- 旧运行没有训练计时时，`training_seconds` 可能为 `null`；`device` / 超参数会从对应 `var/outputs/jobs/<job_id>/platform_job.json` 的 `payload.generation_config` 回填，`duration_seconds` 由任务开始时间到完成时间计算。
 
 **`GET /api/factor-runs/{run_id}`**：本地优先；本地存在时在列表字段基础上返回 `manifest` 与 `accepted_factors`，并用 MySQL 元数据补全训练字段。本地不存在但 MySQL 有记录时，用数据库行构造 summary，`accepted_factors` 来自 `factors` 表，`manifest` 来自数据库存档；两侧都没有 → 404，本地缺失且 MySQL 查询异常 → 503。每个因子的 `factor_id` 由 `factor_<序号>_<表达式 sha256 前 10 位>` 生成（`custom_bt.factor_backtest.factor_id`），预览与回测共用同一算法，因此前端勾选的 ID 可以直接提交。每条记录同时返回 `canonical_expression / backtest_expression`（本地文件缺这两列时按 `expression` 现算；MySQL-only 记录直接读 `factors` 表）。
 
@@ -285,7 +285,7 @@ factor_runs/<run_id>/（factor_run.json + accepted_factors.jsonl）
 }
 ```
 
-- `factor_ids` 省略或不做限制 = 回测全部合格因子；传列表 = 只回测选中因子（显式空列表 → 422）。未知 ID、空 accepted 文件、数据签名与数据源不一致 → 422。数据源按因子运行/股票池 manifest 的 `data_source` 解析：公司库池读公司库；旧本地池仍要求 `data_cache/master` 就绪（否则 503）。
+- `factor_ids` 省略或不做限制 = 回测全部合格因子；传列表 = 只回测选中因子（显式空列表 → 422）。未知 ID、空 accepted 文件、数据签名与数据源不一致 → 422。数据源按因子运行/股票池 manifest 的 `data_source` 解析：公司库池读公司库；旧本地池仍要求 `var/data_cache/master` 就绪（否则 503）。
 - 日期缺省优先用因子运行 `runtime_manifest` 里 `panel.date_min/date_max`（实际生成面板的区间），没有时回退数据源全库区间；区间与数据源无交集 → 422，部分超出 → 200 + `warnings`（实际按数据源可用区间计算）。
 - `top_k` 1–1000；`initial_cash > 0`；`buy_cost / sell_cost / slippage ∈ [0, 0.1]`；`min_cost ≥ 0`；`max_weight_per_stock ∈ (0, 1]`。
 - 服务端只把**白名单参数**写进任务 payload（master/pool/factor run/output 路径全部由服务端常量给出，客户端不能指定路径）；任务由 `create_platform_job(..., "backtest_factors", ...)` 创建并 `spawn_platform_job` 起子进程。
@@ -306,7 +306,7 @@ factor_runs/<run_id>/（factor_run.json + accepted_factors.jsonl）
 **输出与 `run_key`**：
 
 ```text
-outputs/saved_backtests/factor/<pool_id>/<run_id>/<backtest_id>/
+var/outputs/saved_backtests/factor/<pool_id>/<run_id>/<backtest_id>/
   factor_backtest_summary.csv      # 每个成功因子一行，含 run_key
   factor_backtest_failures.csv     # 失败因子与错误
   factor_backtest_manifest.json    # 批次汇总（backtest_id / 计数 / 参数 / run_key_prefix）
@@ -326,9 +326,9 @@ MySQL：批次汇总额外写入 `factor_backtest_runs`（主键 `backtest_id`�
 ```
 GET /api/pools（选择股票池，公司库池优先）
   → POST /api/manual-backtests（202 + job_id）
-  → api/job_runner.py 子进程 → custom_bt/manual_backtest.run_manual_backtest
-  → 公司库面板（旧本地池回退 data_cache/master）→ evaluate_expression → run_backtest
-  → outputs/saved_backtests/manual/<job_id>/<run_name>/
+  → workers/job_runner.py 子进程 → custom_bt/manual_backtest.run_manual_backtest
+  → 公司库面板（旧本地池回退 var/data_cache/master）→ evaluate_expression → run_backtest
+  → var/outputs/saved_backtests/manual/<job_id>/<run_name>/
   → GET /api/jobs/{job_id} 轮询进度 → GET /api/results/detail?run_key=manual/<job_id>/<run_name>
 ```
 
@@ -348,7 +348,7 @@ GET /api/pools（选择股票池，公司库池优先）
 
 - `expression` 支持中缀算术、`$field` 与算子别名；提交时先 `normalize_expression`，再用公司库面板字段白名单做 AST 校验（未知字段/算子/语法错误 → 422）。表达式长度 ≤ 2000。
 - `pool_id` 必须指向已有股票池（可含中文，池 ID 由中文池名 + 参数哈希生成）；`run_name` 只允许中英文、数字、`_ . -`，≤ 64 字符，直接作为结果目录名（防路径穿越）。
-- 数据源跟随池 manifest：公司库池用 `company_source.meta()/load_panel()`；旧本地池要求 `data_cache/master` 就绪（否则 503）。池签名与数据源签名不一致 → 422。
+- 数据源跟随池 manifest：公司库池用 `company_source.meta()/load_panel()`；旧本地池要求 `var/data_cache/master` 就绪（否则 503）。池签名与数据源签名不一致 → 422。
 - 日期缺省用池的 `selection_start/selection_end`，没有再回退数据源起止；与数据源无交集 → 422，部分超出 → 200 + `warnings`（按数据源可用区间裁剪）。
 - `top_k` 1–1000；`initial_cash > 0`；`buy_cost / sell_cost / slippage ∈ [0, 0.1]`；`min_cost ≥ 0`；`max_weight_per_stock ∈ (0, 1]`。
 - 返回 `{job_id, status:"queued", operation:"manual_backtest", pool_id, data_source, run_name, expression, warnings, request_summary}`。
@@ -370,7 +370,7 @@ GET /api/pools（选择股票池，公司库池优先）
 **输出与 `run_key`**：
 
 ```text
-outputs/saved_backtests/manual/<job_id>/<run_name>/
+var/outputs/saved_backtests/manual/<job_id>/<run_name>/
   manifest.json          # result_type=manual、run_key、pool_id、data_source、backtest_id
   summary.json           # 指标摘要（annual_return 等）
   daily_report.csv       # 每日净值 / 回撤
@@ -397,10 +397,10 @@ outputs/saved_backtests/manual/<job_id>/<run_name>/
 ```
 GET /api/factor-generations/defaults + GET /api/pools（选择真实股票池）
   → POST /api/factor-generations（202 + job_id / run_id）
-  → api/job_runner.py 子进程 → custom_bt/platform_jobs.py → run_factor_generation
+  → workers/job_runner.py 子进程 → workers/job_dispatcher.py → run_factor_generation
   → prepare_factor_runtime（按 pool_id 导出面板 + train/valid/test memmap 缓存）
   → single_factor/runner.py：MaskablePPO 搜索表达式，评估器在 SEP 处打分并写入
-    factor_runs/<run_id>/（accepted_factors.jsonl + factor_run.json）
+    var/factor_runs/<run_id>/（accepted_factors.jsonl + factor_run.json）
   → GET /api/jobs/{job_id} 轮询 progress → GET /api/factor-runs/{run_id} 渲染合格因子
 ```
 
@@ -451,7 +451,7 @@ GET /api/factor-generations/defaults + GET /api/pools（选择真实股票池）
 ```
 
 - 所有字段可选：`fields` / `splits` / PPO 参数 / `quality` 缺省时取 YAML 默认值；`operators` 省略或空列表 = 使用全部 22 个 PPO 可采样算子。算子别名会自动规范化（`divide → div`、`subtract → sub`、`multiply → mul`）。
-- 股票池清单与代码**本地优先、MySQL 兜底**：本地有 `data_cache/pools/<pool_id>/manifest.json` + `codes.txt` 时直接读取；仅存在于 MySQL 的池从 `fetch_pool` 取 manifest 与代码并随任务传入子进程。两种来源都要求 `source_signature` 与当前数据源一致，不一致 → 422；池完全不存在 → 404。
+- 股票池清单与代码**本地优先、MySQL 兜底**：本地有 `var/data_cache/pools/<pool_id>/manifest.json` + `codes.txt` 时直接读取；仅存在于 MySQL 的池从 `fetch_pool` 取 manifest 与代码并随任务传入子进程。两种来源都要求 `source_signature` 与当前数据源一致，不一致 → 422；池完全不存在 → 404。
 - 字段按 `configs/field_catalog.json` 的 `panel_alias` 规范化，未知字段 → 422；累计流量与单季流量（`fund_X` 与 `fund_X_q`）不能混用 → 422。
 - 公司库估值表 `dws.f10_finance_index_fd` 当前从 2024-01-01 起有数据。更早窗口请求 `val_*` 字段时，面板仍会保留这些列（全为 NaN），不会再报缺列；依赖它们的表达式会被评估器判为无效。建议股票池窗口选在 2024 年之后，或去掉估值字段。
 - **`splits` 省略时按股票池真实时间跨度自动切分**（与 defaults?pool_id= 相同：60% / 20% / 20%，连续三段）；显式传入时每段必须落在 `selection_start ~ selection_end` 内，超出 → 422。
@@ -486,9 +486,9 @@ GET /api/factor-generations/defaults + GET /api/pools（选择真实股票池）
 - 用户管理、审计日志
 - 因子组合的**提交表单**；因子生成页的大模型（LLM）选项暂时禁用，PPO 路径已全部接真实后端（§2.12）
 
-股票池创建表单**已不再是 mock**：候选来自公司库，提交走 `POST /api/pools` 并轮询任务状态（§2.8）。因子回测页也已完成真实接入：运行/因子来自 `factor_runs/`，提交走 `POST /api/factor-backtests`，轮询进度并读取批次结果（§2.9）。手动回测页同样已接真实后端：股票池来自 `/api/pools`，提交走 `POST /api/manual-backtests`，轮询任务并直接展示结果（§2.10）。
+股票池创建表单**已不再是 mock**：候选来自公司库，提交走 `POST /api/pools` 并轮询任务状态（§2.8）。因子回测页也已完成真实接入：运行/因子来自 `var/factor_runs/`，提交走 `POST /api/factor-backtests`，轮询进度并读取批次结果（§2.9）。手动回测页同样已接真实后端：股票池来自 `/api/pools`，提交走 `POST /api/manual-backtests`，轮询任务并直接展示结果（§2.10）。
 
-后端作业机制已就绪：`platform_jobs.py` 支持 6 种操作（prepare_master / create_pool / generate_factors / backtest_factors / compose_factors / manual_backtest），与 CLI 端共用 `outputs/jobs/` 目录。
+后端作业机制已就绪：`platform_jobs.py` 支持 6 种操作（prepare_master / create_pool / generate_factors / backtest_factors / compose_factors / manual_backtest），与 CLI 端共用 `var/outputs/jobs/` 目录。
 
 ## 4. 技术栈
 
@@ -498,12 +498,12 @@ GET /api/factor-generations/defaults + GET /api/pools（选择真实股票池）
 | --- | --- | --- |
 | 语言 | Python 3.12.3 | Windows 下必须用 `py -3`（`python` 是应用商店占位符，退出码 49） |
 | Web 框架 | FastAPI 0.143.0 + uvicorn 0.54.0 | 纯 ASGI，无 ORM |
-| 数据库访问 | **stdlib `urllib.request`**（`api/live_db.py`） | 直连 ClickHouse HTTP 接口，**零新增依赖**（不装 clickhouse-driver / requests） |
+| 数据库访问 | **stdlib `urllib.request`**（`repositories/clickhouse.py`） | 直连 ClickHouse HTTP 接口，**零新增依赖**（不装 clickhouse-driver / requests） |
 | 本地数据读取 | pandas 3.0.3 + pyarrow 25.0.1 | 沿用 custom_bt 的 per-stock parquet 读取路径 |
-| 数据形态 | 实时库 + 本地文件 | 展示端点查 ClickHouse；pools / saved_backtests / jobs 读 `data_cache/` + `outputs/` |
+| 数据形态 | 实时库 + 本地文件 | 展示端点查 ClickHouse；pools / saved_backtests / jobs 读 `var/data_cache/` + `outputs/` |
 | 跨域 | CORS 全开，GET + POST | 生产可改由反代承担 |
 
-代码只有五个文件：`api/__init__.py`、`api/main.py`（全部端点）、`api/live_db.py`（ClickHouse 只读客户端 + TTL 缓存）、`api/job_runner.py`（起 `run-platform-job` 子进程）、`api/__main__.py`（`py -3 -m api` 启动入口）。
+代码分层：`api/routers/`（端点）、`api/main.py`（装配）、`schemas.py`（请求/响应模型）、`services/`（业务编排）、`repositories/`（ClickHouse / MySQL / 本地文件）、`workers/`（后台任务）、`config/settings.py`（路径配置）。启动入口仍是 `api/__main__.py`（`py -3 -m api`）。
 
 ### 前端（frontend/）
 
@@ -551,7 +551,7 @@ curl http://127.0.0.1:8443/api/data/master     # 经 vite 代理
 
 ### 5.1 后端日志落盘（`outputs/logs/`，2026-10-15 起）
 
-`py -3 -m api` 启动时除了照旧往控制台打日志，还会**同时落盘**（`api/logging_setup.py`）：
+`py -3 -m api` 启动时除了照旧往控制台打日志，还会**同时落盘**（`config/logging.py`）：
 
 | 文件 | 内容 |
 | --- | --- |
@@ -570,7 +570,7 @@ tail -f outputs/logs/api_access_$(date +%F).log   # 想看实时请求流
 
 ### 5.2 MySQL 集中存储（2026-10-25 起）
 
-股票池以 MySQL 为主存储：列表/详情优先读 `pools` / `pool_codes`，未配置或连接失败时回退本地 `data_cache/pools`。因子运行与回测结果仍以本地文件为主，但 `factor_runs` 表集中存档训练元数据（设备、开始/结束时间、总耗时、训练耗时、步数、超参数、字段/算子、质量阈值），`/api/factor-runs` 读取时与本地目录合并。写入是**尽力而为**：失败只记 warning，不影响建池与回测。`factors.canonical_expression / backtest_expression` 在落库时由 `expression` 经 `canonicalize_alphagen` 补算（无法规范化时保留原文）；`accepted_factors.jsonl` 本身不保存这两列，API 详情同样按此规则现算。
+股票池以 MySQL 为主存储：列表/详情优先读 `pools` / `pool_codes`，未配置或连接失败时回退本地 `var/data_cache/pools`。因子运行与回测结果仍以本地文件为主，但 `factor_runs` 表集中存档训练元数据（设备、开始/结束时间、总耗时、训练耗时、步数、超参数、字段/算子、质量阈值），`/api/factor-runs` 读取时与本地目录合并。写入是**尽力而为**：失败只记 warning，不影响建池与回测。`factors.canonical_expression / backtest_expression` 在落库时由 `expression` 经 `canonicalize_alphagen` 补算（无法规范化时保留原文）；`accepted_factors.jsonl` 本身不保存这两列，API 详情同样按此规则现算。
 
 配置优先级：`QL_MYSQL_*` 环境变量 > `configs/mysql.local.env`（已被根 `.gitignore` 的 `**/*.local.env` 忽略）。模板见 `configs/mysql.env.example`；驱动为 `PyMySQL`（已加入 `requirements.txt`）。
 
@@ -586,12 +586,12 @@ tail -f outputs/logs/api_access_$(date +%F).log   # 想看实时请求流
 全量补录与自检：
 
 ```powershell
-py -3 -m custom_bt.mysql_store schema   # CREATE TABLE IF NOT EXISTS
-py -3 -m custom_bt.mysql_store check    # 版本 + 各表行数
-py -3 -m custom_bt.cli mysql-sync       # 本地 pools / factor_runs / saved_backtests 全量 upsert
+py -3 -m repositories.mysql_store schema   # CREATE TABLE IF NOT EXISTS
+py -3 -m repositories.mysql_store check    # 版本 + 各表行数
+py -3 -m cli mysql-sync       # 本地 pools / factor_runs / saved_backtests 全量 upsert
 ```
 
-从 v1（`backtests.run_name` 主键）升级时，`schema` 会自动重建回测表并提示执行一次 `mysql-sync`；本地结果文件不受影响，补录后回测数据完整回来。v3（2026-10-25）只新增 `factor_backtest_runs`，`schema` 幂等补建，不需要重建旧表；`sync_all` 会额外扫描 `outputs/saved_backtests/**/factor_backtest_manifest.json`。v4（2026-11-02）为 `factor_runs` 新增训练元数据列（`device / started_at / finished_at / duration_seconds / training_seconds / timesteps / target_factor_count / max_attempts / rollout_timesteps / seed / target_horizon / max_backtrack_days / max_future_days / n_stocks / operator_mode` 及 `split_days / hyperparameters / fields / operators / quality` JSON 列），`schema` 用 `ALTER TABLE ... ADD COLUMN` 幂等补列；执行一次 `mysql-sync` 即可把已完成的本地运行全部补录（含 `demo_liquid_300_20261025`），旧运行从 `outputs/jobs/<job_id>/platform_job.json` 回填设备与超参数。
+从 v1（`backtests.run_name` 主键）升级时，`schema` 会自动重建回测表并提示执行一次 `mysql-sync`；本地结果文件不受影响，补录后回测数据完整回来。v3（2026-10-25）只新增 `factor_backtest_runs`，`schema` 幂等补建，不需要重建旧表；`sync_all` 会额外扫描 `var/outputs/saved_backtests/**/factor_backtest_manifest.json`。v4（2026-11-02）为 `factor_runs` 新增训练元数据列（`device / started_at / finished_at / duration_seconds / training_seconds / timesteps / target_factor_count / max_attempts / rollout_timesteps / seed / target_horizon / max_backtrack_days / max_future_days / n_stocks / operator_mode` 及 `split_days / hyperparameters / fields / operators / quality` JSON 列），`schema` 用 `ALTER TABLE ... ADD COLUMN` 幂等补列；执行一次 `mysql-sync` 即可把已完成的本地运行全部补录（含 `demo_liquid_300_20261025`），旧运行从 `var/outputs/jobs/<job_id>/platform_job.json` 回填设备与超参数。
 
 约定：
 
@@ -604,12 +604,12 @@ py -3 -m custom_bt.cli mysql-sync       # 本地 pools / factor_runs / saved_bac
 
 ## 6. 下一步（写操作续）
 
-- ~~`POST /api/pools`~~ 已完成（2026-10-20，§2.8）：复用 `create_platform_job` + `api/job_runner.py`，与 CLI 共用 `outputs/jobs/`。
+- ~~`POST /api/pools`~~ 已完成（2026-10-20，§2.8）：复用 `create_platform_job` + `workers/job_runner.py`，与 CLI 共用 `var/outputs/jobs/`。
 - ~~`POST /api/factor-backtests`~~ 已完成（2026-10-25，§2.9）：运行列表、批次进度、版本化输出、批次查询与结果跳转均已接通。
 - ~~`POST /api/backtest`（手工表达式）~~ 已完成（2026-10-27，`POST /api/manual-backtests`，§2.10）：股票池选择、表达式校验、后台执行、进度轮询与结果预览均已接通。
 - ~~`POST /api/factor-generations`~~ 已完成（2026-11-02，§2.12）：默认参数、字段/算子/切分校验、后台 PPO 子进程、进度轮询与真实结果展示均已接通。
 - 待接：`POST /api/factor-compositions`，同样复用 `create_platform_job` / `run_platform_job`。
-- 任务中心改读 `outputs/jobs/*/status.json` 状态机（queued → running → finished/failed）；目前股票池页、因子回测页与手动回测页分别轮询各自提交的任务。
+- 任务中心改读 `var/outputs/jobs/*/status.json` 状态机（queued → running → finished/failed）；目前股票池页、因子回测页与手动回测页分别轮询各自提交的任务。
 - 用户 / 审计页面保持演示数据（无真实后端）
 
 ## 7. 已知坑（均已处理）
@@ -634,7 +634,7 @@ py -3 -m custom_bt.cli mysql-sync       # 本地 pools / factor_runs / saved_bac
 | `dim.stock_main_info_fd.Industry` 是**细分行业编码**（`DESCRIBE` 后实测 337 个取值，如 `60103483`），不是单级行业；直接用会把行业下拉框显示成数字编码 | 单级行业改取 `FirstIndustryName`（申万一级，实测 31 类，如「银行」），`FirstIndustryCode` 一并取回留作追溯；`Industry` 列不再使用 |
 | `dim.stock_main_info_fd` 的列名与类型需在公司网核对；`Industry / ListedSector / ListedState / ListedDate` 早期只在文档中确认 | 2026-10-21 已用 `DESCRIBE` 核对（名称、类型与注释均存在）；SQL 仍对数值/日期列统一 `toString(...)` 兜底，列名若再变只改 `SQL_DIM_PROFILES` 与对应测试 |
 | 本地缓存的 `market_code` 实测是数据商标识 `新华财经`，`ListedSector/ListedState` 是 `'1.0'/'6.0'/'8.0'` 这类原始编码 | 市场/板块改由代码前缀推导（`exchange_for_code / board_for_code`）；原始 `sector/listed_state` 仅作为「库内原始值」高级筛选原样暴露，不猜中文含义 |
-| 公司库有、`data_cache/master` 没有的股票曾无法建池/回测 | 2026-10-27 起建池选样、因子面板与回测面板都直接读公司库（`custom_bt/company_source.py`），不再取交集；旧本地池仍按 manifest 缺少 `data_source` 走本地分支 |
+| 公司库有、`var/data_cache/master` 没有的股票曾无法建池/回测 | 2026-10-27 起建池选样、因子面板与回测面板都直接读公司库（`custom_bt/company_source.py`），不再取交集；旧本地池仍按 manifest 缺少 `data_source` 走本地分支 |
 | ClickHouse Parquet 的 Date / DateTime 没有逻辑类型，读成 uint16 天数 / uint32 秒，`pd.read_parquet(filters=...)` 报错 | `company_source._rewrite_dates` 在写面板时把 `date` / `ListedDate` 重写为 Arrow `timestamp('s')`（`pc.cast(..., int64) * 86400`）；单测覆盖整数天重写 + PyArrow 日期过滤 |
 | 公司库 `toFloat64OrZero` 只接受 String，Decimal 列直接调用会报错 | `company_source` 按列类型区分：Decimal 列用 `toFloat64`，字符串数值列用 `toFloat64OrZero`；`volume` 映射到库列 `vol` |
 | 因子面板/回测默认区间若取全库 1990~2026，会把回测拉到 36 年 | API 优先读因子运行 `runtime_manifest.panel.date_min/date_max`，没有时才回退数据源区间 |
@@ -648,7 +648,7 @@ py -3 -m custom_bt.cli mysql-sync       # 本地 pools / factor_runs / saved_bac
 | 嵌套结果目录无法用 `run_name` 定位，旧 `/api/results/{run_name}` 会 404 | `list_runs` 为无 `run_key` 的 manifest 按相对路径补全；新增 `/api/results/detail?run_key=` 与 `/api/results/file`，`_safe_relative` 拒绝绝对路径/`..`/空段 |
 | 静态 `/api/results/detail`、`/api/results/file` 被 `/api/results/{run_name}` 吞掉 | 静态路由声明在动态路由之前（FastAPI 按注册顺序匹配） |
 | 因子组合只认扁平回测目录，版本化后找不到汇总 | `_find_factor_backtest_summary` 先找 `factor/<pool>/<run>/<backtest_id>/` 下最新批次，再回退旧扁平路径 |
-| 因子运行根目录口径不一致（API / mysql-sync / CLI 配置） | 统一解析到工作区根目录 `factor_runs/`：API 默认 `WORKSPACE_ROOT/factor_runs`（`QL_FACTOR_RUNS_ROOT` 可覆盖），`mysql_store.sync_all` 默认 `PROJECT_ROOT.parent/factor_runs`，`configs/factor_generation.yaml` 已改为 `../../factor_runs` |
+| 因子运行根目录口径不一致（API / mysql-sync / CLI 配置） | 统一解析到工作区根目录 `var/factor_runs/`：API 默认 `WORKSPACE_ROOT/factor_runs`（`QL_FACTOR_RUNS_ROOT` 可覆盖），`mysql_store.sync_all` 默认 `PROJECT_ROOT.parent/factor_runs`，`configs/factor_generation.yaml` 已改为 `../../factor_runs` |
 | 前端切运行/批次时 `useApiData` 仍短暂保留上一条数据 | 渲染前校验 `runDetail.run_id === runId`、`batch.factor_run_id === runId`，不匹配按加载中处理 |
 | 批次进度在任务 `finished` 时丢失 | `update_job_status` 只在 queued/running 清空 progress；finished/failed 保留最后一次进度与 result |
 
@@ -657,7 +657,7 @@ py -3 -m custom_bt.cli mysql-sync       # 本地 pools / factor_runs / saved_bac
 数据总览 / 数据字段 / 股票列表的链路缩短为：
 
 ```
-ClickHouse（实时）→ api/live_db.py（SQL 写死，60s/300s TTL 缓存）→ FastAPI → vite 代理 → 前端
+ClickHouse（实时）→ repositories/clickhouse.py（SQL 写死，60s/300s TTL 缓存）→ FastAPI → vite 代理 → 前端
 ```
 
 **前端不直连数据库**，中间只有一层按 key 的 TTL 缓存；验证 = 同一时刻对拍"直连库的 SQL 结果"与"页面数字"。
@@ -709,7 +709,7 @@ SELECT toString(uniqExact(toDate(timestamps))) AS days FROM dws.ll_stock_daily_s
 WHERE category='stock' AND timestamps BETWEEN '2025-01-01' AND '2025-06-30' FORMAT Vertical"
 
 # b) 建池后核对 manifest：data_source / source_signature / selection_days / selected_stats
-py -3 -c "import json; m=json.load(open(r'data_cache/pools/<pool_id>/manifest.json',encoding='utf-8')); print(m['data_source'], m['source_signature'], m['selection_days'], m['selected_stats'][:3])"
+py -3 -c "import json; m=json.load(open(r'var/data_cache/pools/<pool_id>/manifest.json',encoding='utf-8')); print(m['data_source'], m['source_signature'], m['selection_days'], m['selected_stats'][:3])"
 ```
 
 - `manifest["data_source"] == "clickhouse"`，`source_signature == "clickhouse:dws.ll_stock_daily_sharing"`；
@@ -739,13 +739,13 @@ curl -s "http://127.0.0.1:8000/api/universe/codes?industries=%E9%93%B6%E8%A1%8C"
 curl -s -X POST http://127.0.0.1:8000/api/pools -H "Content-Type: application/json" \
   -d '{"name":"bank_pool","selection_start":"2024-01-01","selection_end":"2024-06-30","industries":["银行"],"top_n":30,"min_coverage":0.9}'
 curl -s http://127.0.0.1:8000/api/jobs/<job_id>
-py -3 -c "import json; m=json.load(open(r'data_cache/pools/<pool_id>/manifest.json',encoding='utf-8')); print(m['provenance'], m['strict_top_n'])"
+py -3 -c "import json; m=json.load(open(r'var/data_cache/pools/<pool_id>/manifest.json',encoding='utf-8')); print(m['provenance'], m['strict_top_n'])"
 ```
 
 - `options.industries` 的 `count` 之和 + `missing.industry` 应等于全库股票数；与 (a) 逐行业对拍（注意 API 的 `count` 是过滤前的全库分布）。
 - `payload.codes`（manifest 的 `requested_codes`）应全部来自 (c) 的筛选结果；manifest 还应有 `data_source:"clickhouse"` 与固定签名，不再有 `excluded_total`。
-- 建池完成后用该 pool_id 跑一次因子生成与回测，确认 `panel.parquet`/回测面板直接来自公司库（无需 `data_cache/master` 存在）。
-- 全流程检查 API 响应、`outputs/jobs/<job_id>/runner.log`、manifest 中**不含密码**；`QL_CH_PASSWORD` 只存在于环境变量或 gitignored 的 `configs/clickhouse.local.env`。
+- 建池完成后用该 pool_id 跑一次因子生成与回测，确认 `panel.parquet`/回测面板直接来自公司库（无需 `var/data_cache/master` 存在）。
+- 全流程检查 API 响应、`var/outputs/jobs/<job_id>/runner.log`、manifest 中**不含密码**；`QL_CH_PASSWORD` 只存在于环境变量或 gitignored 的 `configs/clickhouse.local.env`。
 
 **Step 7 因子批量回测对拍（2026-10-25 起；2026-10-27 起公司库池需公司网络与密码）**
 
@@ -768,7 +768,7 @@ curl -s "http://127.0.0.1:8000/api/factor-backtests/<job_id>/files/factor_backte
 curl -s "http://127.0.0.1:8000/api/results/detail?run_key=factor/<pool_id>/<run_id>/<job_id>/<factor_id>"
 ```
 
-核对：`factor_backtest_manifest.json` 的 `backtest_id` = job_id；汇总 CSV 每行 `run_key` 以 `run_key_prefix` 开头；输出目录只含本次选中的因子；MySQL `factor_backtest_runs` 有一行同 `backtest_id`（`py -3 -m custom_bt.mysql_store check`）。重复用不同参数提交同一运行 → 出现新批次目录，旧批次仍在。
+核对：`factor_backtest_manifest.json` 的 `backtest_id` = job_id；汇总 CSV 每行 `run_key` 以 `run_key_prefix` 开头；输出目录只含本次选中的因子；MySQL `factor_backtest_runs` 有一行同 `backtest_id`（`py -3 -m repositories.mysql_store check`）。重复用不同参数提交同一运行 → 出现新批次目录，旧批次仍在。
 
 **Step 8 手动回测对拍（2026-10-27 起，公司库池需公司网络与密码）**
 
@@ -786,7 +786,7 @@ curl -s "http://127.0.0.1:8000/api/results/detail?run_key=manual/<job_id>/manual
 curl -s -o /tmp/daily.csv "http://127.0.0.1:8000/api/results/file?run_key=manual/<job_id>/manual_smoke&file_name=daily_report.csv"
 ```
 
-核对：`manifest.json` 的 `result_type=manual`、`run_key` 与上一步一致、`data_source=clickhouse`；`daily_report.csv` 行数 ≤ 区间交易日数；MySQL `backtests` 有同 `run_key` 一行（`py -3 -m custom_bt.mysql_store check`）。UI 上提交后右侧应自动出现真实指标/净值/年度表，点「完整结果」进入结果详情页。
+核对：`manifest.json` 的 `result_type=manual`、`run_key` 与上一步一致、`data_source=clickhouse`；`daily_report.csv` 行数 ≤ 区间交易日数；MySQL `backtests` 有同 `run_key` 一行（`py -3 -m repositories.mysql_store check`）。UI 上提交后右侧应自动出现真实指标/净值/年度表，点「完整结果」进入结果详情页。
 
 **两点提醒**
 

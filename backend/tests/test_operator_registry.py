@@ -1,8 +1,8 @@
 import unittest
 
 from custom_bt.docs import enrich_operators
-from custom_bt.expressions import list_operators
-from custom_bt.operator_registry import (
+from adapters.expressions import list_operators
+from adapters.operator_registry import (
     canonical_name,
     get_operator,
     list_operator_definitions,

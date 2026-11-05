@@ -28,7 +28,7 @@ py -3 -m pip install -r requirements.txt
 默认只读取核心行情字段，速度更稳：
 
 ```powershell
-python -m custom_bt.cli prepare `
+python -m cli prepare `
   --csv "..\v_stock_daily_full.csv" `
   --out "data_cache\stock_daily"
 ```
@@ -36,7 +36,7 @@ python -m custom_bt.cli prepare `
 如果你的 CSV 里新增了自己的因子字段、行业字段、财务字段，并且也想放入缓存：
 
 ```powershell
-python -m custom_bt.cli prepare `
+python -m cli prepare `
   --csv "..\v_stock_daily_full.csv" `
   --out "data_cache\stock_daily" `
   --all-columns
@@ -47,7 +47,7 @@ python -m custom_bt.cli prepare `
 以后你拿到新的日频 CSV，继续写入同一个缓存目录即可：
 
 ```powershell
-python -m custom_bt.cli update `
+python -m cli update `
   --csv "..\new_daily_data.csv" `
   --out "data_cache\stock_daily" `
   --all-columns
@@ -78,7 +78,7 @@ F:\\my_code_file\\因子构建\\数据\\daily_with_maindata_v2.csv
 默认字段配置在 `configs/platform.yaml`，先使用当前技术指标字段；需要更多财务字段时再追加到配置中：
 
 ```powershell
-python -m custom_bt.cli prepare-master --config configs/platform.yaml
+python -m cli prepare-master --config configs/platform.yaml
 ```
 
 ### 4.2 创建股票池
@@ -86,7 +86,7 @@ python -m custom_bt.cli prepare-master --config configs/platform.yaml
 例如创建流动性前 500 股票池：
 
 ```powershell
-python -m custom_bt.cli create-pool --config configs/pools/liquid_500.yaml
+python -m cli create-pool --config configs/pools/liquid_500.yaml
 ```
 
 每个股票池会保存代码清单、筛选窗口、上市年限、覆盖率、数据签名和成交额统计，生成和回测通过同一个 `pool_id` 绑定。
@@ -94,12 +94,12 @@ python -m custom_bt.cli create-pool --config configs/pools/liquid_500.yaml
 ### 4.3 在股票池上生成 PPO 因子
 
 ```powershell
-python -m custom_bt.cli generate-factors `
+python -m cli generate-factors `
   --pool "<pool_id>" `
   --config configs/factor_generation.yaml
 ```
 
-生成结果位于 `factor_runs/<run_id>/`，包括：
+生成结果位于 `var/factor_runs/<run_id>/`，包括：
 
 ```text
 factor_run.json
@@ -111,32 +111,32 @@ checkpoints/
 ### 4.4 只回测合格因子
 
 ```powershell
-python -m custom_bt.cli backtest-factors `
+python -m cli backtest-factors `
   --pool "<pool_id>" `
   --factor-run "<run_id>" `
   --config configs/default.yaml
 ```
 
-回测结果位于 `outputs/saved_backtests/factor/<pool_id>/<run_id>/`，包含每个因子的收益、Sharpe、最大回撤、换手率和交易成本汇总。Web/平台任务提交时会再套一层批次目录 `<backtest_id>/`（即 job_id），重复回测不覆盖历史结果。
+回测结果位于 `var/outputs/saved_backtests/factor/<pool_id>/<run_id>/`，包含每个因子的收益、Sharpe、最大回撤、换手率和交易成本汇总。Web/平台任务提交时会再套一层批次目录 `<backtest_id>/`（即 job_id），重复回测不覆盖历史结果。
 
 ### 4.5 网页查看
 
 前端是独立的 React 应用，启动方式见 [../frontend/README.md](../frontend/README.md)：股票池、因子生成、因子回测与结果中心都在那里查看。
 
-旧的 `data_cache/stock_daily` 和 `sample_store` 只在新主缓存与一次端到端流程验证通过后再删除。
+旧的 `var/data_cache/stock_daily` 和 `sample_store` 只在新主缓存与一次端到端流程验证通过后再删除。
 
 ## 5. 查看字段和算子
 
 查看当前缓存里有哪些字段可以写进表达式：
 
 ```powershell
-python -m custom_bt.cli fields --data "data_cache\stock_daily"
+python -m cli fields --data "data_cache\stock_daily"
 ```
 
 查看当前有哪些算子：
 
 ```powershell
-python -m custom_bt.cli operators
+python -m cli operators
 ```
 
 当前内置算子已经扩展到 Brain 风格的主要可实现部分：
@@ -156,7 +156,7 @@ python -m custom_bt.cli operators
 编辑 `configs\default.yaml` 里的表达式和参数，然后运行：
 
 ```powershell
-python -m custom_bt.cli backtest `
+python -m cli backtest `
   --data "data_cache\stock_daily" `
   --alpha-config "configs\default.yaml" `
   --run-name "demo_top50"
@@ -178,7 +178,7 @@ outputs\demo_top50\
 查看已保存结果：
 
 ```powershell
-python -m custom_bt.cli runs --outputs "outputs"
+python -m cli runs --outputs "outputs"
 ```
 
 ## 7. 表达式例子
@@ -215,18 +215,20 @@ alphas:
 
 ## 8. 拓展算子
 
-打开 `custom_bt\expressions.py`，新增函数并注册：
+打开 `quantops/quantops/operators.py` 新增实现，并在 `quantops/quantops/registry.py` 确认 canonical 名称；也可以在任意项目里直接注册：
 
 ```python
+from quantops import register_operator
+
 def _neg(x):
     return -x
 
-register_operator("neg", "custom", "Negative value.", _neg)
+register_operator("neg", _neg, category="custom", description="Negative value.")
 ```
 
 注册后：
 
-- 命令行 `python -m custom_bt.cli operators` 能看到
+- 命令行 `python -m cli operators` 能看到
 - 网页 Operators 页面能看到
 - 表达式里可以直接用，例如 `neg(rank(close))`
 
@@ -254,9 +256,9 @@ For a large source, build the master cache once. Factor generation and factor ba
 ## MySQL 集中存储（股票池 / 因子 / 回测）
 
 股票池以 MySQL 为主存储：`GET /api/pools` / `GET /api/pools/{pool_id}` 优先读 MySQL，
-连不上或未配置时回退本地 `data_cache/pools`；建池成功后自动写入 MySQL，重复同步幂等。
+连不上或未配置时回退本地 `var/data_cache/pools`；建池成功后自动写入 MySQL，重复同步幂等。
 删除池用 `DELETE /api/pools/{pool_id}?confirm=true`，会同时清理 MySQL 四张池表与本地池目录。
-因子运行与回测结果仍以本地文件（`factor_runs`、`outputs/saved_backtests`）为准，MySQL 只做集中存档。
+因子运行与回测结果仍以本地文件（`var/factor_runs`、`var/outputs/saved_backtests`）为准，MySQL 只做集中存档。
 
 连接配置（环境变量优先，其次本地文件）：
 
@@ -290,16 +292,16 @@ py -3 -m pip install PyMySQL
 常用命令（在 `backend` 目录）：
 
 ```powershell
-py -3 -m custom_bt.mysql_store schema   # 幂等建表
-py -3 -m custom_bt.mysql_store check    # 连接自检 + 各表行数
-py -3 -m custom_bt.cli mysql-sync       # 把现有本地结果补录到 MySQL
+py -3 -m repositories.mysql_store schema   # 幂等建表
+py -3 -m repositories.mysql_store check    # 连接自检 + 各表行数
+py -3 -m cli mysql-sync       # 把现有本地结果补录到 MySQL
 ```
 
 说明：MySQL 未配置或连不上时，股票池接口自动回退本地文件，建池/回测也不受影响；密码不会进入日志、响应或 manifest。
 
 ## Web API（React 前端用）
 
-`frontend/` 下的 React 前端通过 `/api/*` 读取真实数据，接口层在 `api/main.py`（FastAPI；查询端点 + 建池 `POST /api/pools` + 批量因子回测 `POST /api/factor-backtests` + 手动回测 `POST /api/manual-backtests`）。
+`frontend/` 下的 React 前端通过 `/api/*` 读取真实数据。HTTP 路由在 `api/routers/`，业务编排在 `services/`，数据访问在 `repositories/`；`api/main.py` 只负责装配 app 和注册路由。
 在 `backend` 目录启动：
 
 ```powershell
@@ -335,13 +337,13 @@ python -m api
 - `POST /api/factor-backtests` 提交批量因子回测（可传 `factor_ids` 只回测勾选因子；202 + job_id）
 - `GET /api/factor-backtests`、`GET /api/factor-backtests/{backtest_id}` 批次列表与汇总/失败明细（每行带 `run_key`）
 - `GET /api/factor-backtests/{backtest_id}/files/{file_name}` 下载批次汇总/失败 CSV
-- `POST /api/manual-backtests` 按股票池 + Alpha 表达式提交手动回测（202 + job_id；公司库池实时读面板，旧本地池回退 `data_cache/master`）
+- `POST /api/manual-backtests` 按股票池 + Alpha 表达式提交手动回测（202 + job_id；公司库池实时读面板，旧本地池回退 `var/data_cache/master`）
 - `GET /api/results`、`GET /api/results/{run_name}` 已保存回测结果（净值/年度指标/文件清单；手动回测 `run_key = manual/<job_id>/<run_name>`）
 - `GET /api/results/detail?run_key=...`、`GET /api/results/file?run_key=...` 按相对路径打开/下载任意层级结果（嵌套因子结果用这个）
 - `GET /api/results/{run_name}/files/{file_name}` 下载旧扁平结果文件（按 manifest 白名单）
 
 边界：股票池候选、建池选样、因子生成面板、因子回测面板与手动回测面板**全部直接读公司 ClickHouse**，不再依赖本地
-`data_cache/master`。公司库有、本地缓存没有的股票同样可以建池和回测。公司库签名固定为
+`var/data_cache/master`。公司库有、本地缓存没有的股票同样可以建池和回测。公司库签名固定为
 `clickhouse:dws.ll_stock_daily_sharing`；旧本地缓存池 manifest 没有 `data_source` 时仍按本地数据源读取，
 仅用于兼容历史池/因子运行。行业只取 `dim.stock_main_info_fd.FirstIndustryName` 单级行业（申万一级；
 `Industry` 列是细分行业编码，不能直接当单级行业用）；市场/板块由代码前缀推导。

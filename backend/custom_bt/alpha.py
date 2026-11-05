@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from custom_bt.canonical_expression import normalize_expression
-from custom_bt.expressions import evaluate_expression
+from adapters.expressions import evaluate_expression
 
 
 def combine_alphas(panel: pd.DataFrame, alpha_defs: List[Dict[str, Any]]) -> pd.DataFrame:

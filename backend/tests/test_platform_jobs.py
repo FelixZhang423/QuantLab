@@ -6,9 +6,9 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from custom_bt.data import build_master_store
-from custom_bt.jobs import update_job_status
-from custom_bt.platform_jobs import create_platform_job, run_platform_job
+from repositories.local_store import build_master_store
+from repositories.job_store import update_job_status
+from workers.job_dispatcher import create_platform_job, run_platform_job
 
 
 class PlatformJobTests(unittest.TestCase):
@@ -171,7 +171,7 @@ class PlatformJobTests(unittest.TestCase):
                 snapshots.append(read_status())
                 return {"run_id": "run_x", "accepted_count": 4, "attempts": 20}
 
-            with patch("custom_bt.platform_jobs.run_factor_generation", side_effect=fake_generate):
+            with patch("workers.job_dispatcher.run_factor_generation", side_effect=fake_generate):
                 result = run_platform_job(job_dir)
 
             self.assertEqual(result["run_id"], "run_x")
@@ -248,9 +248,9 @@ class PlatformJobTests(unittest.TestCase):
             )
 
             with patch(
-                "custom_bt.platform_jobs.create_pool_from_company",
+                "workers.job_dispatcher.create_pool_from_company",
                 return_value={"pool_id": "company_pool_abc"},
-            ) as company, patch("custom_bt.platform_jobs.create_pool") as local:
+            ) as company, patch("workers.job_dispatcher.create_pool") as local:
                 result = run_platform_job(job_dir)
 
             self.assertEqual(result["pool_id"], "company_pool_abc")
@@ -278,8 +278,8 @@ class PlatformJobTests(unittest.TestCase):
             )
 
             with patch(
-                "custom_bt.platform_jobs.create_pool", return_value={"pool_id": "legacy_abc"}
-            ) as local, patch("custom_bt.platform_jobs.create_pool_from_company") as company:
+                "workers.job_dispatcher.create_pool", return_value={"pool_id": "legacy_abc"}
+            ) as local, patch("workers.job_dispatcher.create_pool_from_company") as company:
                 result = run_platform_job(job_dir)
 
             self.assertEqual(result["pool_id"], "legacy_abc")
@@ -323,7 +323,7 @@ class PlatformJobTests(unittest.TestCase):
                 )
                 return {"backtest_id": job_dir.name, "completed": 2, "failed": 1}
 
-            with patch("custom_bt.platform_jobs.backtest_accepted_factors", side_effect=fake_backtest):
+            with patch("workers.job_dispatcher.backtest_accepted_factors", side_effect=fake_backtest):
                 result = run_platform_job(job_dir)
 
             status = json.loads((job_dir / "status.json").read_text(encoding="utf-8"))
@@ -354,7 +354,7 @@ class PlatformJobTests(unittest.TestCase):
                     )
                 return {"completed_sizes": [2], "output_dirs": ["out"]}
 
-            with patch("custom_bt.platform_jobs.compose_factors", side_effect=fake_compose_factors) as mocked:
+            with patch("workers.job_dispatcher.compose_factors", side_effect=fake_compose_factors) as mocked:
                 result = run_platform_job(job_dir)
 
             status = json.loads((job_dir / "status.json").read_text(encoding="utf-8"))

@@ -20,6 +20,10 @@ htmlcov/
 *.swp
 
 # ===== 数据缓存与生成产物 =====
+# 运行期数据统一根：data_cache / outputs / factor_runs 都在这里
+/var/
+
+# 旧布局（兼容历史工作区）
 # 数据缓存不入库：master 由 prepare-master 从原始 CSV 重建，其余为运行产物
 backend/data_cache/master/
 backend/data_cache/stock_daily/

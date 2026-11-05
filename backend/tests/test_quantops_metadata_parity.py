@@ -7,10 +7,10 @@ tests/test_docs.py 锁住、不能改，quantops/metadata.py 里存的是副本�
 """
 import unittest
 
-from custom_bt import _quantops_boot  # noqa: F401  （未安装 quantops 时补 sys.path）
+from adapters import _quantops_boot  # noqa: F401  （未安装 quantops 时补 sys.path）
 from custom_bt import docs
 from custom_bt.docs import enrich_operators
-from custom_bt.expressions import list_operators
+from adapters.expressions import list_operators
 from quantops import metadata
 
 

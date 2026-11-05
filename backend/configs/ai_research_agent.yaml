@@ -46,10 +46,10 @@ guardrails:
   require_tool_call_limit: true
 
 paths:
-  master_store: data_cache/master
-  pools_root: data_cache/pools
-  runtime_root: data_cache/factor_runtime
-  factor_runs_root: factor_runs
-  saved_results_root: outputs/saved_backtests
-  jobs_root: jobs
-  ai_research_root: outputs/ai_research
+  master_store: ../var/data_cache/master
+  pools_root: ../var/data_cache/pools
+  runtime_root: ../var/data_cache/factor_runtime
+  factor_runs_root: ../var/factor_runs
+  saved_results_root: ../var/outputs/saved_backtests
+  jobs_root: ../var/outputs/jobs
+  ai_research_root: ../var/outputs/ai_research

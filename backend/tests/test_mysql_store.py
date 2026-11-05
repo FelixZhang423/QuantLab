@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from custom_bt import mysql_store
+from repositories import mysql_store
 
 
 class FakeCursor:
@@ -514,11 +514,11 @@ def test_persist_factor_run_writes_training_metadata(tmp_path: Path, monkeypatch
 
 def test_factor_expressions_fill_canonical_and_backtest():
     expression, canonical, backtest = mysql_store._factor_expressions(
-        {"expression": "Rank(Delta(close, 5))"}
+        {"expression": "CSRank(Delta(close, 5))"}
     )
 
-    assert expression == "Rank(Delta(close, 5))"
-    assert canonical == "Rank(delta(close, 5))"
+    assert expression == "CSRank(Delta(close, 5))"
+    assert canonical == "rank(delta(close,5))"
     assert backtest == canonical
 
 
@@ -550,7 +550,7 @@ def test_persist_factor_run_writes_canonical_expressions(tmp_path: Path, monkeyp
         "accepted_count": 1,
     }
     (run_dir / "factor_run.json").write_text(json.dumps(manifest), encoding="utf-8")
-    accepted = [{"expression": "Rank(Delta(close, 5))", "ic": 0.03}]
+    accepted = [{"expression": "CSRank(Delta(close, 5))", "ic": 0.03}]
     rejected = [{"expression": "Div(close, open)"}]
     (run_dir / "accepted_factors.jsonl").write_text(
         "\n".join(json.dumps(record) for record in accepted) + "\n", encoding="utf-8"
@@ -571,9 +571,9 @@ def test_persist_factor_run_writes_canonical_expressions(tmp_path: Path, monkeyp
     assert len(inserts) == 1
     rows = inserts[0]
     assert [row[3] for row in rows] == [1, 0]  # 合格在前，拒绝在后
-    assert rows[0][4] == "Rank(Delta(close, 5))"
-    assert rows[0][5] == "Rank(delta(close, 5))"
-    assert rows[0][6] == "Rank(delta(close, 5))"
+    assert rows[0][4] == "CSRank(Delta(close, 5))"
+    assert rows[0][5] == "rank(delta(close,5))"
+    assert rows[0][6] == "rank(delta(close,5))"
     assert rows[1][4] == "Div(close, open)"
     assert rows[1][5] == "div(close,open)"
     assert rows[1][6] == "div(close,open)"

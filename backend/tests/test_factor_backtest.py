@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from custom_bt.data import build_master_store
+from repositories.local_store import build_master_store
 from custom_bt.factor_backtest import backtest_accepted_factors, factor_id
 from custom_bt.pools import create_pool
 

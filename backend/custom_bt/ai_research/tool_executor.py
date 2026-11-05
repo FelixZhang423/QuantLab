@@ -12,7 +12,7 @@ from custom_bt.ai_research.memory import ExperimentStore
 from custom_bt.ai_research.prompts import TOOL_WHITELIST
 from custom_bt.ai_research.tools import validate_candidate_expression
 from custom_bt.canonical_expression import normalize_expression
-from custom_bt.platform_jobs import create_platform_job, run_platform_job
+from workers.job_dispatcher import create_platform_job, run_platform_job
 
 logger = logging.getLogger(__name__)
 
@@ -348,7 +348,7 @@ class AIToolExecutor:
             encoding="utf-8",
         )
         try:
-            from custom_bt.mysql_store import persist_factor_run
+            from repositories.mysql_store import persist_factor_run
 
             persist_factor_run(factor_run_dir)
         except Exception:

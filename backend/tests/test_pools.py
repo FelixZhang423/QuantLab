@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from custom_bt.data import build_master_store
+from repositories.local_store import build_master_store
 from custom_bt.pools import create_pool, load_pool_codes, load_pool_manifest
 
 

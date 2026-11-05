@@ -61,7 +61,7 @@ def _http_error(code: int, body: bytes, url: str = "http://clickhouse.example:81
 
 @pytest.fixture(autouse=True)
 def _fresh_cache():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     live_db.clear_cache()
     yield
@@ -72,21 +72,21 @@ def _fresh_cache():
 
 
 def test_parse_json_each_row_skips_blank_lines():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     rows = live_db.parse_json_each_row('\n{"a": "1"}\n\n{"a": "2"}\n')
     assert rows == [{"a": "1"}, {"a": "2"}]
 
 
 def test_parse_json_each_row_rejects_garbage():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     with pytest.raises(live_db.LiveDBQueryError):
         live_db.parse_json_each_row('{"a": 1}\nnot json')
 
 
 def test_to_int_and_to_float_convert_quoted_values():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     # JSONEachRow 会把 64 位整数输出成带引号的字符串
     assert live_db.to_int("17368843") == 17368843
@@ -98,7 +98,7 @@ def test_to_int_and_to_float_convert_quoted_values():
 
 
 def test_short_type_compresses_nullable():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     assert live_db._short_type("Nullable(String)") == "String?"
     assert live_db._short_type("Decimal(18, 2)") == "Decimal(18,2)"
@@ -109,7 +109,7 @@ def test_short_type_compresses_nullable():
 
 
 def test_load_env_file_tolerates_bom_comments_and_quotes(tmp_path):
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     env_path = tmp_path / "clickhouse.local.env"
     env_path.write_bytes(
@@ -124,7 +124,7 @@ def test_load_env_file_tolerates_bom_comments_and_quotes(tmp_path):
 
 
 def test_resolve_settings_env_overrides_file(tmp_path):
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     env_path = tmp_path / "clickhouse.local.env"
     env_path.write_text("QL_CH_PASSWORD=file-pass\nQL_CH_HOST=10.0.0.9\n", encoding="utf-8")
@@ -136,7 +136,7 @@ def test_resolve_settings_env_overrides_file(tmp_path):
 
 
 def test_resolve_settings_requires_password(tmp_path):
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     with pytest.raises(live_db.LiveDBConfigError):
         live_db.resolve_settings(tmp_path / "missing.env", environ={})
@@ -146,7 +146,7 @@ def test_resolve_settings_requires_password(tmp_path):
 
 
 def test_guard_readonly_allows_queries_and_blocks_writes():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     assert live_db.guard_readonly("SELECT 1;") == "SELECT 1"
     assert live_db.guard_readonly("  WITH x AS (SELECT 1) SELECT * FROM x  ").startswith("WITH")
@@ -159,7 +159,7 @@ def test_guard_readonly_allows_queries_and_blocks_writes():
 
 
 def test_module_sql_constants_pass_guard():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     for sql in (
         live_db.SQL_MASTER_STATS,
@@ -173,7 +173,7 @@ def test_module_sql_constants_pass_guard():
 
 def test_dim_profile_sql_uses_first_level_industry_name():
     """dim.Industry 是细分行业编码；单级行业必须取 FirstIndustryName。"""
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     assert "FirstIndustryName AS industry" in live_db.SQL_DIM_PROFILES
     assert "FirstIndustryCode AS industry_code" in live_db.SQL_DIM_PROFILES
@@ -183,7 +183,7 @@ def test_dim_profile_sql_uses_first_level_industry_name():
 
 
 def test_client_parses_rows_and_keeps_password_out_of_url():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     settings = live_db.LiveDBSettings(password="top-secret")
     opener = _FakeOpener(_FakeResponse(b'{"rows": "17368843"}\n'))
@@ -202,7 +202,7 @@ def test_client_parses_rows_and_keeps_password_out_of_url():
 
 
 def test_client_maps_auth_failure_to_unavailable():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     settings = live_db.LiveDBSettings(password="top-secret")
     client = live_db.ClickHouseHTTPClient(
@@ -215,7 +215,7 @@ def test_client_maps_auth_failure_to_unavailable():
 
 
 def test_client_maps_query_failure_and_redacts_password():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     settings = live_db.LiveDBSettings(password="top-secret")
     body = b"Code: 62. DB::Exception: top-secret rejected"
@@ -228,7 +228,7 @@ def test_client_maps_query_failure_and_redacts_password():
 
 
 def test_client_retries_connection_error_once(monkeypatch):
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     monkeypatch.setattr(live_db.time, "sleep", lambda *_: None)
     settings = live_db.LiveDBSettings(password="x")
@@ -241,7 +241,7 @@ def test_client_retries_connection_error_once(monkeypatch):
 
 
 def test_client_does_not_retry_timeouts():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     settings = live_db.LiveDBSettings(password="x")
     opener = _FakeOpener(error=urllib.error.URLError(TimeoutError("timed out")))
@@ -256,7 +256,7 @@ def test_client_does_not_retry_timeouts():
 
 
 def test_cached_hits_ttl_and_ttl_zero_disables():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     calls = []
 
@@ -278,7 +278,7 @@ def test_cached_hits_ttl_and_ttl_zero_disables():
 
 
 def test_cached_single_flight_under_concurrency():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     calls = []
     started = threading.Event()
@@ -308,7 +308,7 @@ def test_cached_single_flight_under_concurrency():
 
 def test_cached_ttl_zero_coalesces_concurrent_but_never_reuses_old():
     """关闭缓存（ttl=0）时：并发同发请求合流成一次查询，但串行请求必须重新查库。"""
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     calls = []
     started = threading.Event()
@@ -344,7 +344,7 @@ def test_cached_ttl_zero_coalesces_concurrent_but_never_reuses_old():
 
 
 def test_live_master_stats_reads_count_row():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     client = _FakeClient(
         {
@@ -369,7 +369,7 @@ def test_live_master_stats_reads_count_row():
 
 
 def test_live_field_catalog_excludes_keys_and_appends_dim_fields():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     client = _FakeClient(
         {
@@ -396,7 +396,7 @@ def test_live_field_catalog_excludes_keys_and_appends_dim_fields():
 
 
 def test_live_stock_rows_converts_types_and_merges_profiles():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     client = _FakeClient(
         {
@@ -469,7 +469,7 @@ def test_live_stock_rows_converts_types_and_merges_profiles():
 
 
 def test_parse_listed_date_and_code_classification():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     assert live_db.parse_listed_date("1991-04-03 00:00:00") == "1991-04-03"
     assert live_db.parse_listed_date("2020-01-01") == "2020-01-01"
@@ -522,7 +522,7 @@ def _universe_fixture():
 
 
 def test_filter_universe_by_industry_market_keyword_and_listed_days():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     items = _universe_fixture()
     banks = live_db.filter_universe(items, industries=["银行"])
@@ -547,7 +547,7 @@ def test_filter_universe_by_industry_market_keyword_and_listed_days():
 
 
 def test_aggregate_universe_counts_facets_and_master_coverage():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     data = live_db.aggregate_universe(
         _universe_fixture(), master_codes={"600000", "000001"}
@@ -567,7 +567,7 @@ def test_aggregate_universe_counts_facets_and_master_coverage():
 
 
 def test_source_label_and_panel_alias():
-    from api import live_db
+    from repositories import clickhouse as live_db
 
     assert live_db.source_label("last_5years_daily", live_db.DAILY_TABLE) == live_db.DAILY_TABLE
     assert live_db.source_label("stock_main_info_fd", live_db.DIM_TABLE) == live_db.DIM_TABLE

@@ -1,7 +1,7 @@
 from typing import Type
 from .data.expression import *
 
-from custom_bt.operator_registry import load_alphagen_operator_classes
+from adapters.operator_registry import load_alphagen_operator_classes
 
 
 MAX_EXPR_LENGTH = 15

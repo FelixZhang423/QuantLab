@@ -11,7 +11,7 @@ import os
 
 import uvicorn
 
-from api import logging_setup
+from config import logging as logging_setup
 
 
 def main() -> None:

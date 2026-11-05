@@ -7,11 +7,37 @@ import sys
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
+from errors import DomainError
 
-from api import job_runner, live_db, main
-from custom_bt import company_source
+from schemas import FactorBacktestRequest, FactorGenerationRequest, FactorGenerationSplit, ManualBacktestRequest, PoolCreateRequest
+from workers.job_dispatcher import create_platform_job
+from repositories import clickhouse as live_db
+from workers import job_runner
+from repositories import company_source
 from custom_bt.factor_backtest import factor_id
+
+import common
+from services import (
+    data_service,
+    factor_backtest_service,
+    generation_service,
+    job_service,
+    manual_backtest_service,
+    pool_service,
+    result_service,
+)
+from repositories import mysql_store
+
+
+def _patch_job_deps(monkeypatch, attr, value):
+    for module in (
+        pool_service,
+        generation_service,
+        factor_backtest_service,
+        manual_backtest_service,
+    ):
+        if hasattr(module, attr):
+            monkeypatch.setattr(module, attr, value)
 
 
 def _live(items, cached=False):
@@ -79,9 +105,9 @@ def master(tmp_path, monkeypatch):
     )
     for code in ("000001", "600000", "300750"):
         (root / "stocks" / f"{code}.parquet").write_bytes(b"")
-    monkeypatch.setattr(main, "MASTER_DIR", root)
-    monkeypatch.setattr(main, "POOLS_ROOT", tmp_path / "pools")
-    monkeypatch.setattr(main, "JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr(common, "MASTER_DIR", root)
+    monkeypatch.setattr(common, "POOLS_ROOT", tmp_path / "pools")
+    monkeypatch.setattr(common, "JOBS_ROOT", tmp_path / "jobs")
     return root
 
 
@@ -111,9 +137,9 @@ def test_fields_endpoint_merges_catalog_and_metadata(monkeypatch):
         (company_source.FUNDAMENTAL_TABLE, "WROE"): {"dtype": "Decimal(20, 0)", "comment": ""},
         (company_source.VALUATION_TABLE, "PB"): {"dtype": "Decimal(18, 4)", "comment": ""},
     }
-    monkeypatch.setattr(main, "_field_catalog", lambda: catalog)
-    monkeypatch.setattr(main, "_field_metadata", lambda: (metadata, None))
-    payload = main.get_fields()
+    monkeypatch.setattr(data_service, "_field_catalog", lambda: catalog)
+    monkeypatch.setattr(data_service, "_field_metadata", lambda: (metadata, None))
+    payload = data_service.get_fields()
     by_name = {field["name"]: field for field in payload["fields"]}
     assert payload["total"] == 5
     assert payload["offline"] is False
@@ -132,9 +158,9 @@ def test_fields_endpoint_offline_fallback(monkeypatch):
         _catalog_entry("ROE", "财务原始", company_source.FUNDAMENTAL_TABLE, "ROE", "fund_ROE"),
         _catalog_entry("PB", "估值", company_source.VALUATION_TABLE, "PB", "val_PB"),
     ]
-    monkeypatch.setattr(main, "_field_catalog", lambda: catalog)
-    monkeypatch.setattr(main, "_field_metadata", lambda: (None, "ClickHouse 不可达"))
-    payload = main.get_fields()
+    monkeypatch.setattr(data_service, "_field_catalog", lambda: catalog)
+    monkeypatch.setattr(data_service, "_field_metadata", lambda: (None, "ClickHouse 不可达"))
+    payload = data_service.get_fields()
     assert payload["offline"] is True
     assert payload["metadata_error"] == "ClickHouse 不可达"
     assert all(field["found_in_db"] is None and field["dtype"] is None for field in payload["fields"])
@@ -142,7 +168,7 @@ def test_fields_endpoint_offline_fallback(monkeypatch):
 
 
 def test_field_catalog_file_has_expected_categories():
-    catalog = main._field_catalog()
+    catalog = data_service._field_catalog()
     assert len(catalog) == 384
     counts = {}
     for entry in catalog:
@@ -210,13 +236,13 @@ def test_field_catalog_file_has_expected_categories():
 
 def _stub_universe(monkeypatch, items=None):
     monkeypatch.setattr(
-        main.live_db, "live_stock_rows", lambda *args, **kwargs: _live(items or _items())
+        live_db, "live_stock_rows", lambda *args, **kwargs: _live(items or _items())
     )
 
 
 def test_universe_options_reports_facets_from_company_db(master, monkeypatch):
     _stub_universe(monkeypatch)
-    data = main.get_universe_options()
+    data = data_service.get_universe_options()
 
     assert data["total"] == 5
     assert data["data_source"] == "clickhouse"
@@ -232,7 +258,7 @@ def test_universe_options_reports_facets_from_company_db(master, monkeypatch):
 
 def test_universe_stocks_paginates_all_matched(master, monkeypatch):
     _stub_universe(monkeypatch)
-    data = main.get_universe_stocks(
+    data = data_service.get_universe_stocks(
         industries=["银行"],
         exchanges=[],
         boards=[],
@@ -257,7 +283,7 @@ def test_universe_stocks_paginates_all_matched(master, monkeypatch):
 def test_universe_stocks_includes_stocks_outside_local_master(master, monkeypatch):
     """本地缓存没有的股票（688981 / 920879）也必须出现在候选里。"""
     _stub_universe(monkeypatch)
-    data = main.get_universe_stocks(
+    data = data_service.get_universe_stocks(
         industries=["半导体"],
         exchanges=[],
         boards=[],
@@ -278,7 +304,7 @@ def test_universe_stocks_includes_stocks_outside_local_master(master, monkeypatc
 
 def test_universe_codes_returns_all_matched_codes(master, monkeypatch):
     _stub_universe(monkeypatch)
-    data = main.get_universe_codes(
+    data = data_service.get_universe_codes(
         industries=[],
         exchanges=[],
         boards=[],
@@ -296,7 +322,7 @@ def test_universe_codes_returns_all_matched_codes(master, monkeypatch):
     assert "master_ready" not in data
     assert "n_creatable" not in data
 
-    banks = main.get_universe_codes(
+    banks = data_service.get_universe_codes(
         industries=["银行"],
         exchanges=[],
         boards=[],
@@ -322,13 +348,12 @@ def test_create_pool_builds_company_payload_and_spawns_job(master, monkeypatch):
         job_dir.mkdir(parents=True)
         return job_dir
 
-    monkeypatch.setattr(main, "create_platform_job", fake_create)
-    monkeypatch.setattr(
-        main, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir)
+    _patch_job_deps(monkeypatch, "create_platform_job", fake_create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir)
     )
 
-    response = main.create_pool(
-        main.PoolCreateRequest(
+    response = pool_service.create_pool(
+        PoolCreateRequest(
             name="bank_pool",
             selection_start="2024-01-01",
             selection_end="2024-06-30",
@@ -343,7 +368,7 @@ def test_create_pool_builds_company_payload_and_spawns_job(master, monkeypatch):
     assert captured["spawned"].name == "job_123"
     assert payload["data_source"] == "clickhouse"
     assert "store_dir" not in payload  # 不再需要本地主缓存目录
-    assert payload["pools_root"] == str(main.POOLS_ROOT)
+    assert payload["pools_root"] == str(common.POOLS_ROOT)
     assert payload["codes"] == ["000001", "600000"]
     assert payload["strict_top_n"] is False
     assert payload["category"] == "stock"
@@ -364,20 +389,18 @@ def test_create_pool_builds_company_payload_and_spawns_job(master, monkeypatch):
 def test_create_pool_takes_all_matched_codes_from_company(master, monkeypatch, tmp_path):
     """不传 selected_codes = 使用全部匹配股票，不再按本地缓存排除。"""
     _stub_universe(monkeypatch)
-    monkeypatch.setattr(main, "MASTER_DIR", tmp_path / "no-master")  # 不依赖本地缓存
+    monkeypatch.setattr(common, "MASTER_DIR", tmp_path / "no-master")  # 不依赖本地缓存
     captured = {}
-    monkeypatch.setattr(
-        main,
-        "create_platform_job",
+    _patch_job_deps(monkeypatch, "create_platform_job",
         lambda jobs_root, operation, payload: (
             captured.setdefault("payload", payload),
             _make_job_dir(jobs_root),
         )[1],
     )
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: None)
 
-    response = main.create_pool(
-        main.PoolCreateRequest(
+    response = pool_service.create_pool(
+        PoolCreateRequest(
             name="all_stocks",
             selection_start="2024-01-01",
             selection_end="2024-06-30",
@@ -393,18 +416,16 @@ def test_create_pool_takes_all_matched_codes_from_company(master, monkeypatch, t
 def test_create_pool_uses_manual_selected_codes(master, monkeypatch):
     _stub_universe(monkeypatch)
     captured = {}
-    monkeypatch.setattr(
-        main,
-        "create_platform_job",
+    _patch_job_deps(monkeypatch, "create_platform_job",
         lambda jobs_root, operation, payload: (
             captured.setdefault("payload", payload),
             _make_job_dir(jobs_root),
         )[1],
     )
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: None)
 
-    response = main.create_pool(
-        main.PoolCreateRequest(
+    response = pool_service.create_pool(
+        PoolCreateRequest(
             name="manual_bank",
             selection_start="2024-01-01",
             selection_end="2024-06-30",
@@ -425,9 +446,9 @@ def test_create_pool_uses_manual_selected_codes(master, monkeypatch):
 def test_create_pool_rejects_empty_or_unknown_manual_selection(master, monkeypatch):
     _stub_universe(monkeypatch)
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_pool(
-            main.PoolCreateRequest(
+    with pytest.raises(DomainError) as excinfo:
+        pool_service.create_pool(
+            PoolCreateRequest(
                 name="empty_selection",
                 selection_start="2024-01-01",
                 selection_end="2024-06-30",
@@ -437,9 +458,9 @@ def test_create_pool_rejects_empty_or_unknown_manual_selection(master, monkeypat
     assert excinfo.value.status_code == 422
     assert "至少勾选" in excinfo.value.detail
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_pool(
-            main.PoolCreateRequest(
+    with pytest.raises(DomainError) as excinfo:
+        pool_service.create_pool(
+            PoolCreateRequest(
                 name="stale_selection",
                 selection_start="2024-01-01",
                 selection_end="2024-06-30",
@@ -458,9 +479,9 @@ def _make_job_dir(root: Path) -> Path:
 
 def test_create_pool_rejects_empty_match(master, monkeypatch):
     _stub_universe(monkeypatch)
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_pool(
-            main.PoolCreateRequest(
+    with pytest.raises(DomainError) as excinfo:
+        pool_service.create_pool(
+            PoolCreateRequest(
                 name="none",
                 selection_start="2024-01-01",
                 selection_end="2024-06-30",
@@ -473,9 +494,9 @@ def test_create_pool_rejects_empty_match(master, monkeypatch):
 
 def test_create_pool_validates_name_and_window(master, monkeypatch):
     _stub_universe(monkeypatch)
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_pool(
-            main.PoolCreateRequest(
+    with pytest.raises(DomainError) as excinfo:
+        pool_service.create_pool(
+            PoolCreateRequest(
                 name="../evil",
                 selection_start="2024-01-01",
                 selection_end="2024-06-30",
@@ -483,9 +504,9 @@ def test_create_pool_validates_name_and_window(master, monkeypatch):
         )
     assert excinfo.value.status_code == 422
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_pool(
-            main.PoolCreateRequest(
+    with pytest.raises(DomainError) as excinfo:
+        pool_service.create_pool(
+            PoolCreateRequest(
                 name="bad_window",
                 selection_start="2024-06-30",
                 selection_end="2024-01-01",
@@ -498,9 +519,9 @@ def test_live_db_unavailable_maps_to_503(master, monkeypatch):
     def boom(*args, **kwargs):
         raise live_db.LiveDBUnavailable("company network required")
 
-    monkeypatch.setattr(main.live_db, "live_stock_rows", boom)
-    with pytest.raises(HTTPException) as excinfo:
-        main.get_universe_options()
+    monkeypatch.setattr(live_db, "live_stock_rows", boom)
+    with pytest.raises(DomainError) as excinfo:
+        data_service.get_universe_options()
     assert excinfo.value.status_code == 503
 
 
@@ -520,14 +541,14 @@ def test_job_status_route_reads_status_file(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(main, "JOBS_ROOT", jobs_root)
+    monkeypatch.setattr(common, "JOBS_ROOT", jobs_root)
 
-    status = main.get_job("job_123")
+    status = job_service.get_job("job_123")
     assert status["status"] == "finished"
     assert status["result"]["pool_id"] == "bank_abc"
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.get_job("..")
+    with pytest.raises(DomainError) as excinfo:
+        job_service.get_job("..")
     assert excinfo.value.status_code == 404
 
 
@@ -548,7 +569,7 @@ def test_spawn_platform_job_builds_command(tmp_path, monkeypatch):
     assert args[0] == [
         sys.executable,
         "-m",
-        "custom_bt.cli",
+        "cli",
         "run-platform-job",
         "--job-dir",
         str(job_dir),
@@ -605,8 +626,8 @@ def _factor_case(master, tmp_path, monkeypatch, expressions=("$close",), signatu
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(main, "FACTOR_RUNS_ROOT", factor_root)
-    monkeypatch.setattr(main, "RESULTS_ROOT", tmp_path / "results")
+    monkeypatch.setattr(common, "FACTOR_RUNS_ROOT", factor_root)
+    monkeypatch.setattr(common, "RESULTS_ROOT", tmp_path / "results")
     return pool_id, run_dir, factor_root
 
 
@@ -616,15 +637,15 @@ def test_factor_runs_list_and_detail(master, tmp_path, monkeypatch):
     )
     (factor_root / "ignored").mkdir()  # 没有 factor_run.json 的目录不展示
 
-    data = main.get_factor_runs(pool_id=None)
+    data = factor_backtest_service.get_factor_runs(pool_id=None)
     assert data["total"] == 1
     assert data["runs"][0]["run_id"] == "run_a"
     assert data["runs"][0]["pool_id"] == pool_id
     assert data["runs"][0]["accepted_count"] == 2
     assert data["runs"][0]["target_reached"] is True
-    assert main.get_factor_runs(pool_id="other")["total"] == 0
+    assert factor_backtest_service.get_factor_runs(pool_id="other")["total"] == 0
 
-    detail = main.get_factor_run("run_a")
+    detail = factor_backtest_service.get_factor_run("run_a")
     assert detail["accepted_count"] == 2
     assert [item["factor_id"] for item in detail["accepted_factors"]] == [
         factor_id(1, "$close"),
@@ -636,11 +657,11 @@ def test_factor_runs_list_and_detail(master, tmp_path, monkeypatch):
     assert detail["accepted_factors"][1]["canonical_expression"] == "open"
     assert detail["manifest"]["pool_id"] == pool_id
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.get_factor_run("..")
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.get_factor_run("..")
     assert excinfo.value.status_code == 404
-    with pytest.raises(HTTPException) as excinfo:
-        main.get_factor_run("missing")
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.get_factor_run("missing")
     assert excinfo.value.status_code == 404
 
 
@@ -674,9 +695,9 @@ def test_factor_runs_merge_mysql_metadata(master, tmp_path, monkeypatch):
             },
         ]
 
-    monkeypatch.setattr(main.mysql_store, "fetch_factor_runs", fake_fetch)
+    monkeypatch.setattr(mysql_store, "fetch_factor_runs", fake_fetch)
 
-    data = main.get_factor_runs(pool_id=None)
+    data = factor_backtest_service.get_factor_runs(pool_id=None)
 
     assert data["source"] == "mysql"
     assert data["total"] == 2
@@ -694,7 +715,7 @@ def test_factor_runs_merge_mysql_metadata(master, tmp_path, monkeypatch):
 
 def test_factor_run_detail_falls_back_to_mysql(master, tmp_path, monkeypatch):
     _, _, factor_root = _factor_case(master, tmp_path, monkeypatch)
-    monkeypatch.setattr(main.mysql_store, "fetch_factor_run", lambda run_id: {
+    monkeypatch.setattr(mysql_store, "fetch_factor_run", lambda run_id: {
         "run_id": run_id,
         "pool_id": "pool_a",
         "created_at": "2026-10-24T09:00:00",
@@ -703,7 +724,7 @@ def test_factor_run_detail_falls_back_to_mysql(master, tmp_path, monkeypatch):
         "raw": {"pool_id": "pool_a", "run_name": "mysql_only"},
     })
     monkeypatch.setattr(
-        main.mysql_store,
+        mysql_store,
         "fetch_factor_run_factors",
         lambda run_id, accepted_only=False: [
             {
@@ -715,7 +736,7 @@ def test_factor_run_detail_falls_back_to_mysql(master, tmp_path, monkeypatch):
         ],
     )
 
-    detail = main.get_factor_run("run_mysql_only")
+    detail = factor_backtest_service.get_factor_run("run_mysql_only")
 
     assert detail["storage"] == "mysql"
     assert detail["local_available"] is False
@@ -737,11 +758,11 @@ def test_create_factor_backtest_builds_payload_and_spawns_job(master, tmp_path, 
         job_dir.mkdir(parents=True)
         return job_dir
 
-    monkeypatch.setattr(main, "create_platform_job", fake_create)
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir))
+    _patch_job_deps(monkeypatch, "create_platform_job", fake_create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir))
 
-    response = main.create_factor_backtest(
-        main.FactorBacktestRequest(
+    response = factor_backtest_service.create_factor_backtest(
+        FactorBacktestRequest(
             factor_run_id="run_a",
             factor_ids=[selected],
             start_date="2022-01-01",
@@ -788,18 +809,16 @@ def test_create_factor_backtest_builds_payload_and_spawns_job(master, tmp_path, 
 def test_create_factor_backtest_defaults_to_all_accepted(master, tmp_path, monkeypatch):
     _, _, _ = _factor_case(master, tmp_path, monkeypatch, expressions=("$close", "$open"))
     captured = {}
-    monkeypatch.setattr(
-        main,
-        "create_platform_job",
+    _patch_job_deps(monkeypatch, "create_platform_job",
         lambda jobs_root, operation, payload: (
             captured.setdefault("payload", payload),
             _make_job_dir(jobs_root),
         )[1],
     )
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: None)
 
-    response = main.create_factor_backtest(
-        main.FactorBacktestRequest(factor_run_id="run_a", start_date="2021-06-18", end_date="2021-06-18")
+    response = factor_backtest_service.create_factor_backtest(
+        FactorBacktestRequest(factor_run_id="run_a", start_date="2021-06-18", end_date="2021-06-18")
     )
 
     assert "factor_ids" not in captured["payload"]
@@ -811,8 +830,8 @@ def test_create_factor_backtest_rejects_invalid_parameters(master, tmp_path, mon
     _factor_case(master, tmp_path, monkeypatch, expressions=("$close", "$open"))
 
     def expect(message, **kwargs):
-        with pytest.raises(HTTPException) as excinfo:
-            main.create_factor_backtest(main.FactorBacktestRequest(factor_run_id="run_a", **kwargs))
+        with pytest.raises(DomainError) as excinfo:
+            factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a", **kwargs))
         assert excinfo.value.status_code == 422
         assert message in excinfo.value.detail
 
@@ -833,8 +852,8 @@ def test_create_factor_backtest_rejects_data_or_signature_mismatch(master, tmp_p
     pool_manifest = tmp_path / "pools" / pool_id / "manifest.json"
 
     _write_json(pool_manifest, {"pool_id": pool_id, "source_signature": "old"})
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_backtest(main.FactorBacktestRequest(factor_run_id="run_a"))
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
     assert excinfo.value.status_code == 422
     assert "股票池" in excinfo.value.detail
 
@@ -843,15 +862,15 @@ def test_create_factor_backtest_rejects_data_or_signature_mismatch(master, tmp_p
         run_dir / "factor_run.json",
         {"pool_id": pool_id, "source_signature": "old"},
     )
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_backtest(main.FactorBacktestRequest(factor_run_id="run_a"))
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
     assert excinfo.value.status_code == 422
     assert "因子运行" in excinfo.value.detail
 
     (run_dir / "accepted_factors.jsonl").write_text("", encoding="utf-8")
     _write_json(run_dir / "factor_run.json", {"pool_id": pool_id, "source_signature": "sig"})
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_backtest(main.FactorBacktestRequest(factor_run_id="run_a"))
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
     assert excinfo.value.status_code == 422
     assert "没有合格因子" in excinfo.value.detail
 
@@ -888,20 +907,18 @@ def test_create_factor_backtest_uses_company_source(master, tmp_path, monkeypatc
         },
     )
     # 即使本地主缓存缺失，公司库回测也必须能提交
-    monkeypatch.setattr(main, "MASTER_DIR", tmp_path / "no-master")
+    monkeypatch.setattr(common, "MASTER_DIR", tmp_path / "no-master")
     captured = {}
-    monkeypatch.setattr(
-        main,
-        "create_platform_job",
+    _patch_job_deps(monkeypatch, "create_platform_job",
         lambda jobs_root, operation, payload: (
             captured.setdefault("payload", payload),
             _make_job_dir(jobs_root),
         )[1],
     )
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: None)
 
-    response = main.create_factor_backtest(
-        main.FactorBacktestRequest(factor_run_id="run_a")
+    response = factor_backtest_service.create_factor_backtest(
+        FactorBacktestRequest(factor_run_id="run_a")
     )
 
     payload = captured["payload"]
@@ -928,8 +945,8 @@ def test_create_factor_backtest_rejects_company_signature_mismatch(master, tmp_p
         },
     )
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_backtest(main.FactorBacktestRequest(factor_run_id="run_a"))
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
     assert excinfo.value.status_code == 422
     assert "数据源签名" in excinfo.value.detail
 
@@ -938,32 +955,30 @@ def test_create_factor_backtest_requires_master(master, tmp_path, monkeypatch):
     _factor_case(master, tmp_path, monkeypatch)
     empty_master = tmp_path / "empty_master"
     empty_master.mkdir()
-    monkeypatch.setattr(main, "MASTER_DIR", empty_master)
+    monkeypatch.setattr(common, "MASTER_DIR", empty_master)
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_backtest(main.FactorBacktestRequest(factor_run_id="run_a"))
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
     assert excinfo.value.status_code == 503
     assert "主缓存" in excinfo.value.detail
 
 
 def test_create_factor_backtest_marks_job_failed_when_spawn_fails(master, tmp_path, monkeypatch):
     _factor_case(master, tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        main,
-        "create_platform_job",
+    _patch_job_deps(monkeypatch, "create_platform_job",
         lambda jobs_root, operation, payload: _make_job_dir(jobs_root),
     )
 
     def boom(job_dir):
         raise OSError("no subprocess")
 
-    monkeypatch.setattr(main, "spawn_platform_job", boom)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", boom)
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_backtest(main.FactorBacktestRequest(factor_run_id="run_a"))
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
     assert excinfo.value.status_code == 500
     assert "启动失败" in excinfo.value.detail
-    status = json.loads((main.JOBS_ROOT / "job_123" / "status.json").read_text(encoding="utf-8"))
+    status = json.loads((common.JOBS_ROOT / "job_123" / "status.json").read_text(encoding="utf-8"))
     assert status["status"] == "failed"
     assert "no subprocess" in status["message"]
 
@@ -1022,72 +1037,72 @@ def _write_batch_result(results_root: Path, pool_id="pool_a", run_id="run_a", ba
 
 def test_factor_backtests_list_detail_and_download(master, tmp_path, monkeypatch):
     _factor_case(master, tmp_path, monkeypatch)
-    batch_dir, prefix, fid = _write_batch_result(main.RESULTS_ROOT)
+    batch_dir, prefix, fid = _write_batch_result(common.RESULTS_ROOT)
 
-    listing = main.get_factor_backtests("run_a", pool_id=None)
+    listing = factor_backtest_service.get_factor_backtests("run_a", pool_id=None)
     assert listing["total"] == 1
     assert listing["batches"][0]["backtest_id"] == "batch_001"
     assert listing["batches"][0]["completed"] == 1
     assert listing["batches"][0]["run_key_prefix"] == prefix
 
-    detail = main.get_factor_backtest("batch_001", factor_run_id="run_a", pool_id=None)
+    detail = factor_backtest_service.get_factor_backtest("batch_001", factor_run_id="run_a", pool_id=None)
     assert detail["batch"]["backtest_id"] == "batch_001"
     assert detail["rows"][0]["factor_id"] == fid
     assert detail["rows"][0]["run_key"] == f"{prefix}/{fid}"
     assert detail["failures"][0]["error"].startswith("NameError")
 
-    response = main.download_factor_backtest_file(
+    response = factor_backtest_service.download_factor_backtest_file(
         "batch_001", "factor_backtest_summary.csv", factor_run_id="run_a", pool_id=None
     )
-    assert Path(response.path) == batch_dir / "factor_backtest_summary.csv"
+    assert Path(response) == batch_dir / "factor_backtest_summary.csv"
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.download_factor_backtest_file(
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.download_factor_backtest_file(
             "batch_001", "other.csv", factor_run_id="run_a", pool_id=None
         )
     assert excinfo.value.status_code == 404
-    with pytest.raises(HTTPException) as excinfo:
-        main.get_factor_backtest("missing", factor_run_id="run_a", pool_id=None)
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.get_factor_backtest("missing", factor_run_id="run_a", pool_id=None)
     assert excinfo.value.status_code == 404
-    with pytest.raises(HTTPException) as excinfo:
-        main.get_factor_backtests("run_a", pool_id="other")
+    with pytest.raises(DomainError) as excinfo:
+        factor_backtest_service.get_factor_backtests("run_a", pool_id="other")
     assert excinfo.value.status_code == 422
 
 
 def test_csv_records_handles_empty_failure_file(tmp_path):
     empty = tmp_path / "factor_backtest_failures.csv"
     empty.write_text("\n", encoding="utf-8")
-    assert main._csv_records(empty) == []
+    assert factor_backtest_service._csv_records(empty) == []
 
     missing = tmp_path / "missing.csv"
-    assert main._csv_records(missing) == []
+    assert factor_backtest_service._csv_records(missing) == []
 
 
 def test_nested_result_detail_and_download_by_run_key(master, tmp_path, monkeypatch):
     _factor_case(master, tmp_path, monkeypatch)
-    _, prefix, fid = _write_batch_result(main.RESULTS_ROOT)
+    _, prefix, fid = _write_batch_result(common.RESULTS_ROOT)
     run_key = f"{prefix}/{fid}"
 
-    detail = main.get_result_by_key(run_key)
+    detail = result_service.get_result_by_key(run_key)
     assert detail["run_key"] == run_key
     assert detail["backtest_id"] == "batch_001"
     assert detail["factor_run_id"] == "run_a"
     assert detail["pool_id"] == "pool_a"
 
-    response = main.download_result_file_by_key(run_key, "daily_report.csv")
-    assert Path(response.path).name == "daily_report.csv"
+    response = result_service.download_result_file_by_key(run_key, "daily_report.csv")
+    assert Path(response).name == "daily_report.csv"
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.get_result_by_key("factor/../../secret")
+    with pytest.raises(DomainError) as excinfo:
+        result_service.get_result_by_key("factor/../../secret")
     assert excinfo.value.status_code == 404
-    with pytest.raises(HTTPException) as excinfo:
-        main.download_result_file_by_key(run_key, "summary.json")
+    with pytest.raises(DomainError) as excinfo:
+        result_service.download_result_file_by_key(run_key, "summary.json")
     assert excinfo.value.status_code == 404
-    with pytest.raises(HTTPException) as excinfo:
-        main._safe_relative(main.RESULTS_ROOT, "/etc/passwd")
+    with pytest.raises(DomainError) as excinfo:
+        common._safe_relative(common.RESULTS_ROOT, "/etc/passwd")
     assert excinfo.value.status_code == 404
-    with pytest.raises(HTTPException) as excinfo:
-        main._safe_relative(main.RESULTS_ROOT, "factor//pool")
+    with pytest.raises(DomainError) as excinfo:
+        common._safe_relative(common.RESULTS_ROOT, "factor//pool")
     assert excinfo.value.status_code == 404
 
 
@@ -1110,18 +1125,18 @@ def _write_result_with_daily(root: Path, run_key: str, config, daily: str) -> Pa
 
 def test_result_detail_uses_flat_config_initial_cash(tmp_path, monkeypatch):
     """因子结果 config 是扁平的：净值必须按 config 里的 initial_cash 归一化。"""
-    monkeypatch.setattr(main, "RESULTS_ROOT", tmp_path / "results")
+    monkeypatch.setattr(common, "RESULTS_ROOT", tmp_path / "results")
     run_key = "factor/pool_a/run_a/batch_001/factor_1"
     config = {"initial_cash": 1000000.0, "start_date": "2024-01-01", "top_k": 10}
     _write_result_with_daily(
-        main.RESULTS_ROOT,
+        common.RESULTS_ROOT,
         run_key,
         config,
         "date,account,drawdown\n2024-01-02,1100000.0,0.0\n2024-01-03,900000.0,-0.18\n",
     )
 
-    detail = main.get_result_by_key(run_key)
-    summary = main._result_summary(
+    detail = result_service.get_result_by_key(run_key)
+    summary = result_service._result_summary(
         {"run_name": "factor_1", "run_key": run_key, "result_type": "factor", "config": config}
     )
 
@@ -1136,16 +1151,16 @@ def test_result_detail_uses_flat_config_initial_cash(tmp_path, monkeypatch):
 
 def test_result_detail_uses_nested_manual_config_initial_cash(tmp_path, monkeypatch):
     """手动回测 config 是嵌套的：仍须读 config.backtest.initial_cash。"""
-    monkeypatch.setattr(main, "RESULTS_ROOT", tmp_path / "results")
+    monkeypatch.setattr(common, "RESULTS_ROOT", tmp_path / "results")
     run_key = "manual/job_001/manual_run"
     _write_result_with_daily(
-        main.RESULTS_ROOT,
+        common.RESULTS_ROOT,
         run_key,
         {"backtest": {"initial_cash": 500000.0}, "expression": "close / delay(close, 20) - 1"},
         "date,account,drawdown\n2024-01-02,550000.0,0.0\n",
     )
 
-    detail = main.get_result_by_key(run_key)
+    detail = result_service.get_result_by_key(run_key)
 
     assert detail["equity"][0]["equity"] == 1.1
 
@@ -1169,9 +1184,9 @@ def _write_pool(root: Path, pool_id: str, name: str, codes=("000001",)) -> Path:
 
 
 def test_get_pools_merges_mysql_and_local(master, monkeypatch):
-    _write_pool(main.POOLS_ROOT, "local_pool", "本地池")
+    _write_pool(common.POOLS_ROOT, "local_pool", "本地池")
     monkeypatch.setattr(
-        main.mysql_store,
+        mysql_store,
         "fetch_pools",
         lambda: [
             {
@@ -1190,7 +1205,7 @@ def test_get_pools_merges_mysql_and_local(master, monkeypatch):
         ],
     )
 
-    data = main.get_pools()
+    data = pool_service.get_pools()
 
     assert data["total"] == 2
     assert data["storage"] == "mysql+local"
@@ -1201,14 +1216,14 @@ def test_get_pools_merges_mysql_and_local(master, monkeypatch):
 
 
 def test_get_pools_falls_back_to_local_when_mysql_unavailable(master, monkeypatch):
-    _write_pool(main.POOLS_ROOT, "local_pool", "本地池")
+    _write_pool(common.POOLS_ROOT, "local_pool", "本地池")
 
     def boom():
         raise RuntimeError("mysql down")
 
-    monkeypatch.setattr(main.mysql_store, "fetch_pools", boom)
+    monkeypatch.setattr(mysql_store, "fetch_pools", boom)
 
-    data = main.get_pools()
+    data = pool_service.get_pools()
 
     assert data["storage"] == "local"
     assert data["total"] == 1
@@ -1217,7 +1232,7 @@ def test_get_pools_falls_back_to_local_when_mysql_unavailable(master, monkeypatc
 
 def test_get_pool_reads_from_mysql(master, monkeypatch):
     monkeypatch.setattr(
-        main.mysql_store,
+        mysql_store,
         "fetch_pool",
         lambda pool_id: {
             "pool_id": pool_id,
@@ -1232,7 +1247,7 @@ def test_get_pool_reads_from_mysql(master, monkeypatch):
         },
     )
 
-    data = main.get_pool("mysql_pool")
+    data = pool_service.get_pool("mysql_pool")
 
     assert data["storage"] == "mysql"
     assert data["codes"] == ["000001", "600000"]
@@ -1241,30 +1256,30 @@ def test_get_pool_reads_from_mysql(master, monkeypatch):
 
 
 def test_get_pool_falls_back_to_local_file(master, monkeypatch):
-    _write_pool(main.POOLS_ROOT, "local_pool", "本地池", codes=("000001", "600000"))
-    monkeypatch.setattr(main.mysql_store, "fetch_pool", lambda pool_id: None)
+    _write_pool(common.POOLS_ROOT, "local_pool", "本地池", codes=("000001", "600000"))
+    monkeypatch.setattr(mysql_store, "fetch_pool", lambda pool_id: None)
 
-    data = main.get_pool("local_pool")
+    data = pool_service.get_pool("local_pool")
 
     assert data["storage"] == "local"
     assert data["codes"] == ["000001", "600000"]
 
 
 def test_delete_pool_requires_confirmation(master):
-    _write_pool(main.POOLS_ROOT, "local_pool", "本地池")
+    _write_pool(common.POOLS_ROOT, "local_pool", "本地池")
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.delete_pool("local_pool", confirm=False)
+    with pytest.raises(DomainError) as excinfo:
+        pool_service.delete_pool("local_pool", confirm=False)
 
     assert excinfo.value.status_code == 400
-    assert (main.POOLS_ROOT / "local_pool").is_dir()
+    assert (common.POOLS_ROOT / "local_pool").is_dir()
 
 
 def test_delete_pool_removes_local_and_mysql(master, monkeypatch, tmp_path):
-    _write_pool(main.POOLS_ROOT, "local_pool", "本地池")
-    monkeypatch.setattr(main.mysql_store, "delete_pool", lambda pool_id: True)
-    monkeypatch.setattr(main, "RESULTS_ROOT", tmp_path / "results")
-    monkeypatch.setattr(main, "FACTOR_RUNS_ROOT", tmp_path / "factor_runs")
+    _write_pool(common.POOLS_ROOT, "local_pool", "本地池")
+    monkeypatch.setattr(mysql_store, "delete_pool", lambda pool_id: True)
+    monkeypatch.setattr(common, "RESULTS_ROOT", tmp_path / "results")
+    monkeypatch.setattr(common, "FACTOR_RUNS_ROOT", tmp_path / "factor_runs")
     run_dir = tmp_path / "factor_runs" / "run_001"
     run_dir.mkdir(parents=True)
     (run_dir / "factor_run.json").write_text(
@@ -1272,23 +1287,23 @@ def test_delete_pool_removes_local_and_mysql(master, monkeypatch, tmp_path):
     )
     (tmp_path / "results" / "factor" / "local_pool").mkdir(parents=True)
 
-    data = main.delete_pool("local_pool", confirm=True)
+    data = pool_service.delete_pool("local_pool", confirm=True)
 
     assert data["deleted_local"] is True
     assert data["deleted_mysql"] is True
     assert data["mysql_configured"] is True
-    assert not (main.POOLS_ROOT / "local_pool").exists()
+    assert not (common.POOLS_ROOT / "local_pool").exists()
     assert any("1 个因子运行" in item for item in data["warnings"])
     assert any("历史因子回测结果" in item for item in data["warnings"])
 
 
 def test_delete_pool_local_only_without_mysql(master, monkeypatch, tmp_path):
-    _write_pool(main.POOLS_ROOT, "local_pool", "本地池")
-    monkeypatch.setattr(main.mysql_store, "delete_pool", lambda pool_id: None)
-    monkeypatch.setattr(main, "RESULTS_ROOT", tmp_path / "results")
-    monkeypatch.setattr(main, "FACTOR_RUNS_ROOT", tmp_path / "factor_runs")
+    _write_pool(common.POOLS_ROOT, "local_pool", "本地池")
+    monkeypatch.setattr(mysql_store, "delete_pool", lambda pool_id: None)
+    monkeypatch.setattr(common, "RESULTS_ROOT", tmp_path / "results")
+    monkeypatch.setattr(common, "FACTOR_RUNS_ROOT", tmp_path / "factor_runs")
 
-    data = main.delete_pool("local_pool", confirm=True)
+    data = pool_service.delete_pool("local_pool", confirm=True)
 
     assert data["deleted_local"] is True
     assert data["deleted_mysql"] is False
@@ -1297,40 +1312,40 @@ def test_delete_pool_local_only_without_mysql(master, monkeypatch, tmp_path):
 
 
 def test_delete_pool_mysql_only(master, monkeypatch, tmp_path):
-    monkeypatch.setattr(main.mysql_store, "delete_pool", lambda pool_id: True)
-    monkeypatch.setattr(main, "RESULTS_ROOT", tmp_path / "results")
-    monkeypatch.setattr(main, "FACTOR_RUNS_ROOT", tmp_path / "factor_runs")
+    monkeypatch.setattr(mysql_store, "delete_pool", lambda pool_id: True)
+    monkeypatch.setattr(common, "RESULTS_ROOT", tmp_path / "results")
+    monkeypatch.setattr(common, "FACTOR_RUNS_ROOT", tmp_path / "factor_runs")
 
-    data = main.delete_pool("mysql_pool", confirm=True)
+    data = pool_service.delete_pool("mysql_pool", confirm=True)
 
     assert data["deleted_local"] is False
     assert data["deleted_mysql"] is True
 
 
 def test_delete_pool_returns_404_when_missing(master, monkeypatch, tmp_path):
-    monkeypatch.setattr(main.mysql_store, "delete_pool", lambda pool_id: False)
-    monkeypatch.setattr(main, "RESULTS_ROOT", tmp_path / "results")
-    monkeypatch.setattr(main, "FACTOR_RUNS_ROOT", tmp_path / "factor_runs")
+    monkeypatch.setattr(mysql_store, "delete_pool", lambda pool_id: False)
+    monkeypatch.setattr(common, "RESULTS_ROOT", tmp_path / "results")
+    monkeypatch.setattr(common, "FACTOR_RUNS_ROOT", tmp_path / "factor_runs")
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.delete_pool("nope", confirm=True)
+    with pytest.raises(DomainError) as excinfo:
+        pool_service.delete_pool("nope", confirm=True)
 
     assert excinfo.value.status_code == 404
 
 
 def test_delete_pool_keeps_local_when_mysql_fails(master, monkeypatch):
-    _write_pool(main.POOLS_ROOT, "local_pool", "本地池")
+    _write_pool(common.POOLS_ROOT, "local_pool", "本地池")
 
     def boom(pool_id):
         raise RuntimeError("mysql down")
 
-    monkeypatch.setattr(main.mysql_store, "delete_pool", boom)
+    monkeypatch.setattr(mysql_store, "delete_pool", boom)
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.delete_pool("local_pool", confirm=True)
+    with pytest.raises(DomainError) as excinfo:
+        pool_service.delete_pool("local_pool", confirm=True)
 
     assert excinfo.value.status_code == 502
-    assert (main.POOLS_ROOT / "local_pool" / "manifest.json").is_file()
+    assert (common.POOLS_ROOT / "local_pool" / "manifest.json").is_file()
 
 
 # ---------- 手动回测 ----------
@@ -1363,7 +1378,7 @@ def _write_manual_pool(
 
 def _stub_company_meta(monkeypatch, signature=company_source.SOURCE_SIGNATURE):
     monkeypatch.setattr(
-        main.company_source,
+        company_source,
         "meta",
         lambda *args, **kwargs: {
             "data_source": "clickhouse",
@@ -1375,8 +1390,8 @@ def _stub_company_meta(monkeypatch, signature=company_source.SOURCE_SIGNATURE):
 
 
 def test_create_manual_backtest_builds_company_payload(master, tmp_path, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT)
-    monkeypatch.setattr(main, "RESULTS_ROOT", tmp_path / "results")
+    _write_manual_pool(common.POOLS_ROOT)
+    monkeypatch.setattr(common, "RESULTS_ROOT", tmp_path / "results")
     _stub_company_meta(monkeypatch)
     captured = {}
 
@@ -1385,11 +1400,11 @@ def test_create_manual_backtest_builds_company_payload(master, tmp_path, monkeyp
         captured["payload"] = payload
         return _make_job_dir(jobs_root)
 
-    monkeypatch.setattr(main, "create_platform_job", fake_create)
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir))
+    _patch_job_deps(monkeypatch, "create_platform_job", fake_create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir))
 
-    response = main.create_manual_backtest(
-        main.ManualBacktestRequest(
+    response = manual_backtest_service.create_manual_backtest(
+        ManualBacktestRequest(
             expression="close / delay(close, 21) - 1",
             pool_id="pool_company",
             run_name="manual_demo",
@@ -1406,7 +1421,7 @@ def test_create_manual_backtest_builds_company_payload(master, tmp_path, monkeyp
     payload = captured["payload"]
     assert captured["operation"] == "manual_backtest"
     assert captured["spawned"].name == "job_123"
-    assert payload["pools_root"] == str(main.POOLS_ROOT)
+    assert payload["pools_root"] == str(common.POOLS_ROOT)
     assert payload["output_root"] == str(tmp_path / "results")
     assert payload["pool_id"] == "pool_company"
     assert payload["data_source"] == "clickhouse"
@@ -1436,7 +1451,7 @@ def test_create_manual_backtest_builds_company_payload(master, tmp_path, monkeyp
 def test_create_manual_backtest_uses_mysql_pool_when_local_files_are_missing(master, monkeypatch):
     _stub_company_meta(monkeypatch)
     monkeypatch.setattr(
-        main.mysql_store,
+        mysql_store,
         "fetch_pool",
         lambda pool_id: {
             "manifest": {
@@ -1456,11 +1471,11 @@ def test_create_manual_backtest_uses_mysql_pool_when_local_files_are_missing(mas
         captured["payload"] = payload
         return _make_job_dir(jobs_root)
 
-    monkeypatch.setattr(main, "create_platform_job", fake_create)
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+    _patch_job_deps(monkeypatch, "create_platform_job", fake_create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: None)
 
-    response = main.create_manual_backtest(
-        main.ManualBacktestRequest(
+    response = manual_backtest_service.create_manual_backtest(
+        ManualBacktestRequest(
             expression="close",
             pool_id="pool_mysql",
             run_name="mysql_pool_run",
@@ -1475,15 +1490,14 @@ def test_create_manual_backtest_uses_mysql_pool_when_local_files_are_missing(mas
 
 
 def test_create_manual_backtest_warns_when_range_exceeds_company_source(master, tmp_path, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT)
+    _write_manual_pool(common.POOLS_ROOT)
     _stub_company_meta(monkeypatch)
-    monkeypatch.setattr(
-        main, "create_platform_job", lambda jobs_root, operation, payload: _make_job_dir(jobs_root)
+    _patch_job_deps(monkeypatch, "create_platform_job", lambda jobs_root, operation, payload: _make_job_dir(jobs_root)
     )
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: None)
 
-    response = main.create_manual_backtest(
-        main.ManualBacktestRequest(
+    response = manual_backtest_service.create_manual_backtest(
+        ManualBacktestRequest(
             expression="close",
             pool_id="pool_company",
             run_name="wide_range",
@@ -1498,13 +1512,13 @@ def test_create_manual_backtest_warns_when_range_exceeds_company_source(master, 
 
 
 def test_create_manual_backtest_rejects_invalid_expression_and_name(master, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT)
+    _write_manual_pool(common.POOLS_ROOT)
     _stub_company_meta(monkeypatch)
 
     def expect(message, **kwargs):
-        with pytest.raises(HTTPException) as excinfo:
-            main.create_manual_backtest(
-                main.ManualBacktestRequest(
+        with pytest.raises(DomainError) as excinfo:
+            manual_backtest_service.create_manual_backtest(
+                ManualBacktestRequest(
                     expression=kwargs.pop("expression", "close"),
                     pool_id="pool_company",
                     run_name=kwargs.pop("run_name", "demo"),
@@ -1528,60 +1542,58 @@ def test_create_manual_backtest_rejects_invalid_expression_and_name(master, monk
 
 
 def test_create_manual_backtest_rejects_signature_mismatch_and_missing_pool(master, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT, signature="other")
+    _write_manual_pool(common.POOLS_ROOT, signature="other")
     _stub_company_meta(monkeypatch)
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_manual_backtest(
-            main.ManualBacktestRequest(expression="close", pool_id="pool_company", run_name="demo")
+    with pytest.raises(DomainError) as excinfo:
+        manual_backtest_service.create_manual_backtest(
+            ManualBacktestRequest(expression="close", pool_id="pool_company", run_name="demo")
         )
     assert excinfo.value.status_code == 422
     assert "签名" in excinfo.value.detail
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_manual_backtest(
-            main.ManualBacktestRequest(expression="close", pool_id="missing", run_name="demo")
+    with pytest.raises(DomainError) as excinfo:
+        manual_backtest_service.create_manual_backtest(
+            ManualBacktestRequest(expression="close", pool_id="missing", run_name="demo")
         )
     assert excinfo.value.status_code == 404
 
 
 def test_create_manual_backtest_local_pool_requires_master(master, tmp_path, monkeypatch):
     _write_manual_pool(
-        main.POOLS_ROOT,
+        common.POOLS_ROOT,
         data_source="local",
         signature="local_sig",
     )
-    monkeypatch.setattr(main, "MASTER_DIR", tmp_path / "missing-master")
+    monkeypatch.setattr(common, "MASTER_DIR", tmp_path / "missing-master")
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_manual_backtest(
-            main.ManualBacktestRequest(expression="close", pool_id="pool_company", run_name="demo")
+    with pytest.raises(DomainError) as excinfo:
+        manual_backtest_service.create_manual_backtest(
+            ManualBacktestRequest(expression="close", pool_id="pool_company", run_name="demo")
         )
     assert excinfo.value.status_code == 503
     assert "主缓存" in excinfo.value.detail
 
 
 def test_create_manual_backtest_marks_job_failed_when_spawn_fails(master, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT)
+    _write_manual_pool(common.POOLS_ROOT)
     _stub_company_meta(monkeypatch)
     marked = {}
-    monkeypatch.setattr(
-        main, "create_platform_job", lambda jobs_root, operation, payload: _make_job_dir(jobs_root)
+    _patch_job_deps(monkeypatch, "create_platform_job", lambda jobs_root, operation, payload: _make_job_dir(jobs_root)
     )
 
     def boom(job_dir):
         raise OSError("spawn failed")
 
-    monkeypatch.setattr(main, "spawn_platform_job", boom)
-    monkeypatch.setattr(
-        main, "update_job_status", lambda job_dir, status, message, extra=None: marked.update(
+    _patch_job_deps(monkeypatch, "spawn_platform_job", boom)
+    _patch_job_deps(monkeypatch, "update_job_status", lambda job_dir, status, message, extra=None: marked.update(
             {"job_dir": job_dir, "status": status, "message": message}
         )
     )
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_manual_backtest(
-            main.ManualBacktestRequest(expression="close", pool_id="pool_company", run_name="demo")
+    with pytest.raises(DomainError) as excinfo:
+        manual_backtest_service.create_manual_backtest(
+            ManualBacktestRequest(expression="close", pool_id="pool_company", run_name="demo")
         )
     assert excinfo.value.status_code == 500
     assert marked["status"] == "failed"
@@ -1592,7 +1604,7 @@ def test_create_manual_backtest_marks_job_failed_when_spawn_fails(master, monkey
 
 def _generation_splits(start="2024-01-01", end="2024-12-31"):
     return {
-        name: main.FactorGenerationSplit(cache_start=start, cache_end=end)
+        name: FactorGenerationSplit(cache_start=start, cache_end=end)
         for name in ("train", "valid", "test")
     }
 
@@ -1608,13 +1620,13 @@ def _generation_request(**overrides):
         "rollout_timesteps": 64,
     }
     base.update(overrides)
-    return main.FactorGenerationRequest(**base)
+    return FactorGenerationRequest(**base)
 
 
 def test_create_factor_generation_builds_payload_and_returns_run_id(master, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT, selection_end="2024-12-31")
+    _write_manual_pool(common.POOLS_ROOT, selection_end="2024-12-31")
     _stub_company_meta(monkeypatch)
-    real_create = main.create_platform_job
+    real_create = create_platform_job
     captured = {}
 
     def wrapped_create(jobs_root, operation, payload):
@@ -1622,13 +1634,12 @@ def test_create_factor_generation_builds_payload_and_returns_run_id(master, monk
         captured["payload"] = payload
         return real_create(jobs_root, operation, payload)
 
-    monkeypatch.setattr(main, "create_platform_job", wrapped_create)
-    monkeypatch.setattr(
-        main, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir)
+    _patch_job_deps(monkeypatch, "create_platform_job", wrapped_create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir)
     )
 
-    response = main.create_factor_generation(
-        main.FactorGenerationRequest(
+    response = generation_service.create_factor_generation(
+        FactorGenerationRequest(
             pool_id="pool_company",
             run_name="ppo_demo",
             fields=["close", "open", "fund_OperatingReenue"],
@@ -1688,12 +1699,12 @@ def test_create_factor_generation_builds_payload_and_returns_run_id(master, monk
 
 def test_factor_generation_defaults_follow_pool_time_span(master):
     _write_manual_pool(
-        main.POOLS_ROOT,
+        common.POOLS_ROOT,
         selection_start="2024-01-01",
         selection_end="2024-01-10",
     )
 
-    defaults = main.get_factor_generation_defaults(pool_id="pool_company")
+    defaults = generation_service.get_factor_generation_defaults(pool_id="pool_company")
 
     assert defaults["split_source"] == "pool"
     assert defaults["pool_window"] == {"start": "2024-01-01", "end": "2024-01-10"}
@@ -1706,7 +1717,7 @@ def test_factor_generation_defaults_follow_pool_time_span(master):
 
 
 def test_factor_generation_defaults_without_pool_use_config(master):
-    defaults = main.get_factor_generation_defaults()
+    defaults = generation_service.get_factor_generation_defaults()
 
     assert defaults["split_source"] == "config"
     assert defaults["pool_window"] is None
@@ -1715,7 +1726,7 @@ def test_factor_generation_defaults_without_pool_use_config(master):
 
 def test_factor_generation_defaults_read_mysql_only_pool(master, monkeypatch):
     monkeypatch.setattr(
-        main.mysql_store,
+        mysql_store,
         "fetch_pool",
         lambda pool_id: {
             "pool_id": pool_id,
@@ -1732,7 +1743,7 @@ def test_factor_generation_defaults_read_mysql_only_pool(master, monkeypatch):
         },
     )
 
-    defaults = main.get_factor_generation_defaults(pool_id="mysql_pool")
+    defaults = generation_service.get_factor_generation_defaults(pool_id="mysql_pool")
 
     assert defaults["split_source"] == "pool"
     assert defaults["pool_window"] == {"start": "2024-01-01", "end": "2024-01-10"}
@@ -1746,7 +1757,7 @@ def test_factor_generation_defaults_read_mysql_only_pool(master, monkeypatch):
 def test_create_factor_generation_supports_mysql_only_pool(master, monkeypatch):
     _stub_company_meta(monkeypatch)
     monkeypatch.setattr(
-        main.mysql_store,
+        mysql_store,
         "fetch_pool",
         lambda pool_id: {
             "pool_id": pool_id,
@@ -1770,12 +1781,11 @@ def test_create_factor_generation_supports_mysql_only_pool(master, monkeypatch):
         captured["payload"] = payload
         return _make_job_dir(jobs_root)
 
-    monkeypatch.setattr(main, "create_platform_job", fake_create)
-    monkeypatch.setattr(
-        main, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir)
+    _patch_job_deps(monkeypatch, "create_platform_job", fake_create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: captured.setdefault("spawned", job_dir)
     )
 
-    response = main.create_factor_generation(
+    response = generation_service.create_factor_generation(
         _generation_request(pool_id="mysql_pool", splits=None)
     )
 
@@ -1792,19 +1802,19 @@ def test_create_factor_generation_supports_mysql_only_pool(master, monkeypatch):
 
 
 def test_create_factor_generation_local_pool_does_not_send_pool_payload(master, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT, selection_end="2024-12-31")
+    _write_manual_pool(common.POOLS_ROOT, selection_end="2024-12-31")
     _stub_company_meta(monkeypatch)
-    monkeypatch.setattr(main.mysql_store, "fetch_pool", lambda pool_id: None)
+    monkeypatch.setattr(mysql_store, "fetch_pool", lambda pool_id: None)
     captured = {}
 
     def fake_create(jobs_root, operation, payload):
         captured["payload"] = payload
         return _make_job_dir(jobs_root)
 
-    monkeypatch.setattr(main, "create_platform_job", fake_create)
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+    _patch_job_deps(monkeypatch, "create_platform_job", fake_create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: None)
 
-    response = main.create_factor_generation(_generation_request(splits=None))
+    response = generation_service.create_factor_generation(_generation_request(splits=None))
 
     assert "pool_manifest" not in captured["payload"]
     assert "pool_codes" not in captured["payload"]
@@ -1813,7 +1823,7 @@ def test_create_factor_generation_local_pool_does_not_send_pool_payload(master, 
 
 def test_create_factor_generation_defaults_splits_to_pool_window(master, monkeypatch):
     _write_manual_pool(
-        main.POOLS_ROOT,
+        common.POOLS_ROOT,
         selection_start="2024-01-01",
         selection_end="2024-01-10",
     )
@@ -1824,10 +1834,10 @@ def test_create_factor_generation_defaults_splits_to_pool_window(master, monkeyp
         captured["payload"] = payload
         return _make_job_dir(jobs_root)
 
-    monkeypatch.setattr(main, "create_platform_job", fake_create)
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+    _patch_job_deps(monkeypatch, "create_platform_job", fake_create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: None)
 
-    response = main.create_factor_generation(
+    response = generation_service.create_factor_generation(
         _generation_request(
             splits=None,
             max_backtrack_days=1,
@@ -1851,24 +1861,24 @@ def test_create_factor_generation_defaults_splits_to_pool_window(master, monkeyp
 
 
 def test_create_factor_generation_rejects_splits_outside_pool_window(master, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT)
+    _write_manual_pool(common.POOLS_ROOT)
     _stub_company_meta(monkeypatch)
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_generation(_generation_request())
+    with pytest.raises(DomainError) as excinfo:
+        generation_service.create_factor_generation(_generation_request())
 
     assert excinfo.value.status_code == 422
     assert "股票池真实时间跨度" in excinfo.value.detail
 
 
 def test_create_factor_generation_validates_fields_operators_and_bounds(master, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT)
+    _write_manual_pool(common.POOLS_ROOT)
     _stub_company_meta(monkeypatch)
-    monkeypatch.setattr(main, "spawn_platform_job", lambda job_dir: None)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda job_dir: None)
 
     def expect(status, message, **overrides):
-        with pytest.raises(HTTPException) as excinfo:
-            main.create_factor_generation(_generation_request(**overrides))
+        with pytest.raises(DomainError) as excinfo:
+            generation_service.create_factor_generation(_generation_request(**overrides))
         assert excinfo.value.status_code == status
         assert message in excinfo.value.detail
 
@@ -1887,7 +1897,7 @@ def test_create_factor_generation_validates_fields_operators_and_bounds(master, 
         422,
         "不能晚于",
         splits={
-            "train": main.FactorGenerationSplit(
+            "train": FactorGenerationSplit(
                 cache_start="2024-06-01", cache_end="2024-01-01"
             )
         },
@@ -1896,57 +1906,53 @@ def test_create_factor_generation_validates_fields_operators_and_bounds(master, 
         422,
         "没有交集",
         splits={
-            "train": main.FactorGenerationSplit(
+            "train": FactorGenerationSplit(
                 cache_start="2030-01-01", cache_end="2030-06-01"
             )
         },
     )
     expect(422, "请至少提供 train", splits={})
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_generation(_generation_request(pool_id="missing"))
+    with pytest.raises(DomainError) as excinfo:
+        generation_service.create_factor_generation(_generation_request(pool_id="missing"))
     assert excinfo.value.status_code == 404
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_generation(_generation_request(pool_id=""))
+    with pytest.raises(DomainError) as excinfo:
+        generation_service.create_factor_generation(_generation_request(pool_id=""))
     assert excinfo.value.status_code == 422
     assert "请选择股票池" in excinfo.value.detail
 
 
 def test_create_factor_generation_rejects_signature_mismatch(master, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT, signature="other")
+    _write_manual_pool(common.POOLS_ROOT, signature="other")
     _stub_company_meta(monkeypatch)
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_generation(_generation_request())
+    with pytest.raises(DomainError) as excinfo:
+        generation_service.create_factor_generation(_generation_request())
     assert excinfo.value.status_code == 422
     assert "签名" in excinfo.value.detail
 
 
 def test_create_factor_generation_marks_job_failed_when_spawn_fails(master, monkeypatch):
-    _write_manual_pool(main.POOLS_ROOT, selection_end="2024-12-31")
+    _write_manual_pool(common.POOLS_ROOT, selection_end="2024-12-31")
     _stub_company_meta(monkeypatch)
     marked = {}
-    monkeypatch.setattr(
-        main,
-        "create_platform_job",
+    _patch_job_deps(monkeypatch, "create_platform_job",
         lambda jobs_root, operation, payload: _make_job_dir(jobs_root),
     )
 
     def boom(job_dir):
         raise OSError("spawn failed")
 
-    monkeypatch.setattr(main, "spawn_platform_job", boom)
-    monkeypatch.setattr(
-        main,
-        "update_job_status",
+    _patch_job_deps(monkeypatch, "spawn_platform_job", boom)
+    _patch_job_deps(monkeypatch, "update_job_status",
         lambda job_dir, status, message, extra=None: marked.update(
             {"status": status, "message": message}
         ),
     )
 
-    with pytest.raises(HTTPException) as excinfo:
-        main.create_factor_generation(_generation_request())
+    with pytest.raises(DomainError) as excinfo:
+        generation_service.create_factor_generation(_generation_request())
     assert excinfo.value.status_code == 500
     assert marked["status"] == "failed"
 
@@ -1977,7 +1983,7 @@ def test_accepted_factor_rows_exposes_train_valid_test_segments(tmp_path):
         encoding="utf-8",
     )
 
-    rows = main._accepted_factor_rows(run_dir)
+    rows = factor_backtest_service._accepted_factor_rows(run_dir)
 
     assert rows[0]["segments"]["train"]["ic"] == 0.1
     assert rows[0]["segments"]["valid"]["valid_days"] == 60

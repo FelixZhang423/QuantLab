@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from custom_bt.expressions import ExpressionError, evaluate_expression, list_operators, register_operator
+from adapters.expressions import ExpressionError, evaluate_expression, list_operators, register_operator
 
 
 class ExpressionTests(unittest.TestCase):

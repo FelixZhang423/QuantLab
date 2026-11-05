@@ -1,6 +1,6 @@
 import unittest
 
-from custom_bt.cli import build_parser
+from cli.main import build_parser
 
 
 class CLITests(unittest.TestCase):

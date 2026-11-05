@@ -22,7 +22,7 @@ from unittest import mock
 
 import uvicorn
 
-from api import logging_setup
+from config import logging as logging_setup
 
 STAMP = "2026-10-15"
 
@@ -86,7 +86,7 @@ class ConfigureLoggingTests(LoggingSetupTestCase):
         self.assertTrue(self.log_dir.is_dir())  # 不存在的目录要自动建出来
 
     def test_default_dir_is_outputs_logs(self):
-        from api import logging_setup as module
+        from config import logging as module
 
         self.assertEqual(module.DEFAULT_LOG_DIR, module.PROJECT_ROOT / "outputs" / "logs")
         self.assertEqual(module.PROJECT_ROOT.name, "backend")

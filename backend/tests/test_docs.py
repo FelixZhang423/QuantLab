@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from custom_bt.docs import enrich_fields, enrich_operators, parse_field_markdown
-from custom_bt.expressions import evaluate_expression, list_operators
+from adapters.expressions import evaluate_expression, list_operators
 
 
 class DocsTests(unittest.TestCase):

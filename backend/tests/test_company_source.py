@@ -8,8 +8,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from api import live_db
-from custom_bt import company_source, mysql_store
+from repositories import clickhouse as live_db
+from repositories import company_source, mysql_store
 from custom_bt.pools import create_pool_from_company, load_pool_codes, load_pool_manifest
 
 

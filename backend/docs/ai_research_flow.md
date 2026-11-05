@@ -31,18 +31,18 @@
 - `custom_bt/ai_research/tools.py`：候选表达式本地校验。
 - `custom_bt/ai_research/tool_executor.py`：模型 tool plan 到本地平台工具的安全映射。
 - `custom_bt/ai_research/memory.py`：session 文件和长期记忆存储。
-- `custom_bt/cli.py`：主平台 CLI 中的 `ai-research` 命令。
+- `cli/main.py`：主平台 CLI 中的 `ai-research` 命令。
 - `custom_bt/ai_research/cli.py`：AI 研究模块的独立 CLI。
 
 ## 2. 运行前置条件
 
 AI 研究链路依赖本地平台已经有可用的数据和股票池：
 
-- 主缓存：`data_cache/master/meta.json`
-- 股票池：`data_cache/pools/<pool_id>/manifest.json`
-- 操作符注册表：来自 `custom_bt.expressions.list_operators()`
-- 可选历史因子运行：`factor_runs/*/factor_run.json`
-- 可选历史回测结果：`outputs/saved_backtests/**/manifest.json`
+- 主缓存：`var/data_cache/master/meta.json`
+- 股票池：`var/data_cache/pools/<pool_id>/manifest.json`
+- 操作符注册表：来自 `adapters.expressions.list_operators()`
+- 可选历史因子运行：`var/factor_runs/*/factor_run.json`
+- 可选历史回测结果：`var/outputs/saved_backtests/**/manifest.json`
 
 当前默认股票池是：
 
@@ -91,9 +91,9 @@ AIResearchRunner(
 - response_format：`json`
 - max_candidates_per_round：默认 30
 - max_tool_calls_per_round：最多 8
-- AI session 根目录：`outputs/ai_research`
+- AI session 根目录：`var/outputs/ai_research`
 - jobs 根目录：`jobs`
-- saved results 根目录：`outputs/saved_backtests`
+- saved results 根目录：`var/outputs/saved_backtests`
 
 强制 guardrails：
 
@@ -175,7 +175,7 @@ identity lock 很重要，它用于防止模型在后续工具计划里静默改
 用户输入是一句自然语言研究目标，例如：
 
 ```powershell
-python -m custom_bt.cli ai-research "找一个中期量价因子，优先使用 close 和 volume，只生成 1 个候选"
+python -m cli ai-research "找一个中期量价因子，优先使用 close 和 volume，只生成 1 个候选"
 ```
 
 runner 会先构造 Research Spec prompt：
@@ -355,7 +355,7 @@ AI 研究命令有两个重要开关：
 命令：
 
 ```powershell
-python -m custom_bt.cli ai-research "找一个中期量价因子" --max-candidates 3
+python -m cli ai-research "找一个中期量价因子" --max-candidates 3
 ```
 
 会执行：
@@ -380,7 +380,7 @@ python -m custom_bt.cli ai-research "找一个中期量价因子" --max-candidat
 命令：
 
 ```powershell
-python -m custom_bt.cli ai-research "找一个中期量价因子" --execute-tools
+python -m cli ai-research "找一个中期量价因子" --execute-tools
 ```
 
 会执行 tool plan。
@@ -405,7 +405,7 @@ python -m custom_bt.cli ai-research "找一个中期量价因子" --execute-tool
 之后可以手动运行：
 
 ```powershell
-python -m custom_bt.cli run-platform-job --job-dir jobs/<job_id>
+python -m cli run-platform-job --job-dir jobs/<job_id>
 ```
 
 ### 10.3 `--execute-tools --execute-long-jobs`：执行工具计划并同步跑长任务
@@ -413,7 +413,7 @@ python -m custom_bt.cli run-platform-job --job-dir jobs/<job_id>
 命令：
 
 ```powershell
-python -m custom_bt.cli ai-research "找一个中期量价因子，只生成 1 个候选并回测" --max-candidates 1 --execute-tools --execute-long-jobs
+python -m cli ai-research "找一个中期量价因子，只生成 1 个候选并回测" --max-candidates 1 --execute-tools --execute-long-jobs
 ```
 
 会执行 tool plan，并且对长任务调用：
@@ -427,7 +427,7 @@ run_platform_job(job_dir)
 - AI 候选表达式物化成 factor run
 - 创建 `backtest_factors` job
 - 同步运行回测
-- 写入 `outputs/saved_backtests`
+- 写入 `var/outputs/saved_backtests`
 
 ## 11. Tool Executor 如何映射到本地平台
 
@@ -448,14 +448,14 @@ run_platform_job(job_dir)
 | `create_factor_backtest_job` | `backtest_factors` |
 | `create_composition_job` | `compose_factors` |
 
-平台 job 由 `custom_bt.platform_jobs.create_platform_job()` 创建，并由 `custom_bt.platform_jobs.run_platform_job()` 执行。
+平台 job 由 `workers.job_dispatcher.create_platform_job()` 创建，并由 `workers.job_dispatcher.run_platform_job()` 执行。
 
 ### 11.1 AI 候选如何进入回测链路
 
 如果 tool plan 要回测候选，但没有提供已有 `factor_run_dir`，执行器会先把 valid candidates 物化成一个本地 factor run：
 
 ```text
-factor_runs/ai_<session_id>_<digest>/
+var/factor_runs/ai_<session_id>_<digest>/
   accepted_factors.jsonl
   factor_run.json
 ```
@@ -517,7 +517,7 @@ factor_runs/ai_<session_id>_<digest>/
 每次 AI 研究都会创建一个目录：
 
 ```text
-outputs/ai_research/sessions/<session_id>/
+var/outputs/ai_research/sessions/<session_id>/
 ```
 
 常见文件：
@@ -546,7 +546,7 @@ report.md
 长期记忆写在：
 
 ```text
-outputs/ai_research/memory/reflections.jsonl
+var/outputs/ai_research/memory/reflections.jsonl
 ```
 
 runner 当前会在每次 session 结束后写入一个简短 reflection：
@@ -565,7 +565,7 @@ runner 当前会在每次 session 结束后写入一个简短 reflection：
 本地已有一次真实链路 session：
 
 ```text
-outputs/ai_research/sessions/fullchain_deepseek_20260821_realrun
+var/outputs/ai_research/sessions/fullchain_deepseek_20260821_realrun
 ```
 
 这次输入目标是：
@@ -581,8 +581,8 @@ outputs/ai_research/sessions/fullchain_deepseek_20260821_realrun
 - 工具计划选择 `create_factor_backtest_job`。
 - 因为运行时启用了 `--execute-tools --execute-long-jobs`，所以回测 job 被创建并同步跑完。
 - job id：`20260821_013706_2e8b032a`
-- 物化 factor run：`factor_runs/ai_fullchain_deepseek_20260821_realrun_0c7e122a19`
-- 回测输出：`outputs/saved_backtests/factor/liquid_500_864dc25f/ai_fullchain_deepseek_20260821_realrun_0c7e122a19`
+- 物化 factor run：`var/factor_runs/ai_fullchain_deepseek_20260821_realrun_0c7e122a19`
+- 回测输出：`var/outputs/saved_backtests/factor/liquid_500_864dc25f/ai_fullchain_deepseek_20260821_realrun_0c7e122a19`
 
 候选表达式：
 
@@ -603,19 +603,19 @@ rank(ts_mean(volume,20))
 ### 14.1 只生成研究 session，不执行工具
 
 ```powershell
-python -m custom_bt.cli ai-research "找 3 个中期量价因子，优先使用 close、volume、amount" --max-candidates 3
+python -m cli ai-research "找 3 个中期量价因子，优先使用 close、volume、amount" --max-candidates 3
 ```
 
 ### 14.2 生成并执行工具计划，但长任务只入队
 
 ```powershell
-python -m custom_bt.cli ai-research "找 3 个中期量价因子，并创建候选回测任务" --max-candidates 3 --execute-tools
+python -m cli ai-research "找 3 个中期量价因子，并创建候选回测任务" --max-candidates 3 --execute-tools
 ```
 
 ### 14.3 生成、执行工具计划，并同步跑完长任务
 
 ```powershell
-python -m custom_bt.cli ai-research "找 1 个中期量价因子，并真实回测" --max-candidates 1 --execute-tools --execute-long-jobs
+python -m cli ai-research "找 1 个中期量价因子，并真实回测" --max-candidates 1 --execute-tools --execute-long-jobs
 ```
 
 ### 14.4 使用独立 AI Research CLI
@@ -627,13 +627,13 @@ python -m custom_bt.ai_research.cli run "找 1 个中期量价因子" --max-cand
 ### 14.5 手动执行 queued 平台 job
 
 ```powershell
-python -m custom_bt.cli run-platform-job --job-dir jobs/<job_id>
+python -m cli run-platform-job --job-dir jobs/<job_id>
 ```
 
 ### 14.6 指定 session id 和股票池
 
 ```powershell
-python -m custom_bt.cli ai-research "找一个低换手量价因子" --session-id my_research_001 --pool liquid_500_864dc25f --max-candidates 1
+python -m cli ai-research "找一个低换手量价因子" --session-id my_research_001 --pool liquid_500_864dc25f --max-candidates 1
 ```
 
 注意：session id 必须是简单文件名，不能包含路径分隔符。如果同名 session 已存在，会报错，避免覆盖历史研究记录。
@@ -711,8 +711,8 @@ pool_id not found in pools_root
 
 处理：
 
-- 确认 `data_cache/pools/<pool_id>/manifest.json` 存在。
-- 不确定 pool id 时，先查看 `data_cache/pools` 下的目录。
+- 确认 `var/data_cache/pools/<pool_id>/manifest.json` 存在。
+- 不确定 pool id 时，先查看 `var/data_cache/pools` 下的目录。
 
 ### 16.4 候选表达式校验失败
 
@@ -726,7 +726,7 @@ pool_id not found in pools_root
 校验结果看：
 
 ```text
-outputs/ai_research/sessions/<session_id>/validation_results.jsonl
+var/outputs/ai_research/sessions/<session_id>/validation_results.jsonl
 ```
 
 ### 16.5 工具计划被拒绝
@@ -741,8 +741,8 @@ outputs/ai_research/sessions/<session_id>/validation_results.jsonl
 工具执行结果看：
 
 ```text
-outputs/ai_research/sessions/<session_id>/tool_execution.json
-outputs/ai_research/sessions/<session_id>/tool_results.jsonl
+var/outputs/ai_research/sessions/<session_id>/tool_execution.json
+var/outputs/ai_research/sessions/<session_id>/tool_results.jsonl
 ```
 
 ### 16.6 只创建了 job，没有真实跑
@@ -752,7 +752,7 @@ outputs/ai_research/sessions/<session_id>/tool_results.jsonl
 要真实跑，有两种方式：
 
 ```powershell
-python -m custom_bt.cli run-platform-job --job-dir jobs/<job_id>
+python -m cli run-platform-job --job-dir jobs/<job_id>
 ```
 
 或下次直接传：
@@ -782,19 +782,19 @@ DEEPSEEK_CA_BUNDLE=F:\anaconda3\envs\alphagen\lib\site-packages\certifi\cacert.p
 调试新研究方向时：
 
 ```powershell
-python -m custom_bt.cli ai-research "找 3 个中期量价因子，要求字段简单、低复杂度" --max-candidates 3
+python -m cli ai-research "找 3 个中期量价因子，要求字段简单、低复杂度" --max-candidates 3
 ```
 
 确认候选和工具计划合理后，再创建 job：
 
 ```powershell
-python -m custom_bt.cli ai-research "找 3 个中期量价因子，并创建候选回测任务" --max-candidates 3 --execute-tools
+python -m cli ai-research "找 3 个中期量价因子，并创建候选回测任务" --max-candidates 3 --execute-tools
 ```
 
 如果只想做一个小样本真实链路验证：
 
 ```powershell
-python -m custom_bt.cli ai-research "找 1 个中期量价因子，并真实回测" --max-candidates 1 --execute-tools --execute-long-jobs
+python -m cli ai-research "找 1 个中期量价因子，并真实回测" --max-candidates 1 --execute-tools --execute-long-jobs
 ```
 
 这样可以避免模型一上来创建过多长任务，也方便逐步检查 session 产物。

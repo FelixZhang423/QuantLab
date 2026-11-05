@@ -18,7 +18,7 @@ def test_ai_agent_config_loads_defaults_and_merges_override(tmp_path):
     assert config["guardrails"]["require_identity_lock"] is True
     assert config["guardrails"]["require_reflection_memory"] is True
     assert config["guardrails"]["require_tool_call_limit"] is True
-    assert config["paths"]["ai_research_root"] == "outputs/ai_research"
+    assert config["paths"]["ai_research_root"] == "../var/outputs/ai_research"
 
     override_path = tmp_path / "agent.yaml"
     override_path.write_text(

@@ -7,8 +7,8 @@ from custom_bt.canonical_expression import (
     normalize_expression,
     serialize_alphagen_expression,
 )
-from custom_bt.operator_registry import load_alphagen_operator_classes
-from custom_bt.expressions import evaluate_expression
+from adapters.operator_registry import load_alphagen_operator_classes
+from adapters.expressions import evaluate_expression
 
 
 def make_small_panel() -> pd.DataFrame:

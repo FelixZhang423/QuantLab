@@ -13,12 +13,13 @@ import pandas as pd
 
 from custom_bt.alpha import alpha_components, canonical_alpha_expression
 from custom_bt.canonical_expression import normalize_expression
-from custom_bt import company_source
-from custom_bt.data import load_meta, load_pool_panel
+from repositories import company_source
+from repositories.local_store import load_meta, load_pool_panel
 from custom_bt.engine import BacktestConfig, run_backtest
-from custom_bt.expressions import evaluate_expression
+from adapters.expressions import evaluate_expression
 from custom_bt.pools import load_pool_codes, load_pool_manifest
-from custom_bt.results import save_result
+from services.report_service import save_result
+from repositories.composition_store import write_run_outputs, write_size_outputs
 
 
 @dataclass(frozen=True)
@@ -1153,27 +1154,7 @@ def compose_factors(
             }
             for component in components
         ]
-        (out_dir / "factor_weights.json").write_text(json.dumps(weights, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-        (out_dir / "composition_admission_log.json").write_text(
-            json.dumps(metadata["admission_log"], ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
-        pd.DataFrame(weights).to_csv(out_dir / "factor_weights.csv", index=False, encoding="utf-8-sig")
-        pd.DataFrame([
-            {
-                "factor_id": row["factor_id"],
-                "expression": row["expression"],
-                "preprocessed_expression": row["preprocessed_expression"],
-                "weight": row["weight"],
-                "applied_to": row["applied_to"],
-                "preprocess_method": row["preprocess"]["method"],
-                "marginal_delta_ic": None if row["marginal"] is None else row["marginal"]["delta"].get("ic"),
-                "marginal_delta_rank_ic": None if row["marginal"] is None else row["marginal"]["delta"].get("rank_ic"),
-                "marginal_delta_icir": None if row["marginal"] is None else row["marginal"]["delta"].get("icir"),
-                **{f"metric_{key}": value for key, value in row["metrics"].items()},
-            }
-            for row in weights
-        ]).to_csv(out_dir / "composition_summary.csv", index=False, encoding="utf-8-sig")
+        write_size_outputs(out_dir, weights, metadata["admission_log"])
         completed_sizes.append(size)
         output_dirs.append(str(out_dir))
         if is_positive_backtest:
@@ -1190,20 +1171,7 @@ def compose_factors(
         )
         if progress_callback is not None:
             progress_callback({"stage": "backtesting", "current_size": size, "completed_sizes": completed_sizes})
-    pd.DataFrame(summary_rows).to_csv(output_base / composition_id / "composition_run_summary.csv", index=False, encoding="utf-8-sig")
-    pd.DataFrame([row for row in summary_rows if row.get("positive_total_return")]).to_csv(
-        output_base / composition_id / "positive_composition_results.csv",
-        index=False,
-        encoding="utf-8-sig",
-    )
-    (output_base / composition_id / "composition_admission_log.json").write_text(
-        json.dumps(full_selection.admission_log or [], ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-    (output_base / composition_id / "composition_rejections.json").write_text(
-        json.dumps(full_selection.rejections, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
+    write_run_outputs(output_base, composition_id, summary_rows, full_selection.admission_log or [], full_selection.rejections)
     result = {
         "pool_id": pool_id,
         "composition_id": composition_id,

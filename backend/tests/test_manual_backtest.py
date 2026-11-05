@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from custom_bt import company_source
-from custom_bt.expressions import ExpressionError
+from repositories import company_source
+from adapters.expressions import ExpressionError
 from custom_bt.manual_backtest import (
     normalize_manual_expression,
     run_manual_backtest,
@@ -188,7 +188,7 @@ class ManualBacktestTests(unittest.TestCase):
                 json.dumps({"source_signature": "local_sig"}), encoding="utf-8"
             )
             with patch(
-                "custom_bt.manual_backtest.load_pool_panel", return_value=_panel().query("code == '000001'")
+                "repositories.panel_store.load_pool_panel", return_value=_panel().query("code == '000001'")
             ) as load_panel:
                 result = run_manual_backtest(
                     pools_root,

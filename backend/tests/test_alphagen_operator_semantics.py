@@ -4,7 +4,7 @@ from statistics import NormalDist
 import torch
 from torch.testing import assert_close
 
-from custom_bt.operator_registry import load_alphagen_operator_classes
+from adapters.operator_registry import load_alphagen_operator_classes
 
 load_alphagen_operator_classes()  # 把仓库根加入 sys.path，下面才能导入 single_factor
 
