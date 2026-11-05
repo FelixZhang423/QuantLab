@@ -1,4 +1,4 @@
-"""启动平台任务子进程（与 Streamlit 端共用 outputs/jobs 状态机）。
+"""启动平台任务子进程（与 CLI 端共用 outputs/jobs 状态机）。
 
 API 只负责创建任务目录并立刻返回；真正的 create_pool / prepare_master 等
 操作由独立进程执行，避免阻塞 HTTP 请求。子进程不接收 ClickHouse 凭据。

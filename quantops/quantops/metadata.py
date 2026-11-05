@@ -1,6 +1,6 @@
 """算子中文元数据 + 目录接口（分类中文名 / 中文说明 / 示例 / 能否用于因子生成）。
 
-这三个字典是 ``custom_backtester/custom_bt/docs.py`` 里同名常量的副本（那边被
+这三个字典是 ``backend/custom_bt/docs.py`` 里同名常量的副本（那边被
 tests/test_docs.py 锁住、不能改）。两份的一致性由
 ``quantops/tests/test_metadata.py`` 保证：谁改了一边没改另一边，测试立刻失败。
 """

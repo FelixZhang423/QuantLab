@@ -2,7 +2,7 @@
 
 本文档说明当前 `backend` 中 AI 研究 Agent 的实际运行流程。这里的“AI 研究”不是独立交易系统，而是一个位于本地量化平台之上的研究编排层：它把自然语言研究目标交给 DeepSeek 生成结构化研究计划和候选因子，再用本地字段、操作符、回测和组合模块做校验与执行。
 
-当前实现入口以 CLI 为主，Streamlit 暂未提供独立的 AI 研究页签。
+当前实现入口以 CLI 为主，尚未提供前端页面。
 
 ## 1. 总览
 
@@ -664,7 +664,7 @@ python -m custom_bt.cli ai-research "找一个低换手量价因子" --session-i
 
 ### 当前未完整自动化
 
-- Streamlit 里还没有 AI 研究专用页面。
+- 前端还没有 AI 研究专用页面。
 - `require_user_confirmation` 目前通过 CLI flag 表达，不是交互式确认弹窗。
 - prompt 中已有 debate、audit、report、reflection 层，但 runner 当前没有自动串起 L6/L7/L8/L9 的模型调用；现在使用本地 `report.md` 和简短 reflections。
 - 还不是多轮自动研究循环；一次命令就是一轮 session。

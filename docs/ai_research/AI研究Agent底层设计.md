@@ -285,15 +285,15 @@ Risk Judge：裁决保留、拒绝或需要复验
 第一版存 JSON / JSONL：
 
 ```text
-custom_backtester/outputs/ai_research/sessions/<session_id>/research_spec.json
-custom_backtester/outputs/ai_research/sessions/<session_id>/context_snapshot.json
-custom_backtester/outputs/ai_research/sessions/<session_id>/candidate_expressions.jsonl
-custom_backtester/outputs/ai_research/sessions/<session_id>/tool_calls.jsonl
-custom_backtester/outputs/ai_research/sessions/<session_id>/audit_report.json
-custom_backtester/outputs/ai_research/sessions/<session_id>/research_report.md
-custom_backtester/outputs/ai_research/memory/failed_candidates.jsonl
-custom_backtester/outputs/ai_research/memory/accepted_candidates.jsonl
-custom_backtester/outputs/ai_research/memory/reflections.jsonl
+backend/outputs/ai_research/sessions/<session_id>/research_spec.json
+backend/outputs/ai_research/sessions/<session_id>/context_snapshot.json
+backend/outputs/ai_research/sessions/<session_id>/candidate_expressions.jsonl
+backend/outputs/ai_research/sessions/<session_id>/tool_calls.jsonl
+backend/outputs/ai_research/sessions/<session_id>/audit_report.json
+backend/outputs/ai_research/sessions/<session_id>/research_report.md
+backend/outputs/ai_research/memory/failed_candidates.jsonl
+backend/outputs/ai_research/memory/accepted_candidates.jsonl
+backend/outputs/ai_research/memory/reflections.jsonl
 ```
 
 `reflections.jsonl` 专门保存复盘型记忆：
@@ -313,7 +313,7 @@ custom_backtester/outputs/ai_research/memory/reflections.jsonl
 建议新增配置文件：
 
 ```text
-custom_backtester/configs/ai_research_agent.yaml
+backend/configs/ai_research_agent.yaml
 ```
 
 配置结构：

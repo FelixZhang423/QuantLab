@@ -7,8 +7,6 @@ gymnasium
 stable-baselines3
 sb3-contrib
 matplotlib
-streamlit
-plotly
 fastapi
 uvicorn
 PyMySQL

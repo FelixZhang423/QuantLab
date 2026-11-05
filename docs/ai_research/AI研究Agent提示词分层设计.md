@@ -423,7 +423,7 @@ load_saved_results
 建议后续新增：
 
 ```text
-custom_backtester/custom_bt/ai_research/prompts/
+backend/custom_bt/ai_research/prompts/
   l0_system.md
   l1_research_spec.md
   l2_context_summary.md

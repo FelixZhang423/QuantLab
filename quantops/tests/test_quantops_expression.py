@@ -1,7 +1,7 @@
-"""表达式引擎测试：从 custom_backtester/tests/test_expressions.py 原样移植。
+"""表达式引擎测试：从 backend/tests/test_expressions.py 原样移植。
 
 保留全部精确数值断言——它就是「算子搬家前后行为一致」的证据。
-文件名不叫 test_expressions.py：和 custom_backtester/tests/ 下的同名文件在同一
+文件名不叫 test_expressions.py：和 backend/tests/ 下的同名文件在同一
 次 pytest 调用里会撞 import（两个测试目录都没有 __init__.py）。
 """
 import unittest

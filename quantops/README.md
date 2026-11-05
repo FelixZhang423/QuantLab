@@ -4,7 +4,7 @@
 
 只依赖 **numpy + pandas**，不依赖本仓库任何其它模块 —— 可以在任何 Python 项目里 `import quantops` 直接用。
 
-> 本库是这些算子的**唯一实现**。`custom_backtester/custom_bt/expressions.py` 只是转发（`from quantops.expression import ...`），
+> 本库是这些算子的**唯一实现**。`backend/custom_bt/expressions.py` 只是转发（`from quantops.expression import ...`），
 > 改算子请改这里，那边会自动跟着变。
 
 ## 安装
@@ -14,13 +14,13 @@
 py -3 -m pip install -e D:\1\QuantLab\quantops
 ```
 
-回测器侧（`custom_backtester/`）**不装也能跑**：`custom_bt/_quantops_boot.py` 会在找不到 `quantops` 时，
+回测器侧（`backend/`）**不装也能跑**：`custom_bt/_quantops_boot.py` 会在找不到 `quantops` 时，
 把库目录临时加进 `sys.path`。装上之后走的是真正的包（`pip show quantops` 能查到）。
 
 > ⚠️ **别在仓库根 `D:\1\QuantLab\` 下跑 `import quantops` 或 `py -3 -m quantops`**：该目录下正好有个同名目录 `quantops/`
 > （本项目目录，不是包），Python 3 会把它当成**命名空间包**解析出一个空模块（表现为 `AttributeError: module 'quantops' has no attribute 'OPERATORS'`；
 > CLI 则会给出「当前目录下有个同名文件夹」的中文提示）。到别的目录、或先 `cd quantops` 再跑即可 ——
-> `custom_backtester`、Streamlit、`/api` 都不受影响（它们 cd 在自己的目录里，或走 `_quantops_boot.py`）。
+> `backend`、`/api` 都不受影响（它们 cd 在自己的目录里，或走 `_quantops_boot.py`）。
 
 ## 四种用法
 

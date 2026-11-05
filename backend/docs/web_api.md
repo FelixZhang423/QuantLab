@@ -1,12 +1,12 @@
-# Web API 数据清单与技术栈（React 原型接入）
+# Web API 数据清单与技术栈（React 前端接入）
 
 > 更新时间：2026-10-27（股票池、因子生成与回测全部切公司 ClickHouse，见 §2.8；同日股票池删除 `DELETE /api/pools/{pool_id}` + 前端删除/模板新建，见 §2.8.1；同日手动回测接入真实后台任务，见 §2.10；同日晚间结果详情页改为只读真实结果，见 §2.11）｜ 后端代码：`backend/api/` ｜ 前端接入层：`frontend/src/api/client.ts`
-> 相关：README「Web API（React 原型用）」、`quantops/README.md`、`progress.md`「2026-10-10 React 原型接入只读 API（第一步）」「2026-10-10 展示端点切换 ClickHouse 实时数据」「2026-10-14 算子抽成独立库 quantops」「2026-10-15 后端日志落盘」「2026-10-20 股票池接入公司数据库真实股票」「2026-10-25 MySQL 集中存档」「2026-10-25 因子批量回测接入 Web」「2026-10-27 股票池 MySQL 主读 + 删除/模板新建」「2026-10-27 全链路切换公司 ClickHouse」「2026-10-27 手动回测 + 结果详情页接真实结果」
+> 相关：README「Web API（React 前端用）」、`quantops/README.md`、`progress.md`「2026-10-10 React 原型接入只读 API（第一步）」「2026-10-10 展示端点切换 ClickHouse 实时数据」「2026-10-14 算子抽成独立库 quantops」「2026-10-15 后端日志落盘」「2026-10-20 股票池接入公司数据库真实股票」「2026-10-25 MySQL 集中存档」「2026-10-25 因子批量回测接入 Web」「2026-10-27 股票池 MySQL 主读 + 删除/模板新建」「2026-10-27 全链路切换公司 ClickHouse」「2026-10-27 手动回测 + 结果详情页接真实结果」
 
 ## 1. 架构总览
 
 ```
-浏览器（React 原型 :8443）
+浏览器（React 前端 :8443）
    └─ fetch /api/*  →  Vite dev proxy（/api → 127.0.0.1:8000）
           └─ FastAPI（backend/api，:8000，GET + POST + DELETE）
                  ├─ 数据总览 / 数据字段 / 股票列表 / 股票池候选 → api/live_db.py
@@ -488,7 +488,7 @@ GET /api/factor-generations/defaults + GET /api/pools（选择真实股票池）
 
 股票池创建表单**已不再是 mock**：候选来自公司库，提交走 `POST /api/pools` 并轮询任务状态（§2.8）。因子回测页也已完成真实接入：运行/因子来自 `factor_runs/`，提交走 `POST /api/factor-backtests`，轮询进度并读取批次结果（§2.9）。手动回测页同样已接真实后端：股票池来自 `/api/pools`，提交走 `POST /api/manual-backtests`，轮询任务并直接展示结果（§2.10）。
 
-后端作业机制已就绪：`platform_jobs.py` 支持 6 种操作（prepare_master / create_pool / generate_factors / backtest_factors / compose_factors / manual_backtest），与 Streamlit 端共用 `outputs/jobs/` 目录。
+后端作业机制已就绪：`platform_jobs.py` 支持 6 种操作（prepare_master / create_pool / generate_factors / backtest_factors / compose_factors / manual_backtest），与 CLI 端共用 `outputs/jobs/` 目录。
 
 ## 4. 技术栈
 
@@ -604,7 +604,7 @@ py -3 -m custom_bt.cli mysql-sync       # 本地 pools / factor_runs / saved_bac
 
 ## 6. 下一步（写操作续）
 
-- ~~`POST /api/pools`~~ 已完成（2026-10-20，§2.8）：复用 `create_platform_job` + `api/job_runner.py`，与 Streamlit 共用 `outputs/jobs/`。
+- ~~`POST /api/pools`~~ 已完成（2026-10-20，§2.8）：复用 `create_platform_job` + `api/job_runner.py`，与 CLI 共用 `outputs/jobs/`。
 - ~~`POST /api/factor-backtests`~~ 已完成（2026-10-25，§2.9）：运行列表、批次进度、版本化输出、批次查询与结果跳转均已接通。
 - ~~`POST /api/backtest`（手工表达式）~~ 已完成（2026-10-27，`POST /api/manual-backtests`，§2.10）：股票池选择、表达式校验、后台执行、进度轮询与结果预览均已接通。
 - ~~`POST /api/factor-generations`~~ 已完成（2026-11-02，§2.12）：默认参数、字段/算子/切分校验、后台 PPO 子进程、进度轮询与真实结果展示均已接通。

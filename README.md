@@ -1,6 +1,6 @@
-# 生成因子＋回测系统
+# QuantLab（生成因子＋回测系统）
 
-该系统是一个独立的股票**因子生成与回测平台**（不依赖 Qlib）。目前系统实现了从原始日频数据出发，把大规模日频数据变成可复用的股票级 Parquet 缓存 → 用特定股票池约束研究对象 → 通过 PPO 强化学习算法自动搜索可解释表达式生成单因子，之后做单因子有效性检测以进行生成阶段筛选 → 用统一 TopK 回测引擎检验合格因子的交易表现 → 最后通过 mutual IC 去重 + 权重优化把单因子升级为组合因子。
+QuantLab 是一个独立的股票**因子生成与回测平台**（不依赖 Qlib）。目前系统实现了从原始日频数据出发，把大规模日频数据变成可复用的股票级 Parquet 缓存 → 用特定股票池约束研究对象 → 通过 PPO 强化学习算法自动搜索可解释表达式生成单因子，之后做单因子有效性检测以进行生成阶段筛选 → 用统一 TopK 回测引擎检验合格因子的交易表现 → 最后通过 mutual IC 去重 + 权重优化把单因子升级为组合因子。
 
 ## 核心流程
 
@@ -18,7 +18,7 @@
 4. **PPO 因子生成**：在可用字段与操作符空间里搜索表达式，用 IC / RankIC / ICIR / 覆盖率筛出合格因子；
 5. **批量回测合格因子**：只回测 `accepted_factors.jsonl` 里通过生成阶段筛选的表达式；
 6. **因子组合**：mutual IC 去重 + 权重优化 + 多规模组合回测；
-7. **结果沉淀与查看**：所有回测产物进入统一结果中心，可在 Streamlit 中查看、下载、备注。
+7. **结果沉淀与查看**：所有回测产物进入统一结果中心，可在 React 前端查看、下载、备注。
 
 ## 系统架构
 
@@ -32,14 +32,14 @@
 | 生成层 | 池内面板转 PPO 训练数据，调用 single_factor 生成候选因子 | `custom_bt.factor_generation` + `single_factor` |
 | 回测层 | 对手动/合格/组合因子执行 TopK 日频回测 | `custom_bt.engine`、`custom_bt.factor_backtest` |
 | 组合层 | mutual IC 去重、权重优化、多规模组合回测 | `custom_bt.factor_composition` |
-| 平台层 | CLI、Streamlit 工作台、后台任务、结果中心 | `custom_bt.cli`、`platform_jobs`、`app`、`results` |
+| 平台层 | FastAPI 接口、CLI、后台任务、结果中心 | `api`、`custom_bt.cli`、`platform_jobs`、`results` |
 
 ### 三个子项目的关系
 
-- **`custom_backtester/`** 是主平台"大脑"，但它**不自己实现 PPO**——`factor_generation.py` 通过 `sys.path` 定位到根目录后 `from single_factor...` 调用生成核心；
+- **`backend/`** 是主平台"大脑"，但它**不自己实现 PPO**——`factor_generation.py` 通过 `sys.path` 定位到根目录后 `from single_factor...` 调用生成核心；
 - **`single_factor/`** 是独立可部署的 PPO 生成器，内置 vendored 的 AlphaGen 原语，自带 `runtime.json` 和 `run_server.ps1` 守护脚本，脱离主平台也能单独跑；
-- **`research_pipeline/`** 是另一套独立的研究流水线（因子分类、表达式引擎、选股、评估、导出），与主平台无关；
-- **`custom_bt/ai_research/`** 是用 DeepSeek LLM 驱动的量化研究 agent（`提示词合集/` 里的提示词为其服务）。
+- **`research_pipeline/`** 是另一套独立的研究流水线（因子分类、表达式引擎、选股、评估、导出），与主平台无关；当前源码未入库，仅保留目录占位；
+- **`backend/custom_bt/ai_research/`** 是用 DeepSeek LLM 驱动的量化研究 agent（`提示词合集/` 里的提示词为其服务）。
 
 ### 核心设计原则
 
@@ -51,24 +51,32 @@
 
 ```
 生成因子＋回测系统/
-├── custom_backtester/              # 主平台
+├── backend/                        # 主平台（FastAPI + 核心逻辑 + CLI）
+│   ├── api/                        #   FastAPI 路由与任务进程入口
 │   ├── custom_bt/                  #   核心包（data/pools/expressions/engine/factor_* 等）
 │   │   └── ai_research/            #   LLM 量化研究 agent（DeepSeek 驱动）
-│   ├── app/                        #   Streamlit 工作台（streamlit_app.py + run_streamlit.py）
 │   ├── configs/                    #   平台 / 股票池 / 生成 / 回测配置（yaml）
 │   ├── tests/                      #   pytest 单元测试
 │   ├── data_cache/                 #   数据缓存（master 已入库；stock_daily/sample/pools/factor_runtime 不入库）
-│   ├── factor_runs/                #   PPO 生成结果（不入库）
 │   └── outputs/                    #   回测 / 组合结果（不入库）
+├── frontend/                       # React 前端（Vite + Ant Design + ECharts）
+├── quantops/                       # 独立算子库（可 pip install）
 ├── single_factor/                  # 独立 PPO 生成器（含 _vendor/alphagen 原语）
-├── research_pipeline/              # 独立研究流水线（research_system/）
-├── research_data/                  # 研究数据产物（快照不入库）
-├── docs/                           # 设计文档（Word）
+├── research_pipeline/              # 独立研究流水线（源码未入库，暂时保留）
+├── factor_runs/                    # PPO 生成结果（根目录，不入库）
+├── docs/                           # 设计文档
 ├── 提示词合集/                     # LLM agent 提示词模板
 ├── v_stock_daily_full_字段说明.md
 ├── README.md
 └── .gitignore
 ```
+
+### 命名约定
+
+- **产品名**：QuantLab
+- **仓库目录**：`backend/`（后端）、`frontend/`（前端）
+- **Python 包**：`custom_bt`（历史名，保持稳定；命令行入口仍是 `python -m custom_bt.cli`）
+- 文档中不再使用旧名 `custom_backtester/`、`原型/`
 
 详细架构见 [docs/生成因子与回测系统整体逻辑说明书.docx](docs/生成因子与回测系统整体逻辑说明书.docx)。
 
@@ -76,14 +84,14 @@
 
 - Python 3.11（或 3.8）
 - conda 环境 `alphagen`
-- 仅跑手动回测只需 `custom_backtester` 依赖；跑 PPO 生成还需 `single_factor` 的 torch / stable-baselines3 等
+- 仅跑手动回测只需 `backend` 依赖；跑 PPO 生成还需 `single_factor` 的 torch / stable-baselines3 等
 
 ```powershell
 conda create -n alphagen python=3.11 -y
 conda activate alphagen
 
-# 平台 + 网页工作台
-pip install numpy pandas "pyarrow>=12.0" pyyaml matplotlib streamlit plotly certifi "pytest>=7.0"
+# 后端（FastAPI + 回测）
+pip install numpy pandas "pyarrow>=12.0" pyyaml matplotlib fastapi uvicorn PyMySQL certifi "pytest>=7.0"
 
 # PPO 生成（强化学习）
 pip install "gymnasium>=0.28" "stable-baselines3>=2.0" "sb3-contrib>=2.0"
@@ -92,37 +100,33 @@ pip install "gymnasium>=0.28" "stable-baselines3>=2.0" "sb3-contrib>=2.0"
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
-三个子模块各自的依赖见 `custom_backtester/requirements.txt`、`single_factor/requirements.txt`、`research_pipeline/requirements.txt`。
+三个子模块各自的依赖见 `backend/requirements.txt`、`single_factor/requirements.txt`、`research_pipeline/requirements.txt`。
 
 ## 快速开始
 
-### 网页工作台
+### 后端 API
 
 ```powershell
-cd custom_backtester
-python app\run_streamlit.py
+cd backend
+py -3 -m api
 ```
 
-浏览器打开 http://localhost:8501 。左侧边栏配置路径与全局回测参数；主区 11 个页签：
+默认监听 <http://127.0.0.1:8000>，可用 `QL_API_HOST` / `QL_API_PORT` 覆盖。
 
-| 页签 | 作用 |
-|---|---|
-| 平台任务 | 提交主缓存导入，查看数据规模与字段 |
-| 回测 | 手动输入 alpha 表达式回测（可全量或选池） |
-| 数据字段 / 股票列表 / 操作符 | 查看字段、股票、算子 |
-| 股票池 | 创建 / 查看命名股票池 |
-| 因子生成 | 选池 + 字段 + split + PPO 参数，提交生成，查看 accepted factors |
-| 因子回测 | 选 factor_run，批量回测合格因子，下载汇总 |
-| 因子组合 | 选池 + 单因子运行，设阈值 / mutual IC / 规模，提交组合 |
-| 后台任务 | 监控 queued/running/finished/failed 状态与进度 |
-| 已保存结果 | 查看 / 下载 manual / factor / composite 回测结果 |
+### 前端
 
-所有耗时操作（导入/生成/回测/组合）都在后台进程执行，页面不会被阻塞。
+```powershell
+cd frontend
+pnpm install
+pnpm dev
+```
+
+浏览器打开 <http://localhost:8443>，开发服务器会把 `/api` 代理到后端。
 
 ### 命令行主流程
 
 ```powershell
-cd custom_backtester
+cd backend
 
 # ① 构建主缓存（需源 CSV 就位，路径见 configs/platform.yaml 的 source_csv）
 python -m custom_bt.cli prepare-master --config configs/platform.yaml
@@ -196,8 +200,7 @@ powershell -ExecutionPolicy Bypass -File .\single_factor\run_server.ps1
 
 ## 已知注意点
 
-- "数据字段"页签默认显示旧缓存 `stock_daily` 的 91 个全量字段；而因子生成/回测实际使用 master 的约 40 个精选字段（`platform.yaml` 的 `factor_fields`），页签里看到的字段未必都能用于因子表达式。
-- 网页版路径由侧边栏配置、直接传参给后台任务；命令行版路径从 `--config` 读取，两者取路径方式不同。
+- “数据字段”页面显示公司库字段目录（`configs/field_catalog.json` + 实时库表结构）；因子生成/回测实际使用 `platform.yaml` 的 `factor_fields` 精选字段，页面里看到的字段未必都能用于因子表达式。
 
 ## 附录：environment.yml
 
@@ -215,8 +218,9 @@ dependencies:
       - pyarrow>=12.0
       - pyyaml
       - matplotlib
-      - streamlit
-      - plotly
+      - fastapi
+      - uvicorn
+      - PyMySQL
       - certifi
       - gymnasium>=0.28
       - stable-baselines3>=2.0

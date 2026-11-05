@@ -5,7 +5,7 @@
 数据来源分两类：
 
 - **真实数据（走 `backend` 的 FastAPI，`/api/*` 经 vite 代理）**：数据总览 / 数据字段 / 股票列表、股票池（候选筛选预览 + 真实建池 + 列表/详情/删除）、手动回测（选池 + 表达式 + 后台任务 + 结果预览）、因子回测、回测结果；股票池、因子面板与回测全部直接读公司 ClickHouse；
-- **仍是 mock**：任务中心、用户与权限、审计日志，以及因子生成/因子组合的提交表单。
+- **仍是 mock**：任务中心、用户与权限、审计日志，以及因子组合的提交表单。
 
 后端启动方式与各端点的真实数据来源见 `backend/docs/web_api.md`。
 
@@ -49,16 +49,19 @@ pnpm build        # 生产构建，产物在 dist/
 
 ```
 src/
-├── App.tsx              # 入口：登录 + 布局 + 侧边菜单 + 页面路由
+├── App.tsx              # 入口：登录 + 布局 + 侧边菜单 + 页面切换
+├── api/client.ts        # API 类型、fetch 封装、useApiData / useJobPolling
 ├── Charts.tsx           # ECharts 图表（净值/回撤、年度收益）
-├── mockData.ts          # 任务/结果数据 + 状态模拟调度
-├── mockExtended.ts      # 字段/股票/池/因子/组合/用户/审计数据
+├── backtestAnalysis.tsx # 回测批次/单次结果分析组件
+├── mockData.ts          # 任务/结果 mock + 状态模拟调度
+├── mockExtended.ts      # 字段/股票/池/因子/组合/用户/审计 mock
 └── pages/
-    ├── DataPages.tsx        # 数据总览 / 数据字段 / 股票列表 / 操作符
-    ├── ResearchPages.tsx    # 股票池 / 因子生成 / 因子回测
-    ├── ManualBacktestPage.tsx  # 手动回测（真实股票池 + 后台任务 + 结果预览）
-    ├── CompositionPage.tsx  # 因子组合
-    └── SystemPages.tsx      # 用户与权限 / 审计日志
+    ├── DataPages.tsx        # 数据总览 / 数据字段 / 股票列表 / 操作符 + 共享 LoadGate/FilterChips
+    ├── ResearchPages.tsx    # 股票池 / 因子回测
+    ├── FactorGenerationPage.tsx # 因子生成
+    ├── ManualBacktestPage.tsx   # 手动回测（真实股票池 + 后台任务 + 结果预览）
+    ├── CompositionPage.tsx      # 因子组合（mock）
+    └── SystemPages.tsx          # 用户与权限 / 审计日志（mock）
 ```
 
 ## 相关服务
@@ -67,7 +70,6 @@ src/
 |---|---|---|---|
 | 前端 | `frontend/` | `pnpm dev` | http://localhost:8443 |
 | FastAPI 数据接口 | `backend/` | `py -3 -m api`（见下方说明） | http://localhost:8000 |
-| Streamlit 工作台 | `backend/` | `py app\run_streamlit.py` | http://localhost:8501 |
 
 后端默认监听 `127.0.0.1:8000`，vite 把 `/api` 代理过去（`QL_API_TARGET` 可覆盖）。**数据总览 / 数据字段 / 股票列表、股票池候选与建池、因子面板与回测全部直接读公司 ClickHouse**，需要在公司网络下并配置凭据（环境变量 `QL_CH_PASSWORD` 优先，其次 `backend/configs/clickhouse.local.env`，该文件已被 .gitignore 忽略）；股票池列表/详情优先读 MySQL，回退本地 `data_cache/pools/`，因子运行与回测结果读本地 `factor_runs/`、`outputs/`，这些页面不需要数据库凭据。
 

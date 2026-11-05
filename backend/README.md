@@ -1,6 +1,6 @@
-# Custom Backtester
+# QuantLab 后端
 
-这是一个独立股票回测系统，直接读取你的原始日频面板 CSV，不依赖 Qlib。
+这是 QuantLab 的后端：独立股票因子生成与回测平台，直接读取原始日频面板 CSV，不依赖 Qlib。
 
 核心流程：
 
@@ -17,10 +17,10 @@ cd backend          # 从仓库根目录进入
 conda activate alphagen
 ```
 
-如缺少网页依赖：
+安装依赖：
 
 ```powershell
-pip install streamlit
+py -3 -m pip install -r requirements.txt
 ```
 
 ## 2. 第一次导入数据
@@ -121,11 +121,7 @@ python -m custom_bt.cli backtest-factors `
 
 ### 4.5 网页查看
 
-```powershell
-python app/run_streamlit.py
-```
-
-网页新增“股票池”“因子生成”“因子回测”区域，可以查看池规模、PPO 找到的表达式、IC/ICIR/coverage，以及合格因子的回测效果。
+前端是独立的 React 应用，启动方式见 [../frontend/README.md](../frontend/README.md)：股票池、因子生成、因子回测与结果中心都在那里查看。
 
 旧的 `data_cache/stock_daily` 和 `sample_store` 只在新主缓存与一次端到端流程验证通过后再删除。
 
@@ -155,7 +151,7 @@ python -m custom_bt.cli operators
 
 说明：本地 Python 表达式里 `and/or/not` 是保留字，系统会自动把函数调用形式的 `and(...) / or(...) / not(...)` 转成内部别名 `and_ / or_ / not_`。
 
-## 5. 命令行回测
+## 6. 命令行回测
 
 编辑 `configs\default.yaml` 里的表达式和参数，然后运行：
 
@@ -184,23 +180,6 @@ outputs\demo_top50\
 ```powershell
 python -m custom_bt.cli runs --outputs "outputs"
 ```
-
-## 6. 网页工作台
-
-```powershell
-python app\run_streamlit.py
-```
-
-网页里可以做这些事：
-
-- 看当前数据缓存的股票数、行数、日期范围
-- 看可用字段
-- 按分类看可用算子
-- 输入 alpha 表达式并回测
-- 查看 PNL / Drawdown 曲线
-- 查看年度 `return / sharpe / max_drawdown / turnover / cost / win_rate`
-- 查看历史保存结果
-- 下载回测输出文件
 
 ## 7. 表达式例子
 
@@ -272,18 +251,6 @@ The configured source file is tab-separated despite its `.csv` suffix. The maste
 
 For a large source, build the master cache once. Factor generation and factor backtesting then read only the selected pool from that cache; the full source is not loaded into memory for each factor.
 
-## Streamlit startup and visual workflow
-
-From the `backend` directory, run:
-
-```powershell
-python app/run_streamlit.py
-```
-
-Open the displayed local URL, usually `http://localhost:8501`.
-
-The `平台任务` tab can submit the master-cache import. The `股票池` tab creates a named pool. The `因子生成` tab selects a pool and submits PPO generation. The `因子回测` tab selects a factor run and submits batch backtests for accepted factors. All four operations run in the background and can be monitored in `后台任务`; the original `回测` tab remains available for manual expression debugging.
-
 ## MySQL 集中存储（股票池 / 因子 / 回测）
 
 股票池以 MySQL 为主存储：`GET /api/pools` / `GET /api/pools/{pool_id}` 优先读 MySQL，
@@ -330,7 +297,7 @@ py -3 -m custom_bt.cli mysql-sync       # 把现有本地结果补录到 MySQL
 
 说明：MySQL 未配置或连不上时，股票池接口自动回退本地文件，建池/回测也不受影响；密码不会进入日志、响应或 manifest。
 
-## Web API（React 原型用）
+## Web API（React 前端用）
 
 `frontend/` 下的 React 前端通过 `/api/*` 读取真实数据，接口层在 `api/main.py`（FastAPI；查询端点 + 建池 `POST /api/pools` + 批量因子回测 `POST /api/factor-backtests` + 手动回测 `POST /api/manual-backtests`）。
 在 `backend` 目录启动：

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "quantlab-backend"
 version = "0.1.0"
-description = "QuantLab 后端：因子生成、股票池、TopK 回测、FastAPI Web API 与 Streamlit 工作台"
+description = "QuantLab 后端：因子生成、股票池、TopK 回测与 FastAPI Web API"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -14,8 +14,6 @@ dependencies = [
     "pyarrow",
     "pyyaml",
     "matplotlib",
-    "streamlit",
-    "plotly",
     "fastapi",
     "uvicorn",
     "PyMySQL",
