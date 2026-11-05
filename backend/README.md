@@ -4,7 +4,7 @@
 
 核心流程：
 
-1. 把 CSV 更新到本地缓存，缓存按股票拆成 `data_cache\stock_daily\stocks\*.parquet`
+1. 把 CSV 更新到本地缓存，缓存按股票拆成 `..\var\data_cache\stock_daily\stocks\*.parquet`
 2. 查看当前可用字段和表达式算子
 3. 在网页或命令行输入 alpha 表达式
 4. 执行 TopK 日频回测
@@ -30,7 +30,7 @@ py -3 -m pip install -r requirements.txt
 ```powershell
 python -m cli prepare `
   --csv "..\v_stock_daily_full.csv" `
-  --out "data_cache\stock_daily"
+  --out "..\var\data_cache\stock_daily"
 ```
 
 如果你的 CSV 里新增了自己的因子字段、行业字段、财务字段，并且也想放入缓存：
@@ -38,7 +38,7 @@ python -m cli prepare `
 ```powershell
 python -m cli prepare `
   --csv "..\v_stock_daily_full.csv" `
-  --out "data_cache\stock_daily" `
+  --out "..\var\data_cache\stock_daily" `
   --all-columns
 ```
 
@@ -49,7 +49,7 @@ python -m cli prepare `
 ```powershell
 python -m cli update `
   --csv "..\new_daily_data.csv" `
-  --out "data_cache\stock_daily" `
+  --out "..\var\data_cache\stock_daily" `
   --all-columns
 ```
 
@@ -61,7 +61,7 @@ python -m cli update `
 - 自动计算 `vwap = amount / volume`
 - 按股票拆分保存
 - 同一股票同一天重复时，保留后导入的数据
-- 字段目录写入 `data_cache\stock_daily\meta.json`
+- 字段目录写入 `..\var\data_cache\stock_daily\meta.json`
 
 ## 4. 统一因子平台工作流
 
@@ -130,7 +130,7 @@ python -m cli backtest-factors `
 查看当前缓存里有哪些字段可以写进表达式：
 
 ```powershell
-python -m cli fields --data "data_cache\stock_daily"
+python -m cli fields --data "..\var\data_cache\stock_daily"
 ```
 
 查看当前有哪些算子：
@@ -157,7 +157,7 @@ python -m cli operators
 
 ```powershell
 python -m cli backtest `
-  --data "data_cache\stock_daily" `
+  --data "..\var\data_cache\stock_daily" `
   --alpha-config "configs\default.yaml" `
   --run-name "demo_top50"
 ```
@@ -311,7 +311,7 @@ python -m api
 默认监听 `127.0.0.1:8000`，可用环境变量 `QL_API_HOST` / `QL_API_PORT` 覆盖。
 本机若 `python` 是 Windows 商店占位程序（退出码 49），改用 `py -3 -m api`。
 
-日志除了照旧打在控制台，还会同时落盘到 `outputs/logs/`（`api_<日期>.log` 应用/错误日志、
+日志除了照旧打在控制台，还会同时落盘到 `var/outputs/logs/`（`api_<日期>.log` 应用/错误日志、
 `api_access_<日期>.log` 每请求一行），关窗后依然可查。`QL_API_LOG=0` 关闭落盘，
 `QL_API_LOG_DIR=D:\logs` 换目录，详见 `docs/web_api.md` §5.1。
 

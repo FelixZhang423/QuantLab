@@ -2,6 +2,8 @@
 
 This package is independent from the original combination-oriented AlphaGen scripts. It preprocesses the large custom daily CSV once, creates a configurable stock pool, and evaluates each generated expression as a single factor.
 
+> Note: `evaluator.py` and the vendored AlphaGen config currently import `custom_bt` / `adapters` from `backend/`. Running this package outside the repository requires adding `backend/` to `PYTHONPATH`; moving those two helpers into `single_factor` is the follow-up if full standalone deployment is needed.
+
 ## Recommended flow
 
 ```text

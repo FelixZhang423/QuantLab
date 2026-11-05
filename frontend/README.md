@@ -79,7 +79,7 @@ src/
 | 前端 | `frontend/` | `pnpm dev` | http://localhost:8443 |
 | FastAPI 数据接口 | `backend/` | `py -3 -m api`（见下方说明） | http://localhost:8000 |
 
-后端默认监听 `127.0.0.1:8000`，vite 把 `/api` 代理过去（`QL_API_TARGET` 可覆盖）。**数据总览 / 数据字段 / 股票列表、股票池候选与建池、因子面板与回测全部直接读公司 ClickHouse**，需要在公司网络下并配置凭据（环境变量 `QL_CH_PASSWORD` 优先，其次 `backend/configs/clickhouse.local.env`，该文件已被 .gitignore 忽略）；股票池列表/详情优先读 MySQL，回退本地 `var/data_cache/pools/`，因子运行与回测结果读本地 `var/factor_runs/`、`outputs/`，这些页面不需要数据库凭据。
+后端默认监听 `127.0.0.1:8000`，vite 把 `/api` 代理过去（`QL_API_TARGET` 可覆盖）。**数据总览 / 数据字段 / 股票列表、股票池候选与建池、因子面板与回测全部直接读公司 ClickHouse**，需要在公司网络下并配置凭据（环境变量 `QL_CH_PASSWORD` 优先，其次 `backend/configs/clickhouse.local.env`，该文件已被 .gitignore 忽略）；股票池列表/详情优先读 MySQL，回退本地 `var/data_cache/pools/`，因子运行与回测结果读本地 `var/factor_runs/`、`var/outputs/`，这些页面不需要数据库凭据。
 
 股票池页的「创建股票池」已接真实后端：筛选条件 → 候选预览（支持跨页全选 / 反选 / 部分勾选，默认全选）→ `POST /api/pools`（部分勾选时只提交勾中的代码）→ 轮询 `GET /api/jobs/{job_id}` → 自动刷新列表。候选、选样统计与回测面板都来自公司库，不再与本地 `var/data_cache/master` 取交集，本地缓存没有的股票同样可以建池。
 

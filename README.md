@@ -32,12 +32,12 @@ QuantLab 是一个独立的股票**因子生成与回测平台**（不依赖 Qli
 | 生成层 | 池内面板转 PPO 训练数据，调用 single_factor 生成候选因子 | `custom_bt.factor_generation` + `single_factor` |
 | 回测层 | 对手动/合格/组合因子执行 TopK 日频回测 | `custom_bt.engine`、`custom_bt.factor_backtest` |
 | 组合层 | mutual IC 去重、权重优化、多规模组合回测 | `custom_bt.factor_composition` |
-| 平台层 | FastAPI 接口、CLI、后台任务、结果中心 | `api/routers`、`services`、`workers`、`cli`、`results` |
+| 平台层 | FastAPI 接口、CLI、后台任务、结果中心 | `api/routers`、`services`、`workers`、`cli`、`repositories/result_store` |
 
 ### 三个子项目的关系
 
 - **`backend/`** 是主平台"大脑"，但它**不自己实现 PPO**——`factor_generation.py` 通过 `sys.path` 定位到根目录后 `from single_factor...` 调用生成核心；
-- **`single_factor/`** 是独立可部署的 PPO 生成器，内置 vendored 的 AlphaGen 原语，自带 `runtime.json` 和 `run_server.ps1` 守护脚本，脱离主平台也能单独跑；
+- **`single_factor/`** 是 PPO 生成器，内置 vendored 的 AlphaGen 原语，自带 `runtime.json` 和 `run_server.ps1` 守护脚本；当前 `evaluator.py` 和 AlphaGen 配置仍复用 backend 的 `custom_bt` / `adapters`，单独运行时需要把 `backend/` 加入 `PYTHONPATH`；
 - **`research_pipeline/`** 是另一套独立的研究流水线（因子分类、表达式引擎、选股、评估、导出），与主平台无关；当前源码未入库，仅保留目录占位；
 - **`backend/custom_bt/ai_research/`** 是用 DeepSeek LLM 驱动的量化研究 agent（`提示词合集/` 里的提示词为其服务）。
 
@@ -73,11 +73,11 @@ QuantLab 是一个独立的股票**因子生成与回测平台**（不依赖 Qli
 │   └── factor_runs/                #   PPO 生成结果
 ├── frontend/                       # React 前端（Vite + Ant Design + ECharts）
 ├── quantops/                       # 独立算子库（可 pip install）
-├── single_factor/                  # 独立 PPO 生成器（含 _vendor/alphagen 原语）
+├── single_factor/                  # PPO 生成器（含 _vendor/alphagen；复用 backend 表达式工具）
 ├── research_pipeline/              # 独立研究流水线（源码未入库，暂时保留）
 ├── docs/                           # 设计文档
+│   └── v_stock_daily_full_字段说明.md
 ├── 提示词合集/                     # LLM agent 提示词模板
-├── v_stock_daily_full_字段说明.md
 ├── README.md
 └── .gitignore
 ```
@@ -197,7 +197,7 @@ powershell -ExecutionPolicy Bypass -File .\single_factor\run_server.ps1
 
 ## 数据说明
 
-- **源数据**：约 20GB 的日频面板 CSV（tab 分隔，`.csv` 后缀）。必需列 `code/timestamps/open/close/high/low/vol/amount`，字段说明见 [v_stock_daily_full_字段说明.md](v_stock_daily_full_字段说明.md)（共 91 字段）。
+- **源数据**：约 20GB 的日频面板 CSV（tab 分隔，`.csv` 后缀）。必需列 `code/timestamps/open/close/high/low/vol/amount`，字段说明见 [docs/v_stock_daily_full_字段说明.md](docs/v_stock_daily_full_字段说明.md)（共 91 字段）。
 - **主缓存 `var/data_cache/master`**：按股票拆分的 Parquet + `meta.json`（含 `source_signature`），由 `prepare-master` 从源 CSV 重建，**不入库**。
 - **运行期数据根 `var/`**（见 `.gitignore`）：`data_cache`（master / pools / factor_runtime）、`outputs`（jobs / logs / saved_backtests）、`factor_runs`（历史因子）全部不入库；`single_factor` 的 `data/cache/run` 同样不入库。
 - **敏感配置**：`.env.local`、`config.local.yaml` 不入库，模板见 `.env.example` / `config.example.yaml`。
@@ -206,8 +206,8 @@ powershell -ExecutionPolicy Bypass -File .\single_factor\run_server.ps1
 
 `source_signature` 由源 CSV 的路径、大小、mtime、字段列表、分隔符哈希得到；`pool_id` 由名称 + manifest（含签名）哈希得到。因此：
 
-- 换路径/换机器重建主缓存后，`pool_id` 会改变，旧 `factor_runs` 与新池子不匹配，需重新 `create-pool` + `generate-factors`；
-- 迁移时若 master / pools / factor_runs 一起拷贝且签名一致，则无需重建，可直接回测 / 组合。
+- 换路径/换机器重建主缓存后，`pool_id` 会改变，旧 `var/factor_runs` 与新池子不匹配，需重新 `create-pool` + `generate-factors`；
+- 迁移时若 `var/data_cache/master`、`var/data_cache/pools`、`var/factor_runs` 一起拷贝且签名一致，则无需重建，可直接回测 / 组合。
 
 ## 已知注意点
 
