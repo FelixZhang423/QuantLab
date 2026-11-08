@@ -5,12 +5,17 @@ from pathlib import Path
 
 import pandas as pd
 
-from repositories.local_store import build_master_store
+from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer
+from unittest.mock import patch
 from custom_bt.factor_backtest import backtest_accepted_factors, factor_id
-from custom_bt.pools import create_pool
 
 
 class FactorBacktestTests(unittest.TestCase):
+    def setUp(self):
+        writer = patch("repositories.company_source.write_pool_panel", side_effect=fake_panel_writer)
+        writer.start()
+        self.addCleanup(writer.stop)
+
     def test_backtest_rejects_cli_pool_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp) / "factor_run"
@@ -21,7 +26,7 @@ class FactorBacktestTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "pool_id"):
                 backtest_accepted_factors(
-                    master_store="missing-master",
+                    snapshot_root="missing-snapshots",
                     pools_root="missing-pools",
                     factor_run_dir=run_dir,
                     outputs_root="missing-output",
@@ -35,7 +40,7 @@ class FactorBacktestTests(unittest.TestCase):
             pool, run_dir, config = _prepare_factor_case(root)
 
             result = backtest_accepted_factors(
-                master_store=root / "master",
+                snapshot_root=root / "snapshots",
                 pools_root=root / "pools",
                 factor_run_dir=run_dir,
                 outputs_root=root / "outputs",
@@ -61,6 +66,16 @@ class FactorBacktestTests(unittest.TestCase):
             self.assertEqual(manifest["run_key_prefix"], result["run_key_prefix"])
             self.assertIsNone(manifest["backtest_id"])
 
+    def test_invalid_candidate_is_reported_without_aborting_valid_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pool, run_dir, config = _prepare_factor_case(root, expressions=("$close", "Bad("))
+            result = backtest_accepted_factors(
+                snapshot_root=root / "snapshots", pools_root=root / "pools",
+                factor_run_dir=run_dir, outputs_root=root / "outputs", backtest_config=config)
+            self.assertEqual(result["completed"], 1)
+            self.assertEqual(result["failed"], 1)
+
     def test_backtest_writes_versioned_batch_and_reports_progress(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -69,7 +84,7 @@ class FactorBacktestTests(unittest.TestCase):
             progress = []
 
             result = backtest_accepted_factors(
-                master_store=root / "master",
+                snapshot_root=root / "snapshots",
                 pools_root=root / "pools",
                 factor_run_dir=run_dir,
                 outputs_root=root / "outputs",
@@ -116,7 +131,7 @@ class FactorBacktestTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "unknown factor_ids"):
                 backtest_accepted_factors(
-                    master_store=root / "master",
+                    snapshot_root=root / "snapshots",
                     pools_root=root / "pools",
                     factor_run_dir=run_dir,
                     outputs_root=root / "outputs",
@@ -125,7 +140,7 @@ class FactorBacktestTests(unittest.TestCase):
                 )
             with self.assertRaisesRegex(ValueError, "factor_ids is empty"):
                 backtest_accepted_factors(
-                    master_store=root / "master",
+                    snapshot_root=root / "snapshots",
                     pools_root=root / "pools",
                     factor_run_dir=run_dir,
                     outputs_root=root / "outputs",
@@ -134,7 +149,7 @@ class FactorBacktestTests(unittest.TestCase):
                 )
             with self.assertRaisesRegex(ValueError, "invalid backtest_id"):
                 backtest_accepted_factors(
-                    master_store=root / "master",
+                    snapshot_root=root / "snapshots",
                     pools_root=root / "pools",
                     factor_run_dir=run_dir,
                     outputs_root=root / "outputs",
@@ -144,7 +159,7 @@ class FactorBacktestTests(unittest.TestCase):
 
 
 def _prepare_factor_case(root: Path, expressions=("$close",)):
-    """构造最小可回测的 master / pool / factor run。"""
+    """构造最小可回测的 snapshots / pool / factor run。"""
     rows = []
     for date in pd.date_range("2024-01-01", periods=5, freq="D"):
         for code, amount in [("000001", 1000.0), ("000002", 2000.0), ("000003", 3000.0)]:
@@ -164,12 +179,12 @@ def _prepare_factor_case(root: Path, expressions=("$close",)):
                     "if_down": 0,
                 }
             )
-    csv_path = root / "daily.csv"
-    pd.DataFrame(rows).to_csv(csv_path, index=False)
-    master_dir = root / "master"
-    build_master_store(csv_path, master_dir, fields=[])
-    pool = create_pool(
-        master_dir,
+    fixture_path = root / "daily.parquet"
+    pd.DataFrame(rows).to_parquet(fixture_path, index=False)
+    snapshots_dir = root / "snapshots"
+    write_company_fixture(fixture_path, snapshots_dir, fields=[])
+    pool = fixture_pool(
+        snapshots_dir,
         root / "pools",
         "liquid_2",
         "2024-01-01",
@@ -180,7 +195,7 @@ def _prepare_factor_case(root: Path, expressions=("$close",)):
     run_dir = root / "factor_runs" / "run_a"
     run_dir.mkdir(parents=True)
     (run_dir / "factor_run.json").write_text(
-        json.dumps({"pool_id": pool["pool_id"], "source_signature": pool["source_signature"]}),
+        json.dumps({"pool_id": pool["pool_id"], "data_source": "clickhouse", "snapshot_id": pool["snapshot_id"], "source_signature": pool["source_signature"]}),
         encoding="utf-8",
     )
     accepted_lines = [
@@ -189,7 +204,7 @@ def _prepare_factor_case(root: Path, expressions=("$close",)):
                 "expression": expression,
                 "accepted": True,
                 "pool_id": pool["pool_id"],
-                "source_signature": pool["source_signature"],
+                "data_source": "clickhouse", "snapshot_id": pool["snapshot_id"], "source_signature": pool["source_signature"],
             }
         )
         for expression in expressions
@@ -198,7 +213,7 @@ def _prepare_factor_case(root: Path, expressions=("$close",)):
         "expression": "$missing",
         "accepted": False,
         "pool_id": pool["pool_id"],
-        "source_signature": pool["source_signature"],
+        "data_source": "clickhouse", "snapshot_id": pool["snapshot_id"], "source_signature": pool["source_signature"],
     }
     (run_dir / "accepted_factors.jsonl").write_text("\n".join(accepted_lines) + "\n", encoding="utf-8")
     (run_dir / "rejected_candidates.jsonl").write_text(json.dumps(rejected) + "\n", encoding="utf-8")

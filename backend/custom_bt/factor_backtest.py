@@ -12,9 +12,9 @@ import pandas as pd
 
 from repositories import company_source
 from custom_bt.canonical_expression import canonicalize_alphagen
-from repositories.local_store import load_meta, load_pool_panel
+from repositories.panel_store import load_panel_for_pool, expression_fields, expression_lookback
 from custom_bt.engine import BacktestConfig, run_backtest
-from custom_bt.factor_adapter import validate_backtest_expression
+from custom_bt.factor_adapter import validate_backtest_expression, ExpressionAdapterError
 from custom_bt.pools import load_pool_codes, load_pool_manifest
 from services.report_service import save_result
 
@@ -49,7 +49,6 @@ def _emit(callback: ProgressCallback | None, payload: Dict[str, Any]) -> None:
 
 
 def backtest_accepted_factors(
-    master_store: str | Path,
     pools_root: str | Path,
     factor_run_dir: str | Path,
     outputs_root: str | Path,
@@ -59,6 +58,9 @@ def backtest_accepted_factors(
     factor_ids: Iterable[str] | None = None,
     progress_callback: ProgressCallback | None = None,
     data_source: str | None = None,
+    snapshot_root: str | Path | None = None,
+    snapshot_id: str | None = None,
+    as_of: str | None = None,
 ) -> dict:
     """Backtest accepted factors against the exact generation pool.
 
@@ -81,8 +83,8 @@ def backtest_accepted_factors(
         )
     pool_manifest = load_pool_manifest(pools_root, pool_id)
     source = company_source.resolve_data_source(data_source, pool_manifest)
-    source_meta = company_source.meta() if source == "clickhouse" else load_meta(master_store)
-    source_signature = source_meta.get("source_signature")
+    company_source.resolve_data_source(None, run_manifest)
+    source_signature = company_source.source_signature()
     if source_signature != pool_manifest.get("source_signature"):
         raise ValueError("pool source signature does not match data source")
     if run_manifest.get("source_signature") not in (None, source_signature):
@@ -90,35 +92,23 @@ def backtest_accepted_factors(
 
     codes = load_pool_codes(pools_root, pool_id)
     run_fields = [str(field) for field in (run_manifest.get("fields") or [])]
-    if source == "clickhouse":
-        # 因子运行里用到的财务/估值/衍生字段要一起加载，否则表达式解析不到。
-        fund_fields = [
-            field[len(company_source.FUNDAMENTAL_PREFIX):]
-            for field in run_fields
-            if field.startswith(company_source.FUNDAMENTAL_PREFIX)
-        ]
-        val_fields = [
-            field[len(company_source.VALUATION_PREFIX):]
-            for field in run_fields
-            if field.startswith(company_source.VALUATION_PREFIX)
-        ]
-        deriv_fields = [
-            field[len(company_source.DERIVATIVE_PREFIX):]
-            for field in run_fields
-            if field.startswith(company_source.DERIVATIVE_PREFIX)
-        ]
-        panel = company_source.load_panel(
-            codes,
-            backtest_config.get("start_date"),
-            backtest_config.get("end_date"),
-            fundamentals=fund_fields or None,
-            valuation=val_fields or None,
-            derivatives=deriv_fields or None,
-        )
-    else:
-        if any(field.startswith(company_source.DERIVATIVE_PREFIX) for field in run_fields):
-            raise ValueError("derivative fields require clickhouse data source")
-        panel = load_pool_panel(master_store, codes, backtest_config.get("start_date"), backtest_config.get("end_date"))
+    accepted = _read_jsonl(factor_path / "accepted_factors.jsonl")
+    canonical = []
+    for record in accepted:
+        if not record.get("expression"):
+            continue
+        try:
+            canonical.append(canonicalize_alphagen(str(record["expression"])))
+        except ExpressionAdapterError:
+            # The execution loop records individual malformed candidates as failures.
+            continue
+    fields = sorted(set(run_fields) | set(expression_fields(canonical)))
+    config = BacktestConfig(**backtest_config)
+    snapshot_id = snapshot_id or run_manifest.get("snapshot_id")
+    panel = load_panel_for_pool(source, codes, config, pool_id=pool_id, fields=fields,
+                                snapshot_root=snapshot_root, snapshot_id=snapshot_id, as_of=as_of,
+                                lookback_days=expression_lookback(canonical))
+    snapshot_id = panel.attrs["snapshot_id"]
     if panel.empty:
         raise ValueError("no panel rows remain for factor backtest")
     config = BacktestConfig(**backtest_config)
@@ -205,6 +195,7 @@ def backtest_accepted_factors(
                         "canonical_expression": canonical_expression,
                         "pool_id": pool_id,
                         "data_source": source,
+        "snapshot_id": snapshot_id,
                         "factor_run_id": factor_path.name,
                         "backtest_id": backtest_id,
                         "generation_metrics": {
@@ -253,6 +244,7 @@ def backtest_accepted_factors(
         "job_id": backtest_id,
         "pool_id": pool_id,
         "data_source": source,
+        "snapshot_id": snapshot_id,
         "factor_run_id": factor_path.name,
         "factor_run_dir": str(factor_path),
         "output_dir": str(output_dir),

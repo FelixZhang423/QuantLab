@@ -148,17 +148,24 @@ def _identity_lock(master_meta: dict[str, Any], pool: dict[str, Any]) -> dict[st
 
 
 def build_context_snapshot(
-    master_store: str | Path,
+    snapshot_root: str | Path,
     pools_root: str | Path,
     factor_runs_root: str | Path,
     saved_results_root: str | Path,
     pool_id: str | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
-    """Build a compact, local-only context snapshot for prompt construction."""
+    """Build company-source metadata and local research artifact context."""
 
-    master_path = Path(master_store)
-    master_meta = _read_json(master_path / "meta.json")
+    from repositories import company_source
+    master_meta = company_source.meta()
+    daily = {f for f in company_source.panel_field_names() if company_source.is_expression_field(f)}
+    master_meta["fields"] = sorted(daily | {
+        company_source.FUNDAMENTAL_PREFIX + f
+        for f in (*company_source.FUNDAMENTAL_FIELDS, *company_source.DERIVED_FUNDAMENTAL_FIELDS)
+    } | {company_source.VALUATION_PREFIX + f for f in company_source.VALUATION_FIELDS}
+      | {company_source.DERIVATIVE_PREFIX + f for f in company_source.derivative_fields()})
+    from repositories.snapshot_store import snapshot_stats
     pools_root_path = Path(pools_root)
     pools = _read_pool_manifests(pools_root_path, limit)
     if pool_id:
@@ -170,7 +177,10 @@ def build_context_snapshot(
     identity_lock = _identity_lock(master_meta, selected_pool)
 
     return {
-        "master_store": {
+        "snapshots": snapshot_stats(snapshot_root=snapshot_root),
+        "snapshot_root": str(Path(snapshot_root).resolve()),
+        "data_source": {
+            "name": "clickhouse",
             "rows": master_meta.get("rows"),
             "n_stocks": master_meta.get("n_stocks"),
             "fields": master_meta.get("fields", []),
@@ -178,7 +188,6 @@ def build_context_snapshot(
             "date_min": master_meta.get("date_min"),
             "date_max": master_meta.get("date_max"),
             "source_signature": master_meta.get("source_signature"),
-            "source_csv": master_meta.get("source_csv"),
             "layout": master_meta.get("layout"),
         },
         "pools": pools,

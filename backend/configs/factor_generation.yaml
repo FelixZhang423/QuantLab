@@ -1,6 +1,6 @@
-# clickhouse = 直接读公司库；local = 旧本地主缓存（仅保留兼容）
+# ClickHouse -> immutable Parquet snapshot -> training runtime
 data_source: clickhouse
-master_store: "../../var/data_cache/master"
+snapshot_root: "../../var/data_cache/snapshots"
 pools_root: "../../var/data_cache/pools"
 runtime_root: "../../var/data_cache/factor_runtime"
 factor_runs_root: "../../var/factor_runs"

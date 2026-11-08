@@ -103,7 +103,7 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
     tasks: { title: "任务中心", subtitle: "监控计算任务全生命周期" },
     backtest: { title: "手动回测", subtitle: "配置 Alpha 表达式与交易参数" },
     result: { title: "结果详情", subtitle: "指标、净值、年度表现与结果文件" },
-    data_overview: { title: "数据总览", subtitle: "主缓存规模与导入任务" },
+    data_overview: { title: "数据总览", subtitle: "ClickHouse 数据规模与研究快照" },
     fields: { title: "数据字段", subtitle: "可用于因子表达式的字段" },
     stocks: { title: "股票列表", subtitle: "缓存内全部股票概览" },
     operators: { title: "操作符", subtitle: "Brain 风格表达式算子" },
@@ -134,7 +134,7 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
     ...runningNotifs.slice(0, 2).map((t) => ({ status: "processing" as const, title: `任务 #${t.id} 运行中`, desc: `当前进度 ${t.progress}% · ${t.name}` })),
     ...failedNotifs.slice(0, 1).map((t) => ({ status: "error" as const, title: `任务 #${t.id} 执行失败`, desc: t.logs[t.logs.length - 1]?.split("] ")[1] ?? "请查看任务详情" })),
     ...(finishedNotif ? [{ status: "success" as const, title: `任务 #${finishedNotif.id} 已完成`, desc: finishedNotif.name }] : []),
-    { status: "success" as const, title: "数据已更新", desc: "主缓存更新至 2026-06-16" },
+    { status: "success" as const, title: "数据已更新", desc: "数据预览来自 ClickHouse，研究任务使用不可变快照" },
   ];
   const notifCount = notifRead ? 0 : notifItems.length;
   const notificationContent = <div className="notification-list">

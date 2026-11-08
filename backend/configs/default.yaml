@@ -1,5 +1,6 @@
-# 因子回测直接读公司库（股票池 manifest 里也会记录数据源）
 data_source: clickhouse
+snapshot_root: ../../var/data_cache/snapshots
+pools_root: ../../var/data_cache/pools
 
 alphas:
   - name: momentum_20

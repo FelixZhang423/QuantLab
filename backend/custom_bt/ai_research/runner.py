@@ -184,7 +184,7 @@ class AIResearchRunner:
     def _build_context(self, pool_id: str | None = None) -> dict[str, Any]:
         defaults = self.config.get("research_defaults", {})
         return build_context_snapshot(
-            self._path("master_store"),
+            self._path("snapshot_root"),
             self._path("pools_root"),
             self._path("factor_runs_root"),
             self._path("saved_results_root"),

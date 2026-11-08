@@ -1,6 +1,6 @@
 import json
 import tempfile
-import unittest
+import pytest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -70,231 +70,101 @@ def _config() -> dict:
     }
 
 
-class ManualBacktestTests(unittest.TestCase):
-    def test_normalize_expression_accepts_infix_and_keeps_aliases(self):
-        self.assertEqual(
-            normalize_manual_expression("close / delay(close, 20) - 1"),
-            "close / delay(close, 20) - 1",
-        )
-        with self.assertRaisesRegex(ValueError, "empty"):
-            normalize_manual_expression("   ")
-        with self.assertRaises(ValueError):
-            validate_run_name("../escape")
-        # 池 ID 由「名称 + 参数哈希」生成，中文名称必须能通过校验
-        self.assertEqual(validate_pool_id("测试股票池_a9883be5"), "测试股票池_a9883be5")
-        with self.assertRaises(ValueError):
-            validate_pool_id("../escape")
-
-    def test_run_manual_backtest_from_company_pool_writes_result(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            pools_root = _company_pool(root)
-            outputs = root / "outputs"
-            progress = []
-            with patch.object(
-                company_source,
-                "meta",
-                return_value={
-                    "data_source": "clickhouse",
-                    "source_signature": company_source.SOURCE_SIGNATURE,
-                    "date_min": "2024-01-01",
-                    "date_max": "2024-01-25",
-                },
-            ), patch.object(company_source, "load_panel", return_value=_panel()) as load_panel:
-                result = run_manual_backtest(
-                    pools_root,
-                    outputs,
-                    "momentum_20",
-                    "close / delay(close, 1) - 1",
-                    _config(),
-                    "pool_a",
-                    backtest_id="job_42",
-                    progress_callback=progress.append,
-                )
-
-            self.assertEqual(result["run_key"], "manual/job_42/momentum_20")
-            self.assertEqual(result["data_source"], "clickhouse")
-            self.assertEqual(result["pool_id"], "pool_a")
-            self.assertEqual(result["n_stocks"], 2)
-            self.assertIn("annual_return", result["summary"])
-            load_panel.assert_called_once()
-            self.assertEqual(load_panel.call_args.args[0], ["000001", "600000"])
-
-            run_dir = outputs / "manual" / "job_42" / "momentum_20"
-            for name in ("manifest.json", "summary.json", "daily_report.csv", "annual_metrics.csv"):
-                self.assertTrue((run_dir / name).is_file(), name)
-            manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["result_type"], "manual")
-            self.assertEqual(manifest["run_key"], "manual/job_42/momentum_20")
-            self.assertEqual(manifest["canonical_expression"], "close / delay(close, 1) - 1")
-            self.assertEqual(manifest["data_source"], "clickhouse")
-            self.assertEqual(manifest["backtest_id"], "job_42")
-            self.assertEqual(
-                [item["stage"] for item in progress],
-                ["loading_panel", "evaluating", "running", "finished"],
-            )
-
-    def test_accepts_pool_manifest_and_codes_without_local_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            manifest = {
-                "pool_id": "pool_mysql",
-                "name": "mysql_only",
-                "data_source": "clickhouse",
-                "source_signature": company_source.SOURCE_SIGNATURE,
-                "selection_start": "2024-01-01",
-                "selection_end": "2024-01-25",
-            }
-            with patch.object(
-                company_source,
-                "meta",
-                return_value={
-                    "data_source": "clickhouse",
-                    "source_signature": company_source.SOURCE_SIGNATURE,
-                    "date_min": "2024-01-01",
-                    "date_max": "2024-01-25",
-                },
-            ), patch.object(company_source, "load_panel", return_value=_panel()) as load_panel:
-                result = run_manual_backtest(
-                    root / "pools",
-                    root / "outputs",
-                    "mysql_pool_run",
-                    "close",
-                    _config(),
-                    "pool_mysql",
-                    backtest_id="job_mysql",
-                    pool_manifest=manifest,
-                    pool_codes=["000001", "600000"],
-                )
-
-            self.assertEqual(result["pool_id"], "pool_mysql")
-            load_panel.assert_called_once()
-            self.assertEqual(load_panel.call_args.args[0], ["000001", "600000"])
-
-    def test_local_pool_falls_back_to_master_store(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            pools_root = root / "pools"
-            pool_dir = pools_root / "pool_local"
-            pool_dir.mkdir(parents=True)
-            (pool_dir / "manifest.json").write_text(
-                json.dumps({"pool_id": "pool_local", "source_signature": "local_sig"}),
-                encoding="utf-8",
-            )
-            (pool_dir / "codes.txt").write_text("000001\n", encoding="utf-8")
-            master = root / "master"
-            master.mkdir()
-            (master / "meta.json").write_text(
-                json.dumps({"source_signature": "local_sig"}), encoding="utf-8"
-            )
-            with patch(
-                "repositories.panel_store.load_pool_panel", return_value=_panel().query("code == '000001'")
-            ) as load_panel:
-                result = run_manual_backtest(
-                    pools_root,
-                    root / "outputs",
-                    "local_run",
-                    "close",
-                    _config(),
-                    "pool_local",
-                    master_store=master,
-                    backtest_id="job_local",
-                )
-
-            self.assertEqual(result["data_source"], "local")
-            self.assertEqual(load_panel.call_args.args[0], master)
-            self.assertTrue((root / "outputs" / "manual" / "job_local" / "local_run").is_dir())
-
-    def test_rejects_source_signature_mismatch(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            pools_root = _company_pool(root, signature="other")
-            with patch.object(
-                company_source,
-                "meta",
-                return_value={"source_signature": company_source.SOURCE_SIGNATURE},
-            ):
-                with self.assertRaisesRegex(ValueError, "signature"):
-                    run_manual_backtest(
-                        pools_root,
-                        root / "outputs",
-                        "demo",
-                        "close",
-                        _config(),
-                        "pool_a",
-                        backtest_id="job_1",
-                    )
-
-    def test_rejects_invalid_or_unknown_expression(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            pools_root = _company_pool(root)
-            with patch.object(
-                company_source,
-                "meta",
-                return_value={"source_signature": company_source.SOURCE_SIGNATURE},
-            ), patch.object(company_source, "load_panel", return_value=_panel()):
-                with self.assertRaises(ExpressionError):
-                    run_manual_backtest(
-                        pools_root,
-                        root / "outputs",
-                        "demo",
-                        "not_a_field + 1",
-                        _config(),
-                        "pool_a",
-                        backtest_id="job_1",
-                    )
-                with self.assertRaises(ExpressionError):
-                    run_manual_backtest(
-                        pools_root,
-                        root / "outputs",
-                        "demo",
-                        "close +",
-                        _config(),
-                        "pool_a",
-                        backtest_id="job_2",
-                    )
-
-    def test_rejects_empty_panel_and_invalid_backtest_id(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            pools_root = _company_pool(root)
-            with patch.object(
-                company_source,
-                "meta",
-                return_value={"source_signature": company_source.SOURCE_SIGNATURE},
-            ), patch.object(company_source, "load_panel", return_value=pd.DataFrame()):
-                with self.assertRaisesRegex(ValueError, "no panel rows"):
-                    run_manual_backtest(
-                        pools_root,
-                        root / "outputs",
-                        "demo",
-                        "close",
-                        _config(),
-                        "pool_a",
-                        backtest_id="job_1",
-                    )
-                with self.assertRaisesRegex(ValueError, "invalid backtest_id"):
-                    run_manual_backtest(
-                        pools_root,
-                        root / "outputs",
-                        "demo",
-                        "close",
-                        _config(),
-                        "pool_a",
-                        backtest_id="../escape",
-                    )
-                with self.assertRaisesRegex(ValueError, "invalid pool_id"):
-                    run_manual_backtest(
-                        pools_root,
-                        root / "outputs",
-                        "demo",
-                        "close",
-                        _config(),
-                        "../escape",
-                        backtest_id="job_1",
-                    )
+def _write_panel(codes, fields, output_path, start_date, end_date, **unused):
+    frame = _panel()
+    frame = frame[frame.code.isin(codes)]
+    frame = frame[(frame.date >= pd.Timestamp(start_date)) & (frame.date <= pd.Timestamp(end_date))]
+    missing = set(fields) - set(frame.columns)
+    if missing:
+        raise ValueError(f"unsupported expression fields: {missing}")
+    frame[["date", "code", *fields]].to_parquet(output_path, index=False)
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_normalize_expression_and_path_validation():
+    assert normalize_manual_expression("close / delay(close, 20) - 1") == "close / delay(close, 20) - 1"
+    assert validate_pool_id("测试股票池_a9883be5") == "测试股票池_a9883be5"
+    for validate, value in [(normalize_manual_expression," "), (validate_run_name,"../escape"),
+                            (validate_pool_id,"../escape")]:
+        with pytest.raises(ValueError):
+            validate(value)
+
+
+def test_company_snapshot_backtest_writes_result_and_reuses_offline(tmp_path):
+    pools = _company_pool(tmp_path)
+    progress = []
+    options = dict(pools_root=pools, output_root=tmp_path / "outputs", run_name="momentum_20",
+                   expression="close / delay(close, 1) - 1", backtest_config=_config(),
+                   pool_id="pool_a", snapshot_root=tmp_path / "snapshots", backtest_id="job_42")
+    with patch.object(company_source,"write_pool_panel",side_effect=_write_panel) as writer:
+        result = run_manual_backtest(**options, progress_callback=progress.append)
+    assert writer.call_count == 1
+    assert writer.call_args.args[0] == ["000001","600000"]
+    assert result["run_key"] == "manual/job_42/momentum_20"
+    assert result["data_source"] == "clickhouse"
+    assert result["pool_id"] == "pool_a"
+    assert result["n_stocks"] == 2
+    assert "annual_return" in result["summary"]
+    directory = tmp_path / "outputs/manual/job_42/momentum_20"
+    for name in ("manifest.json","summary.json","daily_report.csv","annual_metrics.csv"):
+        assert (directory / name).is_file()
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["result_type"] == "manual"
+    assert manifest["canonical_expression"] == options["expression"]
+    assert manifest["snapshot_id"] == result["snapshot_id"]
+    assert [event["stage"] for event in progress] == ["loading_panel","evaluating","running","finished"]
+    options["backtest_id"] = "job_43"
+    with patch.object(company_source,"write_pool_panel",side_effect=AssertionError("offline")), \
+         patch.object(company_source,"meta",side_effect=AssertionError("offline")):
+        repeated = run_manual_backtest(**options,snapshot_id=result["snapshot_id"])
+    assert repeated["snapshot_id"] == result["snapshot_id"]
+
+
+def test_accepts_company_pool_payload_without_local_files(tmp_path):
+    manifest = {"pool_id":"pool_mysql","data_source":"clickhouse",
+                "source_signature":company_source.source_signature()}
+    with patch.object(company_source,"write_pool_panel",side_effect=_write_panel) as writer:
+        result = run_manual_backtest(tmp_path / "missing_pools",tmp_path / "outputs","mysql_pool_run",
+                  "close",_config(),"pool_mysql",pool_manifest=manifest,pool_codes=["000001","600000"],
+                  snapshot_root=tmp_path / "snapshots")
+    assert result["pool_id"] == "pool_mysql"
+    assert writer.call_count == 1
+
+
+def test_old_local_pool_is_rejected_before_source_query(tmp_path):
+    manifest = {"pool_id":"pool_local","data_source":"local","source_signature":"local_sig"}
+    with patch.object(company_source,"write_pool_panel",side_effect=AssertionError("must not query")):
+        with pytest.raises(ValueError,match="[Ll]ocal|ClickHouse"):
+            run_manual_backtest(tmp_path / "pools",tmp_path / "outputs","demo","close",_config(),
+                 "pool_local",pool_manifest=manifest,pool_codes=["000001"],snapshot_root=tmp_path / "snapshots")
+
+
+def test_rejects_source_signature_mismatch(tmp_path):
+    pools = _company_pool(tmp_path,signature="other")
+    with pytest.raises(ValueError,match="signature"):
+        run_manual_backtest(pools,tmp_path / "outputs","demo","close",_config(),"pool_a",
+                            snapshot_root=tmp_path / "snapshots")
+
+
+@pytest.mark.parametrize("expression", ["not_a_field + 1", "close +"])
+def test_rejects_invalid_or_unknown_expression(tmp_path,expression):
+    pools = _company_pool(tmp_path)
+    with patch.object(company_source,"write_pool_panel",side_effect=_write_panel):
+        with pytest.raises((ExpressionError, ValueError, SyntaxError)):
+            run_manual_backtest(pools,tmp_path / "outputs","demo",expression,_config(),"pool_a",
+                                snapshot_root=tmp_path / "snapshots")
+
+
+def test_rejects_empty_snapshot_and_invalid_identifiers(tmp_path):
+    pools = _company_pool(tmp_path)
+    def write_empty(codes, fields, output_path, *args, **kwargs):
+        _panel().iloc[:0][["date","code",*fields]].to_parquet(output_path,index=False)
+    with patch.object(company_source,"write_pool_panel",side_effect=write_empty):
+        with pytest.raises(ValueError,match="empty|no panel rows|no rows|快照"):
+            run_manual_backtest(pools,tmp_path / "outputs","demo","close",_config(),"pool_a",
+                                snapshot_root=tmp_path / "snapshots")
+    for key, value in [("backtest_id","../escape"),("pool_id","../escape")]:
+        options = dict(pools_root=pools,output_root=tmp_path / "outputs",run_name="demo",expression="close",
+                       backtest_config=_config(),pool_id="pool_a",snapshot_root=tmp_path / "snapshots")
+        options[key] = value
+        with pytest.raises(ValueError,match="invalid"):
+            run_manual_backtest(**options)

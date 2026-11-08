@@ -53,7 +53,7 @@ from repositories import company_source, mysql_store  # noqa: E402
 
 from custom_bt.canonical_expression import normalize_expression  # noqa: E402
 
-from repositories.local_store import load_meta, normalize_code  # noqa: E402
+from repositories.local_store import normalize_code  # noqa: E402
 
 from custom_bt.docs import enrich_operators  # noqa: E402
 
@@ -108,6 +108,8 @@ def _result_summary(run: Dict[str, Any]) -> Dict[str, Any]:
         "factor_run_id": run.get("factor_run_id"),
         "backtest_id": run.get("backtest_id"),
         "data_source": run.get("data_source") or config.get("data_source"),
+        "snapshot_id": run.get("snapshot_id") or config.get("snapshot_id"),
+        "source_snapshot_ids": run.get("source_snapshot_ids"),
         "summary": run.get("summary"),
         "start_date": backtest.get("start_date"),
         "end_date": backtest.get("end_date"),
@@ -200,6 +202,8 @@ def _result_detail_payload(run_dir: Path, run_key: str) -> Dict[str, Any]:
             "factor_run_id": manifest.get("factor_run_id"),
             "backtest_id": manifest.get("backtest_id"),
             "data_source": manifest.get("data_source") or config.get("data_source"),
+            "snapshot_id": manifest.get("snapshot_id") or config.get("snapshot_id"),
+            "source_snapshot_ids": manifest.get("source_snapshot_ids"),
             "config": config,
             "summary": summary,
             "metrics": {

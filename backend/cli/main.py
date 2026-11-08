@@ -9,24 +9,16 @@ import pandas as pd
 import yaml
 
 from custom_bt.alpha import alpha_components, canonical_alpha_expression, combine_alphas, normalize_alpha_defs
-from repositories.local_store import (
-    CORE_COLUMNS,
-    build_master_store,
-    list_store_fields,
-    load_store,
-    read_panel,
-    save_store_stock_list,
-    update_store,
-)
+from repositories.snapshot_store import load_snapshot, snapshot_manifest
 from custom_bt.engine import BacktestConfig, run_backtest
 from adapters.expressions import available_fields, list_operators
 from custom_bt.factor_backtest import backtest_accepted_factors
 from custom_bt.factor_composition import compose_factors
 from custom_bt.factor_generation import run_factor_generation
-from services.backtest_service import run_backtest_job
+from services.backtest_service import run_backtest_job, _load_backtest_panel
 from scripts.migrate_results import migrate_factor_results
-from custom_bt.pools import create_pool, create_pool_from_company
-from repositories.company_source import is_company_source
+from custom_bt.pools import create_pool_from_company
+from repositories.company_source import resolve_data_source
 from workers.job_dispatcher import run_platform_job
 from repositories.result_store import list_runs
 from services.report_service import save_result
@@ -34,7 +26,7 @@ from custom_bt.ai_research.runner import AIResearchRunner
 from config.settings import (
     FACTOR_RUNTIME_ROOT,
     FACTOR_RUNS_ROOT,
-    MASTER_DIR,
+    SNAPSHOT_ROOT,
     POOLS_ROOT,
     RESULTS_ROOT,
     VAR_ROOT,
@@ -51,26 +43,6 @@ def _resolve_path(value: str | Path, config_path: str | Path) -> Path:
     if not path.is_absolute():
         path = Path(config_path).expanduser().resolve().parent / path
     return path.resolve()
-
-
-def prepare_cmd(args: argparse.Namespace) -> None:
-    cols = None if args.all_columns else CORE_COLUMNS
-    result = update_store(args.csv, args.out, chunksize=args.chunksize, columns=cols)
-    print(json.dumps(result, indent=2))
-
-
-def prepare_master_cmd(args: argparse.Namespace) -> None:
-    cfg = _load_config(args.config)
-    result = build_master_store(
-        csv_path=_resolve_path(cfg["source_csv"], args.config),
-        store_dir=_resolve_path(cfg.get("master_store", str(MASTER_DIR)), args.config),
-        fields=cfg.get("factor_fields", cfg.get("fields", [])),
-        chunksize=int(cfg.get("chunksize", 200_000)),
-        limit_rows=cfg.get("limit_rows"),
-        overwrite=bool(cfg.get("overwrite", False)),
-        delimiter=cfg.get("delimiter"),
-    )
-    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
 def create_pool_cmd(args: argparse.Namespace) -> None:
@@ -96,19 +68,19 @@ def create_pool_cmd(args: argparse.Namespace) -> None:
         codes=codes,
         overwrite=bool(cfg.get("overwrite", False)),
     )
-    if is_company_source(cfg.get("data_source")):
-        options["category"] = options["category"] or "stock"
-        result = create_pool_from_company(**options)
-    else:
-        result = create_pool(store_dir=_resolve_path(cfg["master_store"], args.config), **options)
+    resolve_data_source(cfg.get("data_source"))
+    options["category"] = options["category"] or "stock"
+    result = create_pool_from_company(**options)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
 def generate_factors_cmd(args: argparse.Namespace) -> None:
     cfg = _load_config(args.config)
     result = run_factor_generation(
-        master_store=_resolve_path(cfg["master_store"], args.config),
-        pools_root=_resolve_path(cfg["pools_root"], args.config),
+        snapshot_root=_resolve_path(cfg.get("snapshot_root", str(SNAPSHOT_ROOT)), args.config),
+        snapshot_id=cfg.get("snapshot_id"),
+        as_of=cfg.get("as_of"),
+        pools_root=_resolve_path(cfg.get("pools_root", str(POOLS_ROOT)), args.config),
         pool_id=args.pool,
         runtime_root=_resolve_path(cfg.get("runtime_root", str(FACTOR_RUNTIME_ROOT)), args.config),
         factor_runs_root=_resolve_path(cfg.get("factor_runs_root", str(FACTOR_RUNS_ROOT)), args.config),
@@ -129,8 +101,10 @@ def backtest_factors_cmd(args: argparse.Namespace) -> None:
     if not factor_run.is_absolute():
         factor_run = _resolve_path(cfg.get("factor_runs_root", str(FACTOR_RUNS_ROOT)), args.config) / factor_run
     result = backtest_accepted_factors(
-        master_store=_resolve_path(cfg["master_store"], args.config),
-        pools_root=_resolve_path(cfg["pools_root"], args.config),
+        snapshot_root=_resolve_path(cfg.get("snapshot_root", str(SNAPSHOT_ROOT)), args.config),
+        snapshot_id=cfg.get("snapshot_id"),
+        as_of=cfg.get("as_of"),
+        pools_root=_resolve_path(cfg.get("pools_root", str(POOLS_ROOT)), args.config),
         factor_run_dir=factor_run,
         outputs_root=_resolve_path(cfg.get("outputs_root", str(RESULTS_ROOT)), args.config),
         backtest_config=cfg["backtest"],
@@ -156,8 +130,10 @@ def compose_factors_cmd(args: argparse.Namespace) -> None:
             path = factor_runs_root / path
         factor_run_dirs.append(path)
     result = compose_factors(
-        master_store=_resolve_path(cfg["master_store"], args.config),
-        pools_root=_resolve_path(cfg["pools_root"], args.config),
+        snapshot_root=_resolve_path(cfg.get("snapshot_root", str(SNAPSHOT_ROOT)), args.config),
+        snapshot_id=cfg.get("snapshot_id"),
+        as_of=cfg.get("as_of"),
+        pools_root=_resolve_path(cfg.get("pools_root", str(POOLS_ROOT)), args.config),
         pool_id=args.pool,
         factor_run_dirs=factor_run_dirs,
         outputs_root=_resolve_path(cfg.get("outputs_root", str(RESULTS_ROOT)), args.config),
@@ -183,11 +159,7 @@ def compose_factors_cmd(args: argparse.Namespace) -> None:
 
 
 def fields_cmd(args: argparse.Namespace) -> None:
-    if Path(args.data).is_dir():
-        fields = list_store_fields(args.data)
-    else:
-        fields = available_fields(read_panel(args.data))
-    print(json.dumps(fields, ensure_ascii=False, indent=2))
+    print(json.dumps(snapshot_manifest(args.snapshot_id).get("fields", []), ensure_ascii=False))
 
 
 def operators_cmd(args: argparse.Namespace) -> None:
@@ -197,14 +169,10 @@ def operators_cmd(args: argparse.Namespace) -> None:
 def backtest_cmd(args: argparse.Namespace) -> None:
     cfg_raw = _load_config(args.alpha_config)
     bt_raw = cfg_raw.get("backtest", {})
-    panel = load_store(args.data, bt_raw.get("start_date"), bt_raw.get("end_date")) if Path(args.data).is_dir() else read_panel(args.data)
-    if "alpha_csv" in cfg_raw:
-        alpha = pd.read_csv(cfg_raw["alpha_csv"])
-        canonical_expression = str(cfg_raw["alpha_csv"])
-    else:
-        alpha_defs = normalize_alpha_defs(cfg_raw.get("alphas", []))
-        alpha = combine_alphas(panel, alpha_defs)
-        canonical_expression = canonical_alpha_expression(alpha_defs)
+    panel = _load_backtest_panel({**cfg_raw, "snapshot_id": args.snapshot_id})
+    alpha_defs = normalize_alpha_defs(cfg_raw.get("alphas", []))
+    alpha = combine_alphas(panel, alpha_defs)
+    canonical_expression = canonical_alpha_expression(alpha_defs)
     is_composite = cfg_raw.get("result_type") == "composite" or len(cfg_raw.get("alphas", [])) > 1
     cfg = BacktestConfig(**bt_raw)
     result = run_backtest(panel, alpha, cfg)
@@ -215,6 +183,7 @@ def backtest_cmd(args: argparse.Namespace) -> None:
         config=cfg_raw,
         metadata={
             "result_type": "composite" if is_composite else "manual",
+            "snapshot_id": args.snapshot_id,
             "canonical_expression": canonical_expression,
             "components": alpha_components(alpha_defs) if "alpha_defs" in locals() else [],
         },
@@ -232,8 +201,11 @@ def migrate_results_cmd(args: argparse.Namespace) -> None:
 
 
 def stock_list_cmd(args: argparse.Namespace) -> None:
-    result = save_store_stock_list(args.data, args.out)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    panel = load_snapshot(args.snapshot_id, columns=["code"])
+    codes = sorted(panel["code"].unique().tolist())
+    if args.out:
+        pd.DataFrame({"code": codes}).to_csv(args.out, index=False)
+    print(json.dumps(codes, ensure_ascii=False))
 
 
 def run_job_cmd(args: argparse.Namespace) -> None:
@@ -293,16 +265,6 @@ def ai_research_cmd(args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Custom independent stock backtester.")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ["prepare", "update"]:
-        p_prepare = sub.add_parser(name)
-        p_prepare.add_argument("--csv", required=True)
-        p_prepare.add_argument("--out", required=True, help="Store directory, e.g. data_cache/stock_daily")
-        p_prepare.add_argument("--chunksize", type=int, default=200_000)
-        p_prepare.add_argument("--all-columns", action="store_true", help="Try to load every CSV column.")
-    p_prepare.set_defaults(func=prepare_cmd)
-    p_master = sub.add_parser("prepare-master")
-    p_master.add_argument("--config", required=True)
-    p_master.set_defaults(func=prepare_master_cmd)
     p_pool = sub.add_parser("create-pool")
     p_pool.add_argument("--config", required=True)
     p_pool.set_defaults(func=create_pool_cmd)
@@ -340,12 +302,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_migrate.add_argument("--destination", default=str(RESULTS_ROOT))
     p_migrate.set_defaults(func=migrate_results_cmd)
     p_backtest = sub.add_parser("backtest")
-    p_backtest.add_argument("--data", required=True)
+    p_backtest.add_argument("--snapshot-id", required=True)
     p_backtest.add_argument("--alpha-config", required=True)
     p_backtest.add_argument("--run-name", required=True)
     p_backtest.set_defaults(func=backtest_cmd)
     p_fields = sub.add_parser("fields")
-    p_fields.add_argument("--data", required=True)
+    p_fields.add_argument("--snapshot-id", required=True)
     p_fields.set_defaults(func=fields_cmd)
     p_ops = sub.add_parser("operators")
     p_ops.set_defaults(func=operators_cmd)
@@ -353,7 +315,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_runs.add_argument("--outputs", default=str(RESULTS_ROOT))
     p_runs.set_defaults(func=runs_cmd)
     p_stock_list = sub.add_parser("stock-list")
-    p_stock_list.add_argument("--data", required=True, help="Store directory, e.g. data_cache/stock_daily")
+    p_stock_list.add_argument("--snapshot-id", required=True)
     p_stock_list.add_argument("--out", default=None, help="Optional output CSV. Default: <data>/stock_list.csv")
     p_stock_list.set_defaults(func=stock_list_cmd)
     p_job = sub.add_parser("run-job")

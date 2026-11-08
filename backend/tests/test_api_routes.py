@@ -105,7 +105,8 @@ def master(tmp_path, monkeypatch):
     )
     for code in ("000001", "600000", "300750"):
         (root / "stocks" / f"{code}.parquet").write_bytes(b"")
-    monkeypatch.setattr(common, "MASTER_DIR", root)
+    monkeypatch.setattr(company_source, "meta", lambda: {"date_min": "2021-06-18", "date_max": "2026-06-16", "source_signature": "sig"})
+    monkeypatch.setattr(common, "SNAPSHOT_ROOT", root)
     monkeypatch.setattr(common, "POOLS_ROOT", tmp_path / "pools")
     monkeypatch.setattr(common, "JOBS_ROOT", tmp_path / "jobs")
     return root
@@ -389,7 +390,7 @@ def test_create_pool_builds_company_payload_and_spawns_job(master, monkeypatch):
 def test_create_pool_takes_all_matched_codes_from_company(master, monkeypatch, tmp_path):
     """不传 selected_codes = 使用全部匹配股票，不再按本地缓存排除。"""
     _stub_universe(monkeypatch)
-    monkeypatch.setattr(common, "MASTER_DIR", tmp_path / "no-master")  # 不依赖本地缓存
+    monkeypatch.setattr(common, "SNAPSHOT_ROOT", tmp_path / "no-master")  # 不依赖本地缓存
     captured = {}
     _patch_job_deps(monkeypatch, "create_platform_job",
         lambda jobs_root, operation, payload: (
@@ -593,7 +594,7 @@ def _factor_case(master, tmp_path, monkeypatch, expressions=("$close",), signatu
     pool_dir = tmp_path / "pools" / pool_id
     _write_json(
         pool_dir / "manifest.json",
-        {"pool_id": pool_id, "name": pool_id, "source_signature": signature},
+        {"pool_id": pool_id, "name": pool_id, "data_source": "clickhouse", "source_signature": signature},
     )
     factor_root = tmp_path / "factor_runs"
     run_dir = factor_root / "run_a"
@@ -603,6 +604,7 @@ def _factor_case(master, tmp_path, monkeypatch, expressions=("$close",), signatu
             "pool_id": pool_id,
             "source_signature": signature,
             "created_at": "2026-10-25T10:00:00",
+            "data_source": "clickhouse",
             "accepted_count": len(expressions),
             "target_reached": True,
         },
@@ -851,16 +853,16 @@ def test_create_factor_backtest_rejects_data_or_signature_mismatch(master, tmp_p
     pool_id, run_dir, _ = _factor_case(master, tmp_path, monkeypatch)
     pool_manifest = tmp_path / "pools" / pool_id / "manifest.json"
 
-    _write_json(pool_manifest, {"pool_id": pool_id, "source_signature": "old"})
+    _write_json(pool_manifest, {"pool_id": pool_id, "data_source": "clickhouse", "source_signature": "old"})
     with pytest.raises(DomainError) as excinfo:
         factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
     assert excinfo.value.status_code == 422
     assert "股票池" in excinfo.value.detail
 
-    _write_json(pool_manifest, {"pool_id": pool_id, "source_signature": "sig"})
+    _write_json(pool_manifest, {"pool_id": pool_id, "data_source": "clickhouse", "source_signature": "sig"})
     _write_json(
         run_dir / "factor_run.json",
-        {"pool_id": pool_id, "source_signature": "old"},
+        {"pool_id": pool_id, "data_source": "clickhouse", "source_signature": "old"},
     )
     with pytest.raises(DomainError) as excinfo:
         factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
@@ -868,7 +870,7 @@ def test_create_factor_backtest_rejects_data_or_signature_mismatch(master, tmp_p
     assert "因子运行" in excinfo.value.detail
 
     (run_dir / "accepted_factors.jsonl").write_text("", encoding="utf-8")
-    _write_json(run_dir / "factor_run.json", {"pool_id": pool_id, "source_signature": "sig"})
+    _write_json(run_dir / "factor_run.json", {"pool_id": pool_id, "data_source": "clickhouse", "source_signature": "sig"})
     with pytest.raises(DomainError) as excinfo:
         factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
     assert excinfo.value.status_code == 422
@@ -907,7 +909,7 @@ def test_create_factor_backtest_uses_company_source(master, tmp_path, monkeypatc
         },
     )
     # 即使本地主缓存缺失，公司库回测也必须能提交
-    monkeypatch.setattr(common, "MASTER_DIR", tmp_path / "no-master")
+    monkeypatch.setattr(common, "SNAPSHOT_ROOT", tmp_path / "no-master")
     captured = {}
     _patch_job_deps(monkeypatch, "create_platform_job",
         lambda jobs_root, operation, payload: (
@@ -951,16 +953,14 @@ def test_create_factor_backtest_rejects_company_signature_mismatch(master, tmp_p
     assert "数据源签名" in excinfo.value.detail
 
 
-def test_create_factor_backtest_requires_master(master, tmp_path, monkeypatch):
+def test_create_factor_backtest_rejects_local_pool(master, tmp_path, monkeypatch):
     _factor_case(master, tmp_path, monkeypatch)
-    empty_master = tmp_path / "empty_master"
-    empty_master.mkdir()
-    monkeypatch.setattr(common, "MASTER_DIR", empty_master)
+    _write_json(common.POOLS_ROOT / "pool_a" / "manifest.json", {"pool_id": "pool_a", "data_source": "local"})
 
     with pytest.raises(DomainError) as excinfo:
         factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
-    assert excinfo.value.status_code == 503
-    assert "主缓存" in excinfo.value.detail
+    assert excinfo.value.status_code == 422
+    assert "ClickHouse" in excinfo.value.detail
 
 
 def test_create_factor_backtest_marks_job_failed_when_spawn_fails(master, tmp_path, monkeypatch):
@@ -1559,20 +1559,20 @@ def test_create_manual_backtest_rejects_signature_mismatch_and_missing_pool(mast
     assert excinfo.value.status_code == 404
 
 
-def test_create_manual_backtest_local_pool_requires_master(master, tmp_path, monkeypatch):
+def test_create_manual_backtest_rejects_local_pool(master, tmp_path, monkeypatch):
     _write_manual_pool(
         common.POOLS_ROOT,
         data_source="local",
         signature="local_sig",
     )
-    monkeypatch.setattr(common, "MASTER_DIR", tmp_path / "missing-master")
+    monkeypatch.setattr(common, "SNAPSHOT_ROOT", tmp_path / "missing-master")
 
     with pytest.raises(DomainError) as excinfo:
         manual_backtest_service.create_manual_backtest(
             ManualBacktestRequest(expression="close", pool_id="pool_company", run_name="demo")
         )
-    assert excinfo.value.status_code == 503
-    assert "主缓存" in excinfo.value.detail
+    assert excinfo.value.status_code == 422
+    assert "ClickHouse" in excinfo.value.detail
 
 
 def test_create_manual_backtest_marks_job_failed_when_spawn_fails(master, monkeypatch):

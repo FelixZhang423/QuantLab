@@ -1,140 +1,58 @@
-import tempfile
-import unittest
-from pathlib import Path
-
-import pandas as pd
-
-from repositories.local_store import build_master_store
-from custom_bt.pools import create_pool, load_pool_codes, load_pool_manifest
+"""Company source pool selection and persistent identity."""
+import pytest
+from custom_bt.pools import create_pool_from_company
+from repositories.pool_store import load_pool_codes, load_pool_manifest
+from repositories.clickhouse import LiveDBSettings
 
 
-class PoolTests(unittest.TestCase):
-    def _build_store(self, root: Path) -> Path:
-        csv_path = root / "daily.csv"
-        rows = []
-        specs = {
-            "000001": (100.0, "1990-01-01", 0),
-            "000002": (200.0, "1990-01-01", 0),
-            "000003": (300.0, "2024-01-01", 0),
-        }
-        for date in pd.date_range("2024-01-01", periods=2, freq="D"):
-            for code, (amount, listed, suspended) in specs.items():
-                rows.append(
-                    {
-                        "code": code,
-                        "timestamps": date.strftime("%Y-%m-%d"),
-                        "open": 10.0,
-                        "close": 10.2,
-                        "high": 10.3,
-                        "low": 9.8,
-                        "vol": 1000.0,
-                        "amount": amount,
-                        "Ifsuspend": suspended,
-                        "category": "stock",
-                        "ListedDate": listed,
-                    }
-                )
-        pd.DataFrame(rows).to_csv(csv_path, index=False)
-        store_dir = root / "master"
-        build_master_store(csv_path, store_dir, fields=[])
-        return store_dir
-
-    def test_create_pool_selects_liquid_codes_and_writes_manifest(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            store_dir = self._build_store(root)
-
-            result = create_pool(
-                store_dir=store_dir,
-                pools_root=root / "pools",
-                name="liquid_2",
-                selection_start="2024-01-01",
-                selection_end="2024-01-02",
-                top_n=2,
-                min_listed_days=0,
-                min_coverage=1.0,
-            )
-
-            self.assertEqual(result["n_stocks"], 2)
-            self.assertEqual(load_pool_codes(root / "pools", result["pool_id"]), ["000003", "000002"])
-            manifest = load_pool_manifest(root / "pools", result["pool_id"])
-            self.assertEqual(manifest["top_n"], 2)
-            self.assertEqual(manifest["source_signature"], result["source_signature"])
-
-    def test_create_pool_applies_minimum_listed_days(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            store_dir = self._build_store(root)
-
-            result = create_pool(
-                store_dir=store_dir,
-                pools_root=root / "pools",
-                name="mature",
-                selection_start="2024-01-01",
-                selection_end="2024-01-02",
-                top_n=2,
-                min_listed_days=1000,
-                min_coverage=1.0,
-            )
-
-            self.assertEqual(load_pool_codes(root / "pools", result["pool_id"]), ["000002", "000001"])
-
-    def test_create_pool_can_allow_fewer_than_top_n_and_records_provenance(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            store_dir = self._build_store(root)
-            provenance = {"source": "clickhouse", "filters": {"industries": ["银行"]}}
-
-            result = create_pool(
-                store_dir=store_dir,
-                pools_root=root / "pools",
-                name="liquid_more",
-                selection_start="2024-01-01",
-                selection_end="2024-01-02",
-                top_n=5,
-                min_coverage=1.0,
-                strict_top_n=False,
-                provenance=provenance,
-            )
-
-            self.assertEqual(result["n_stocks"], 3)
-            manifest = load_pool_manifest(root / "pools", result["pool_id"])
-            self.assertEqual(manifest["top_n"], 5)
-            self.assertFalse(manifest["strict_top_n"])
-            self.assertEqual(manifest["provenance"], provenance)
-
-    def test_provenance_does_not_change_pool_id(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            store_dir = self._build_store(root)
-            common = dict(
-                store_dir=store_dir,
-                name="liquid_2",
-                selection_start="2024-01-01",
-                selection_end="2024-01-02",
-                top_n=2,
-                min_coverage=1.0,
-            )
-
-            first = create_pool(pools_root=root / "pools_a", provenance={"source": "a"}, **common)
-            second = create_pool(pools_root=root / "pools_b", provenance={"source": "b"}, **common)
-
-            self.assertEqual(first["pool_id"], second["pool_id"])
-
-    def test_create_pool_explains_incomplete_master_import(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "master" / "_staging" / "import_run").mkdir(parents=True)
-
-            with self.assertRaisesRegex(FileNotFoundError, "import job is still running"):
-                create_pool(
-                    store_dir=root / "master",
-                    pools_root=root / "pools",
-                    name="liquid_2",
-                    selection_start="2024-01-01",
-                    selection_end="2024-01-02",
-                )
+class SelectionClient:
+    def __init__(self):
+        self.sqls = []
+    def query(self, sql):
+        self.sqls.append(sql)
+        if "AS days" in sql:
+            return [{"days":2}]
+        return [{"code":"1","valid_rows":2,"avg_amount":100},
+                {"code":"2","valid_rows":2,"avg_amount":200},
+                {"code":"3","valid_rows":1,"avg_amount":300}]
 
 
-if __name__ == "__main__":
-    unittest.main()
+def create(root, client, **options):
+    return create_pool_from_company(root, "liquid", "2024-01-01", "2024-01-02",
+                                    client=client, settings=LiveDBSettings(), **options)
+
+
+def test_company_pool_filters_coverage_and_ranks_liquidity(tmp_path):
+    client = SelectionClient()
+    result = create(tmp_path, client, top_n=2, min_coverage=1)
+    assert load_pool_codes(tmp_path,result["pool_id"]) == ["000002","000001"]
+    assert load_pool_manifest(tmp_path,result["pool_id"])["data_source"] == "clickhouse"
+    assert len(client.sqls) == 2
+    assert not (tmp_path / "master").exists()
+
+
+def test_pool_minimum_listing_days_is_in_company_query(tmp_path):
+    client = SelectionClient()
+    create(tmp_path,client,top_n=1,min_listed_days=1000)
+    assert "1000" in client.sqls[-1]
+
+
+def test_strict_top_n_rejects_underfilled_pool(tmp_path):
+    with pytest.raises(ValueError,match="only 2"):
+        create(tmp_path,SelectionClient(),top_n=3,min_coverage=1)
+
+
+def test_same_selection_preserves_identity_and_requires_explicit_overwrite(tmp_path):
+    first = create(tmp_path,SelectionClient(),top_n=2)
+    with pytest.raises(FileExistsError):
+        create(tmp_path,SelectionClient(),top_n=2)
+    second = create(tmp_path,SelectionClient(),top_n=2,overwrite=True)
+    assert first["pool_id"] == second["pool_id"]
+
+
+@pytest.mark.parametrize("options", [{"top_n":0},{"min_coverage":1.1},{"min_listed_days":-1}])
+def test_invalid_rules_rejected_before_query(tmp_path,options):
+    client = SelectionClient()
+    with pytest.raises(ValueError):
+        create(tmp_path,client,**options)
+    assert not client.sqls

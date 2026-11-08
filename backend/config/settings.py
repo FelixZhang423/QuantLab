@@ -19,7 +19,7 @@ VAR_ROOT = Path(
     os.environ.get("QL_VAR_ROOT", str(WORKSPACE_ROOT / "var"))
 ).expanduser().resolve()
 
-MASTER_DIR = VAR_ROOT / "data_cache" / "master"
+SNAPSHOT_ROOT = Path(os.environ.get("QL_SNAPSHOT_ROOT", str(VAR_ROOT / "data_cache" / "snapshots"))).expanduser().resolve()
 
 POOLS_ROOT = VAR_ROOT / "data_cache" / "pools"
 

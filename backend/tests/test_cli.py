@@ -8,10 +8,10 @@ class CLITests(unittest.TestCase):
         parser = build_parser()
         actions = next(action for action in parser._actions if action.dest == "command")
         choices = set(actions.choices)
+        self.assertFalse({"prepare-master", "prepare", "update"} & choices)
 
         self.assertTrue(
             {
-                "prepare-master",
                 "create-pool",
                 "generate-factors",
                 "backtest-factors",

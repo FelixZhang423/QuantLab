@@ -1,6 +1,7 @@
 """PPO 因子生成参数默认值与提交。"""
 from __future__ import annotations
 
+from repositories.snapshot_store import snapshot_manifest
 from errors import DomainError, make_error
 
 import common
@@ -54,7 +55,7 @@ from repositories import company_source, mysql_store  # noqa: E402
 
 from custom_bt.canonical_expression import normalize_expression  # noqa: E402
 
-from repositories.local_store import load_meta, normalize_code  # noqa: E402
+from repositories.local_store import normalize_code  # noqa: E402
 
 from custom_bt.docs import enrich_operators  # noqa: E402
 
@@ -498,24 +499,18 @@ def create_factor_generation(request: FactorGenerationRequest) -> Dict[str, Any]
     fields, renamed_fields = _normalize_generation_fields(request.fields, defaults)
     operators = _normalize_generation_operators(request.operators)
 
-    source = company_source.resolve_data_source(None, pool_manifest)
+    try:
+        source = company_source.resolve_data_source(None, pool_manifest)
+    except ValueError as exc:
+        raise make_error(status_code=422, detail=str(exc)) from None
     if source == "clickhouse":
         try:
-            source_meta = company_source.meta()
+            source_meta = (snapshot_manifest(request.snapshot_id, snapshot_root=common.SNAPSHOT_ROOT)
+                           if request.snapshot_id else company_source.meta())
         except live_db.LiveDBError as exc:
             raise _live_error(exc) from None
-    else:
-        source_meta = load_meta(common.MASTER_DIR)
-        if not source_meta:
-            raise make_error(
-                status_code=503,
-                detail="本地主缓存未就绪：请先运行 prepare_master 导入 data_cache/master",
-            )
-        if any(field.startswith(company_source.DERIVATIVE_PREFIX) for field in fields):
-            raise make_error(
-                status_code=422,
-                detail="财务衍生字段（deriv_*）只能用于公司库股票池，请重新建池或去掉这些字段",
-            )
+        except (ValueError, OSError) as exc:
+            raise make_error(status_code=422, detail=f"快照不可用：{exc}") from None
     if pool_manifest.get("source_signature") != source_meta.get("source_signature"):
         raise make_error(
             status_code=422,
@@ -642,7 +637,9 @@ def create_factor_generation(request: FactorGenerationRequest) -> Dict[str, Any]
     if run_name:
         generation_config["run_name"] = run_name
     payload = {
-        "master_store": str(common.MASTER_DIR),
+        "snapshot_root": str(common.SNAPSHOT_ROOT),
+        "snapshot_id": request.snapshot_id,
+        "as_of": request.as_of,
         "pools_root": str(common.POOLS_ROOT),
         "pool_id": pool_id,
         "runtime_root": str(common.FACTOR_RUNTIME_ROOT),

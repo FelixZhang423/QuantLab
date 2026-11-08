@@ -7,7 +7,8 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from repositories.local_store import build_master_store
+from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer
+from unittest.mock import patch
 from custom_bt.factor_composition import (
     CompositionCandidate,
     SelectedComponent,
@@ -22,7 +23,6 @@ from custom_bt.factor_composition import (
     select_composition_pool,
     compose_factors,
 )
-from custom_bt.pools import create_pool
 from repositories.result_store import list_runs
 
 
@@ -91,6 +91,11 @@ def _targeted_panel() -> pd.DataFrame:
 
 
 class FactorCompositionTests(unittest.TestCase):
+    def setUp(self):
+        writer = patch("repositories.company_source.write_pool_panel", side_effect=fake_panel_writer)
+        writer.start()
+        self.addCleanup(writer.stop)
+
     def test_candidate_loader_filters_and_sorts_by_selected_metric(self):
         records = [
             {"factor_id": "bad_pool", "pool_id": "other", "accepted": True, "expression": "close", "score": 9.0},
@@ -361,11 +366,11 @@ class FactorCompositionTests(unittest.TestCase):
     def test_compose_factors_saves_each_sweep_size_as_unified_composite_result(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            source = root / "daily.csv"
-            _toy_panel().to_csv(source, index=False)
-            build_master_store(source, root / "master", fields=["ma5"], chunksize=16, overwrite=True)
-            pool_manifest = create_pool(
-                root / "master",
+            source = root / "daily.parquet"
+            _toy_panel().to_parquet(source, index=False)
+            write_company_fixture(source, root / "snapshots", fields=["ma5"], chunksize=16, overwrite=True)
+            pool_manifest = fixture_pool(
+                root / "snapshots",
                 root / "pools",
                 name="toy",
                 selection_start="2024-01-01",
@@ -378,7 +383,7 @@ class FactorCompositionTests(unittest.TestCase):
             factor_manifest = {
                 "run_id": "run_a",
                 "pool_id": pool_manifest["pool_id"],
-                "source_signature": pool_manifest["source_signature"],
+                "data_source": "clickhouse", "snapshot_id": pool_manifest["snapshot_id"], "source_signature": pool_manifest["source_signature"],
                 "accepted_count": 3,
             }
             (run_dir / "factor_run.json").write_text(json.dumps(factor_manifest), encoding="utf-8")
@@ -393,7 +398,7 @@ class FactorCompositionTests(unittest.TestCase):
             )
 
             result = compose_factors(
-                master_store=root / "master",
+                snapshot_root=root / "snapshots",
                 pools_root=root / "pools",
                 pool_id=pool_manifest["pool_id"],
                 factor_run_dirs=[run_dir],
@@ -438,11 +443,11 @@ class FactorCompositionTests(unittest.TestCase):
     def test_compose_factors_can_rank_candidates_by_saved_single_factor_backtest_metrics(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            source = root / "daily.csv"
-            _toy_panel().to_csv(source, index=False)
-            build_master_store(source, root / "master", fields=["ma5"], chunksize=16, overwrite=True)
-            pool_manifest = create_pool(
-                root / "master",
+            source = root / "daily.parquet"
+            _toy_panel().to_parquet(source, index=False)
+            write_company_fixture(source, root / "snapshots", fields=["ma5"], chunksize=16, overwrite=True)
+            pool_manifest = fixture_pool(
+                root / "snapshots",
                 root / "pools",
                 name="toy",
                 selection_start="2024-01-01",
@@ -457,7 +462,7 @@ class FactorCompositionTests(unittest.TestCase):
                     {
                         "run_id": "run_a",
                         "pool_id": pool_manifest["pool_id"],
-                        "source_signature": pool_manifest["source_signature"],
+                        "data_source": "clickhouse", "snapshot_id": pool_manifest["snapshot_id"], "source_signature": pool_manifest["source_signature"],
                         "accepted_count": 2,
                     }
                 ),
@@ -483,7 +488,7 @@ class FactorCompositionTests(unittest.TestCase):
             ).to_csv(factor_result_dir / "factor_backtest_summary.csv", index=False)
 
             result = compose_factors(
-                master_store=root / "master",
+                snapshot_root=root / "snapshots",
                 pools_root=root / "pools",
                 pool_id=pool_manifest["pool_id"],
                 factor_run_dirs=[run_dir],
@@ -507,11 +512,11 @@ class FactorCompositionTests(unittest.TestCase):
     def test_compose_factors_saves_underfilled_final_size_when_no_requested_size_is_reached(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            source = root / "daily.csv"
-            _toy_panel().to_csv(source, index=False)
-            build_master_store(source, root / "master", fields=["ma5"], chunksize=16, overwrite=True)
-            pool_manifest = create_pool(
-                root / "master",
+            source = root / "daily.parquet"
+            _toy_panel().to_parquet(source, index=False)
+            write_company_fixture(source, root / "snapshots", fields=["ma5"], chunksize=16, overwrite=True)
+            pool_manifest = fixture_pool(
+                root / "snapshots",
                 root / "pools",
                 name="toy",
                 selection_start="2024-01-01",
@@ -526,7 +531,7 @@ class FactorCompositionTests(unittest.TestCase):
                     {
                         "run_id": "run_a",
                         "pool_id": pool_manifest["pool_id"],
-                        "source_signature": pool_manifest["source_signature"],
+                        "data_source": "clickhouse", "snapshot_id": pool_manifest["snapshot_id"], "source_signature": pool_manifest["source_signature"],
                         "accepted_count": 2,
                     }
                 ),
@@ -544,7 +549,7 @@ class FactorCompositionTests(unittest.TestCase):
             )
 
             result = compose_factors(
-                master_store=root / "master",
+                snapshot_root=root / "snapshots",
                 pools_root=root / "pools",
                 pool_id=pool_manifest["pool_id"],
                 factor_run_dirs=[run_dir],

@@ -10,17 +10,15 @@ from pathlib import Path
 from typing import Any, Dict, Mapping
 from uuid import uuid4
 
-from repositories.local_store import build_master_store
 from custom_bt.factor_composition import compose_factors
 from custom_bt.factor_backtest import backtest_accepted_factors
 from custom_bt.factor_generation import new_factor_run_id, run_factor_generation
 from repositories.job_store import update_job_status
 from custom_bt.manual_backtest import run_manual_backtest
-from custom_bt.pools import create_pool, create_pool_from_company
+from custom_bt.pools import create_pool_from_company
 
 
 SUPPORTED_OPERATIONS = {
-    "prepare_master",
     "create_pool",
     "generate_factors",
     "backtest_factors",
@@ -81,25 +79,6 @@ def create_platform_job(
     if operation not in SUPPORTED_OPERATIONS:
         raise ValueError(f"unsupported platform operation: {operation}")
     root = Path(jobs_root).expanduser().resolve()
-    if operation == "prepare_master" and root.exists():
-        for existing_dir in root.iterdir():
-            if not existing_dir.is_dir():
-                continue
-            status_path = existing_dir / "status.json"
-            if not status_path.exists():
-                continue
-            try:
-                status = json.loads(status_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if (
-                status.get("operation") == "prepare_master"
-                and status.get("status") in {"queued", "running"}
-            ):
-                raise RuntimeError(
-                    "a prepare_master job is already running: "
-                    f"{status.get('job_id', existing_dir.name)}"
-                )
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid4().hex[:8]
     job_dir = root / job_id
     job_dir.mkdir(parents=True, exist_ok=False)
@@ -124,36 +103,11 @@ def create_platform_job(
 
 
 def _run_operation(operation: str, payload: Mapping[str, Any], job_dir: Path | None = None) -> dict:
-    if operation == "prepare_master":
-        options = dict(payload)
-        if job_dir is not None:
-            last_update = 0.0
-
-            def report(progress: Dict[str, object]) -> None:
-                nonlocal last_update
-                now = time.monotonic()
-                if last_update and now - last_update < 2.0:
-                    return
-                last_update = now
-                rows_read = int(progress.get("rows_read", 0))
-                rows_written = int(progress.get("rows_written", 0))
-                stocks_touched = int(progress.get("stocks_touched", 0))
-                update_job_status(
-                    job_dir,
-                    "running",
-                    f"主缓存导入中：已读取 {rows_read:,} 行，已保留 {rows_written:,} 行，已处理 {stocks_touched:,} 只股票",
-                    {"progress": _jsonable(progress)},
-                )
-
-            options["progress_callback"] = report
-        return build_master_store(**options)
     if operation == "create_pool":
+        from repositories.company_source import resolve_data_source
         options = dict(payload)
-        source = str(options.pop("data_source", "local") or "local").strip().lower()
-        if source in {"clickhouse", "company", "live"}:
-            options.pop("store_dir", None)
-            return create_pool_from_company(**options)
-        return create_pool(**options)
+        resolve_data_source(options.pop("data_source", None))
+        return create_pool_from_company(**options)
     if operation == "generate_factors":
         options = dict(payload)
         if job_dir is not None:

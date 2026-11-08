@@ -310,7 +310,7 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
                   style={{ marginBottom: 16 }}
                   message={pool.data_source === "clickhouse"
                     ? `公司库面板 · ${pool.n_stocks} 只股票 · 选样窗口 ${pool.selection_start ?? "—"} ~ ${pool.selection_end ?? "—"}`
-                    : "旧本地池：没有公司库签名，回测将读取本地 data_cache/master（仅兼容历史池）"}
+                    : "旧本地池不可用于新回测，请基于 ClickHouse 重新创建股票池"}
                 />
               )}
               <Row gutter={12}>

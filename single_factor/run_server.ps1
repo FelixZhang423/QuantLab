@@ -3,13 +3,15 @@ param(
     [int]$RestartDelaySeconds = 30
 )
 
-# Keep the bundle independent from the development workspace.
+# Run against prepared snapshot-derived memmaps; this launcher never imports raw data.
 $ErrorActionPreference = "Continue"
 $Python = if ($env:PYTHON) { $env:PYTHON } else { "python" }
 $BundleDir = $PSScriptRoot
 $ProjectDir = Split-Path -Parent $BundleDir
 
 Set-Location -LiteralPath $ProjectDir
+$backendPath = Join-Path -Path $ProjectDir -ChildPath "backend"
+$env:PYTHONPATH = if ($env:PYTHONPATH) { "$backendPath$([IO.Path]::PathSeparator)$env:PYTHONPATH" } else { $backendPath }
 $configObject = Get-Content -LiteralPath $Config -Raw -Encoding UTF8 | ConvertFrom-Json
 $outputDir = Join-Path -Path $BundleDir -ChildPath ([string]$configObject.output_dir)
 $logDir = Join-Path -Path $outputDir -ChildPath "logs"

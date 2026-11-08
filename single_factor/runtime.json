@@ -1,6 +1,5 @@
 {
-  "processed_dir": "data/selected_500_liquid_processed",
-  "pool_codes_file": "data/pool_codes_500_liquid.txt",
+  "processed_dir": "../var/data_cache/snapshots/REPLACE_WITH_SNAPSHOT_ID",
   "fields": [
     "open",
     "close",
@@ -78,5 +77,6 @@
     "score_ic_weight": 0.5,
     "score_rank_ic_weight": 0.3,
     "score_icir_weight": 0.2
-  }
+  },
+  "pool_codes": null
 }

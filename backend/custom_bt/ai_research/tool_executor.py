@@ -144,7 +144,7 @@ class AIToolExecutor:
                 raise ValueError(f"{key} does not match identity_lock")
 
     def _list_context(self) -> dict[str, Any]:
-        fields = self.context.get("master_store", {}).get("fields", [])
+        fields = self.context.get("data_source", {}).get("fields", [])
         operators = self.context.get("operators", [])
         return {
             "identity_lock": dict(self.context.get("identity_lock", {}) or {}),
@@ -208,7 +208,7 @@ class AIToolExecutor:
 
     def _generation_payload(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         defaults = self.config.get("research_defaults", {}) or {}
-        fields = self._validated_fields(arguments.get("fields") or self.context.get("master_store", {}).get("fields", []))
+        fields = self._validated_fields(arguments.get("fields") or self.context.get("data_source", {}).get("fields", []))
         if "close" not in fields:
             fields = ["close", *fields]
         generation_config = dict(arguments.get("generation_config") or {})
@@ -228,7 +228,7 @@ class AIToolExecutor:
             generation_config["quality"] = quality
 
         return {
-            "master_store": str(self._path("master_store", "data_cache/master")),
+            "snapshot_root": str(self._path("snapshot_root", "data_cache/snapshots")),
             "pools_root": str(self._path("pools_root", "data_cache/pools")),
             "pool_id": self._pool_id(arguments),
             "runtime_root": str(self._path("runtime_root", "data_cache/factor_runtime")),
@@ -246,7 +246,7 @@ class AIToolExecutor:
         if not factor_run_dir:
             factor_run_dir = self._materialize_candidate_factor_run(arguments)
         return {
-            "master_store": str(self._path("master_store", "data_cache/master")),
+            "snapshot_root": str(self._path("snapshot_root", "data_cache/snapshots")),
             "pools_root": str(self._path("pools_root", "data_cache/pools")),
             "factor_run_dir": str(Path(factor_run_dir).expanduser().resolve()),
             "outputs_root": str(self._path("saved_results_root", "outputs/saved_backtests")),
@@ -263,7 +263,7 @@ class AIToolExecutor:
         if not factor_run_dirs:
             raise ValueError("create_composition_job requires factor_run_dirs or candidate_ids")
         return {
-            "master_store": str(self._path("master_store", "data_cache/master")),
+            "snapshot_root": str(self._path("snapshot_root", "data_cache/snapshots")),
             "pools_root": str(self._path("pools_root", "data_cache/pools")),
             "pool_id": self._pool_id(arguments),
             "factor_run_dirs": [str(Path(item).expanduser().resolve()) for item in factor_run_dirs],
@@ -331,6 +331,7 @@ class AIToolExecutor:
             for row in rows:
                 fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
         manifest = {
+            "data_source": "clickhouse",
             "run_id": run_id,
             "factor_run_dir": str(factor_run_dir),
             "pool_id": pool_id,
@@ -419,7 +420,7 @@ class AIToolExecutor:
         return []
 
     def _validated_fields(self, fields: Any) -> list[str]:
-        allowed = {str(item) for item in self.context.get("master_store", {}).get("fields", [])}
+        allowed = {str(item) for item in self.context.get("data_source", {}).get("fields", [])}
         selected = list(dict.fromkeys(str(item) for item in (fields or [])))
         unknown = [item for item in selected if allowed and item not in allowed]
         if unknown:
@@ -437,7 +438,7 @@ class AIToolExecutor:
         configured = self.config.get("backtest") or {}
         if configured:
             return dict(configured)
-        master = self.context.get("master_store", {}) or {}
+        master = self.context.get("data_source", {}) or {}
         defaults = self.config.get("research_defaults", {}) or {}
         return {
             "start_date": str(master.get("date_min") or defaults.get("test_start") or defaults.get("train_start") or "2021-01-01"),
@@ -467,7 +468,7 @@ class AIToolExecutor:
         return str(
             arguments.get("source_signature")
             or self.context.get("identity_lock", {}).get("source_signature")
-            or self.context.get("master_store", {}).get("source_signature")
+            or self.context.get("data_source", {}).get("source_signature")
             or ""
         ).strip()
 

@@ -53,7 +53,7 @@ from repositories import company_source, mysql_store  # noqa: E402
 
 from custom_bt.canonical_expression import normalize_expression  # noqa: E402
 
-from repositories.local_store import load_meta, normalize_code  # noqa: E402
+from repositories.local_store import normalize_code  # noqa: E402
 
 from custom_bt.docs import enrich_operators  # noqa: E402
 

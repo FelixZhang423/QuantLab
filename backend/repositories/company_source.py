@@ -1,7 +1,7 @@
 """公司 ClickHouse 数据源：股票池选样、因子面板与回测共用。
 
-股票池、因子生成和因子回测都不再依赖 ``data_cache/master``：候选、窗口内
-有效行数/成交额、因子面板和回测面板全部直接从公司库读取。
+股票池候选、窗口内有效行数/成交额直接从公司库读取；研究任务通过
+快照存储层调用本模块，将公司库数据物化后复用。
 
 约定：
 - 只读。SQL 由本模块拼接，代码/日期都经过规范化与转义，再交给
@@ -40,13 +40,17 @@ def is_company_source(value: Any) -> bool:
 def resolve_data_source(
     requested: Any = None, manifest: Optional[Mapping[str, Any]] = None
 ) -> str:
-    """显式参数 > 池/运行 manifest 里的 data_source > 本地（兼容旧数据）。"""
+    """ClickHouse is the production default; local artifacts cannot be relabeled."""
+    if manifest is not None and not is_company_source(manifest.get("data_source")):
+        raise ValueError("Old local pool/factor run is unsupported; recreate it using ClickHouse.")
     value = requested
     if not str(value or "").strip() and manifest:
         value = manifest.get("data_source")
-    return "clickhouse" if is_company_source(value) else "local"
+    if not str(value or "").strip() or is_company_source(value) or value == "snapshot":
+        return "clickhouse"
+    raise ValueError("Local master cache is retired; use ClickHouse or recreate a Parquet snapshot.")
 
-# 与本地 data_cache/master 面板字段一一对应（不含 date / code）。
+# 统一行情面板字段（不含 date / code）。
 # 因子生成配置里的 38 个字段是它的子集；回测面板默认加载这一整组，保证表达式
 # 在切换数据源后仍能解析到相同字段名。
 DEFAULT_PANEL_FIELDS: Tuple[str, ...] = (

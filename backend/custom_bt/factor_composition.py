@@ -14,7 +14,7 @@ import pandas as pd
 from custom_bt.alpha import alpha_components, canonical_alpha_expression
 from custom_bt.canonical_expression import normalize_expression
 from repositories import company_source
-from repositories.local_store import load_meta, load_pool_panel
+from repositories.panel_store import load_panel_for_pool, expression_fields, expression_lookback
 from custom_bt.engine import BacktestConfig, run_backtest
 from adapters.expressions import evaluate_expression
 from custom_bt.pools import load_pool_codes, load_pool_manifest
@@ -609,6 +609,13 @@ def _marginal_report(
     }
 
 
+def _evaluation_window(frame: pd.DataFrame, panel: pd.DataFrame) -> pd.DataFrame:
+    if not panel.attrs.get("evaluation_start"):
+        return frame
+    return frame[(frame["date"] >= pd.Timestamp(panel.attrs["evaluation_start"]))
+                 & (frame["date"] <= pd.Timestamp(panel.attrs["evaluation_end"]))]
+
+
 def select_composition_pool(
     panel: pd.DataFrame,
     candidates: Sequence[CompositionCandidate],
@@ -630,7 +637,7 @@ def select_composition_pool(
         min_marginal_rank_icir_improvement,
     )
     marginal_enabled = _marginal_gate_enabled(thresholds)
-    target = make_forward_return_target(panel, target_horizon) if marginal_enabled else None
+    target = _evaluation_window(make_forward_return_target(panel, target_horizon), panel) if marginal_enabled else None
     selected_candidates: list[CompositionCandidate] = []
     selected_alphas: list[pd.DataFrame] = []
     selected_zalphas: list[pd.DataFrame] = []
@@ -655,6 +662,7 @@ def select_composition_pool(
             )
         try:
             alpha = evaluate_expression(candidate.backtest_expression, panel, output_name="alpha")
+            alpha = _evaluation_window(alpha, panel)
         except Exception as exc:
             rejections.append({"factor_id": candidate.factor_id, "reason": "evaluation_error", "error": f"{type(exc).__name__}: {exc}"})
             continue
@@ -901,7 +909,7 @@ def _load_records_from_factor_run(
     if manifest.get("pool_id") != expected_pool_id:
         raise ValueError(f"factor run pool_id {manifest.get('pool_id')!r} does not match requested pool_id {expected_pool_id!r}")
     if expected_source_signature and manifest.get("source_signature") not in (None, expected_source_signature):
-        raise ValueError("factor run source signature does not match master store")
+        raise ValueError("factor run source signature does not match company source")
     records = _read_jsonl(path / "accepted_factors.jsonl")
     summary_path = _find_factor_backtest_summary(path, manifest, expected_pool_id, saved_results_root)
     if summary_path is not None:
@@ -956,7 +964,6 @@ def _summary_row(
 
 
 def compose_factors(
-    master_store: str | Path,
     pools_root: str | Path,
     pool_id: str,
     factor_run_dirs: Iterable[str | Path],
@@ -979,13 +986,15 @@ def compose_factors(
     min_marginal_rank_icir_improvement: float | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
     data_source: str | None = None,
+    snapshot_root: str | Path | None = None,
+    snapshot_id: str | None = None,
+    as_of: str | None = None,
 ) -> dict[str, Any]:
     if objective_type != "mse":
         raise ValueError("only objective_type='mse' is currently supported")
     pool_manifest = load_pool_manifest(pools_root, pool_id)
     source = company_source.resolve_data_source(data_source, pool_manifest)
-    source_meta = company_source.meta() if source == "clickhouse" else load_meta(master_store)
-    source_signature = source_meta.get("source_signature")
+    source_signature = company_source.source_signature()
     if source_signature and pool_manifest.get("source_signature") and source_signature != pool_manifest.get("source_signature"):
         raise ValueError("pool source signature does not match data source")
     all_records: list[dict[str, Any]] = []
@@ -994,6 +1003,7 @@ def compose_factors(
     saved_results_root = _saved_results_root(outputs_root)
     for run_dir in run_dirs:
         records, manifest = _load_records_from_factor_run(run_dir, pool_id, source_signature, saved_results_root)
+        company_source.resolve_data_source(None, manifest)
         all_records.extend(records)
         run_manifests.append(manifest)
     candidates = load_composition_candidates(
@@ -1013,12 +1023,16 @@ def compose_factors(
         raise ValueError("sweep_sizes must contain at least one positive size no larger than max_factors")
     required_size = max(requested_sizes)
     codes = load_pool_codes(pools_root, pool_id)
-    if source == "clickhouse":
-        panel = company_source.load_panel(
-            codes, backtest_config.get("start_date"), backtest_config.get("end_date")
-        )
-    else:
-        panel = load_pool_panel(master_store, codes, backtest_config.get("start_date"), backtest_config.get("end_date"))
+    parent_snapshots = sorted({m["snapshot_id"] for m in run_manifests if m.get("snapshot_id")})
+    if snapshot_id is None and len(parent_snapshots) > 1:
+        raise ValueError("Factor runs use different snapshots; explicitly select a compatible composition snapshot")
+    snapshot_id = snapshot_id or (parent_snapshots[0] if parent_snapshots else None)
+    fields = expression_fields([candidate.backtest_expression for candidate in candidates])
+    panel = load_panel_for_pool(source, codes, BacktestConfig(**dict(backtest_config)),
+                                pool_id=pool_id, fields=fields, snapshot_root=snapshot_root,
+                                snapshot_id=snapshot_id, as_of=as_of,
+                                lookback_days=expression_lookback([c.backtest_expression for c in candidates]))
+    snapshot_id = panel.attrs["snapshot_id"]
     if panel.empty:
         raise ValueError("no panel rows remain for composition")
     if progress_callback is not None:
@@ -1030,6 +1044,8 @@ def compose_factors(
         "min_marginal_icir_improvement": min_marginal_icir_improvement,
         "min_marginal_rank_icir_improvement": min_marginal_rank_icir_improvement,
     }
+    panel.attrs["evaluation_start"] = backtest_config["start_date"]
+    panel.attrs["evaluation_end"] = backtest_config["end_date"]
     full_selection = select_composition_pool(
         panel,
         candidates,
@@ -1051,6 +1067,9 @@ def compose_factors(
         sizes = sorted(sizes)
     output_base = saved_results_root / "composite" / pool_id
     composition_payload = {
+        "snapshot_id": snapshot_id,
+        "source_snapshot_ids": parent_snapshots,
+        "backtest_config": dict(backtest_config),
         "pool_id": pool_id,
         "run_dirs": [str(item) for item in run_dirs],
         "selection_metric": selection_metric,
@@ -1067,7 +1086,7 @@ def compose_factors(
     positive_output_dirs: list[str] = []
     summary_rows: list[dict[str, Any]] = []
     (output_base / composition_id).mkdir(parents=True, exist_ok=True)
-    target = make_forward_return_target(panel, int(target_horizon))
+    target = _evaluation_window(make_forward_return_target(panel, int(target_horizon)), panel)
     for size in sizes:
         if len(full_selection.components) < size:
             continue
@@ -1104,6 +1123,8 @@ def compose_factors(
             "run_key": f"composite/{pool_id}/{composition_id}/{run_name}",
             "pool_id": pool_id,
             "data_source": source,
+            "snapshot_id": snapshot_id,
+            "source_snapshot_ids": parent_snapshots,
             "composition_id": composition_id,
             "source_factor_run_ids": [item.get("run_id") or Path(run_dir).name for item, run_dir in zip(run_manifests, run_dirs)],
             "selected_factor_ids": [component.factor_id for component in components],
@@ -1173,6 +1194,8 @@ def compose_factors(
             progress_callback({"stage": "backtesting", "current_size": size, "completed_sizes": completed_sizes})
     write_run_outputs(output_base, composition_id, summary_rows, full_selection.admission_log or [], full_selection.rejections)
     result = {
+        "snapshot_id": snapshot_id,
+        "source_snapshot_ids": parent_snapshots,
         "pool_id": pool_id,
         "composition_id": composition_id,
         "candidate_count": len(candidates),

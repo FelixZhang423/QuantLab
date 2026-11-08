@@ -17,7 +17,7 @@ def validate_candidate_expression(
 ) -> dict[str, Any]:
     expression = str(candidate.get("expression", "")).strip()
     candidate_id = str(candidate.get("candidate_id", "")).strip()
-    allowed_fields = set(str(item) for item in context.get("master_store", {}).get("fields", []))
+    allowed_fields = set(str(item) for item in context.get("data_source", {}).get("fields", []))
     allowed_operators = _operator_set(context.get("operators", []))
 
     result: dict[str, Any] = {

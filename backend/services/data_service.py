@@ -49,11 +49,11 @@ from repositories import clickhouse as live_db  # noqa: E402
 
 from workers.job_runner import spawn_platform_job  # noqa: E402
 
-from repositories import company_source, mysql_store  # noqa: E402
+from repositories import company_source, mysql_store, snapshot_store  # noqa: E402
 
 from custom_bt.canonical_expression import normalize_expression  # noqa: E402
 
-from repositories.local_store import load_meta, normalize_code  # noqa: E402
+from repositories.local_store import normalize_code  # noqa: E402
 
 from custom_bt.docs import enrich_operators  # noqa: E402
 
@@ -152,6 +152,7 @@ def get_master_info() -> Dict[str, Any]:
             "date_min": stats.data["date_min"],
             "date_max": stats.data["date_max"],
             "layout": "clickhouse-live",
+            **snapshot_store.snapshot_stats(),
             "source_signature": company_source.source_signature(),
             "n_fields": len(catalog.data),
             "fields": [item["name"] for item in catalog.data],

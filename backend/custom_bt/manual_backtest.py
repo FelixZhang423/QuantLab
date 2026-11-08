@@ -2,7 +2,7 @@
 
 数据源跟随股票池 manifest：
 - 公司库池（``data_source: clickhouse``）→ :mod:`repositories.company_source` 实时读面板；
-- 旧本地池（无 ``data_source``）→ 兼容读取 ``data_cache/master``。
+- 旧本地池不再支持执行，必须在公司库上重建。
 
 结果写入 ``outputs/saved_backtests/manual/<backtest_id>/<run_name>/``，
 ``run_key`` 也按该相对路径生成，与因子回测共用结果列表 / 详情 / 下载接口。
@@ -20,7 +20,7 @@ import pandas as pd
 
 from repositories import company_source
 from custom_bt.canonical_expression import normalize_expression
-from repositories.local_store import load_meta, load_pool_panel
+from repositories.panel_store import expression_fields, expression_lookback
 from custom_bt.engine import BacktestConfig, run_backtest
 from adapters.expressions import evaluate_expression
 from custom_bt.pools import load_pool_codes, load_pool_manifest
@@ -94,7 +94,9 @@ def run_manual_backtest(
     pool_id: str,
     data_source: Optional[str] = None,
     backtest_id: Optional[str] = None,
-    master_store: Optional[str | Path] = None,
+    snapshot_root: Optional[str | Path] = None,
+    snapshot_id: Optional[str] = None,
+    as_of: Optional[str] = None,
     pool_manifest: Optional[Mapping[str, Any]] = None,
     pool_codes: Optional[Iterable[str]] = None,
     progress_callback: Optional[ProgressCallback] = None,
@@ -113,11 +115,7 @@ def run_manual_backtest(
         else load_pool_manifest(pools_root, pool_id)
     )
     source = company_source.resolve_data_source(data_source, pool_manifest)
-    if source == "clickhouse":
-        source_meta = company_source.meta()
-    else:
-        source_meta = load_meta(master_store) if master_store else {}
-    source_signature = source_meta.get("source_signature")
+    source_signature = company_source.source_signature()
     if pool_manifest.get("source_signature") != source_signature:
         raise ValueError("pool source signature does not match data source")
 
@@ -134,12 +132,17 @@ def run_manual_backtest(
             "stage": "loading_panel",
             "pool_id": pool_id,
             "data_source": source,
+            "snapshot_id": snapshot_id,
             "n_codes": len(codes),
             "start_date": config.start_date,
             "end_date": config.end_date,
         },
     )
-    panel = _load_panel(source, master_store, codes, config)
+    normalized = normalize_manual_expression(expression)
+    panel = _load_panel(source, codes, config, pool_id=pool_id, fields=expression_fields([normalized]),
+                        snapshot_root=snapshot_root, snapshot_id=snapshot_id, as_of=as_of,
+                        lookback_days=expression_lookback([normalized]))
+    snapshot_id = panel.attrs["snapshot_id"]
     if panel.empty:
         raise ValueError("no panel rows remain for manual backtest")
 
@@ -150,6 +153,7 @@ def run_manual_backtest(
             "stage": "evaluating",
             "pool_id": pool_id,
             "data_source": source,
+            "snapshot_id": snapshot_id,
             "expression": normalized,
             "rows": int(len(panel)),
             "n_stocks": int(panel["code"].nunique()),
@@ -165,6 +169,7 @@ def run_manual_backtest(
             "stage": "running",
             "pool_id": pool_id,
             "data_source": source,
+            "snapshot_id": snapshot_id,
             "rows": int(len(panel)),
             "n_stocks": int(panel["code"].nunique()),
         },
@@ -185,6 +190,7 @@ def run_manual_backtest(
             "expression": normalized,
             "pool_id": pool_id,
             "data_source": source,
+            "snapshot_id": snapshot_id,
         },
         metadata={
             "result_type": "manual",
@@ -192,6 +198,7 @@ def run_manual_backtest(
             "canonical_expression": normalized,
             "pool_id": pool_id,
             "data_source": source,
+            "snapshot_id": snapshot_id,
             "source_signature": source_signature,
             "backtest_id": backtest_id,
         },
@@ -203,6 +210,7 @@ def run_manual_backtest(
         "output_dir": str(output_dir),
         "pool_id": pool_id,
         "data_source": source,
+            "snapshot_id": snapshot_id,
         "backtest_id": backtest_id,
         "expression": normalized,
         "start_date": config.start_date,

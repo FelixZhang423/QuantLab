@@ -32,6 +32,8 @@ class FactorGenerationSplit(BaseModel):
 
 
 class FactorGenerationRequest(BaseModel):
+    snapshot_id: Optional[str] = None
+    as_of: Optional[str] = None
     pool_id: str
     run_name: Optional[str] = None
     fields: Optional[List[str]] = None
@@ -49,6 +51,8 @@ class FactorGenerationRequest(BaseModel):
 
 
 class FactorBacktestRequest(BaseModel):
+    snapshot_id: Optional[str] = None
+    as_of: Optional[str] = None
     factor_run_id: str
     factor_ids: Optional[List[str]] = None
     start_date: Optional[str] = None
@@ -63,6 +67,8 @@ class FactorBacktestRequest(BaseModel):
 
 
 class ManualBacktestRequest(BaseModel):
+    snapshot_id: Optional[str] = None
+    as_of: Optional[str] = None
     expression: str
     pool_id: str
     run_name: str

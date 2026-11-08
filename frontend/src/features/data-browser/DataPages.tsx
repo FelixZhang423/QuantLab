@@ -1,11 +1,10 @@
 import { useState } from "react";
 import {
-  Alert, Button, Card, Checkbox, Col, Descriptions, Flex, Form, Input, InputNumber, message, Pagination, Row, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
+  Alert, Button, Card, Col, Descriptions, Flex, Input, Pagination, Row, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
 } from "antd";
 import type { TableColumnsType } from "antd";
-import { CloudUploadOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 const { Text } = Typography;
-import { nowStamp, type Task } from "../tasks/mock";
 import { fieldCategory } from "../../shared/domain/fieldCategories";
 import { useApiData } from "../../shared/api/base";
 import { dataApi as api, type FieldInfo, type OperatorInfo, type StockInfo } from "./api";
@@ -27,31 +26,12 @@ const fmtInt = (value: number | null | undefined) => (value == null ? "—" : va
 const fmtPrice = (value: number | null) => (value == null ? "—" : value.toFixed(2));
 
 /** 数据总览 / 数据字段 / 股票列表三个页面走数据库实时查询，失败时给出这句提示 */
-const LIVE_HINT = "数据总览、字段目录、股票列表、股票池候选、因子面板与回测数据全部直接读公司 ClickHouse：需在公司网络环境下、并已配置 QL_CH_PASSWORD。";
+const LIVE_HINT = "数据预览和股票池筛选查询公司 ClickHouse；因子生成、回测与组合使用不可变 Parquet 快照。首次取数需连接公司网络并配置 ClickHouse。";
 
 /* ============ 数据总览 ============ */
 
-export function DataOverviewPage({ addTask, navigate }: { addTask: TaskAdder; navigate: PageNav }) {
-  const [form] = Form.useForm();
-  const [submitting, setSubmitting] = useState(false);
+export function DataOverviewPage(_props: { addTask: TaskAdder; navigate: PageNav }) {
   const master = useApiData(api.master);
-  const submit = (values: Record<string, unknown>) => {
-    setSubmitting(true);
-    setTimeout(() => {
-      const id = addTask({
-        type: "prepare_master", typeLabel: "主缓存导入", name: String(values.name), status: "queued", progress: 0,
-        submittedAt: "刚刚", duration: "—", owner: "系统",
-        logs: [`[${nowStamp()}] 参数校验通过`, `[${nowStamp()}] 已进入任务队列`],
-        params: {
-          csv_path: values.csvPath, chunksize: values.chunksize, limit: values.limit || null,
-          overwrite: values.overwrite, fields_count: String(values.fields || "").split("\n").filter(Boolean).length,
-        },
-      });
-      setSubmitting(false);
-      message.success(`主缓存导入任务 #${id} 已提交`);
-      navigate("tasks", id);
-    }, 750);
-  };
   const info = master.data;
   return (
     <LoadGate state={master} hint={LIVE_HINT}>
@@ -65,7 +45,7 @@ export function DataOverviewPage({ addTask, navigate }: { addTask: TaskAdder; na
           </Row>
           <Card title="实时数据源" className="data-card" extra={<Tag color="success">实时连接正常</Tag>}>
             <Descriptions column={2} size="small" bordered items={[
-              { key: "store", label: "数据源", children: <Text code copyable={{ text: info.store_dir }}>{info.store_dir}</Text> },
+              { key: "store", label: "数据源", children: <Space><Tag color="blue">ClickHouse</Tag><Text code copyable={{ text: info.store_dir }}>{info.store_dir}</Text></Space> },
               { key: "layout", label: "数据布局", children: info.layout ?? "—" },
               { key: "rows", label: "总行数", children: fmtInt(info.rows) },
               { key: "stocks", label: "股票数", children: `${fmtInt(info.n_stocks)} 只` },
@@ -73,28 +53,12 @@ export function DataOverviewPage({ addTask, navigate }: { addTask: TaskAdder; na
               { key: "queried", label: "查询时间", children: <Space size={6}><Text code>{info.queried_at ?? "—"}</Text><Tag color={info.cached ? "default" : "green"}>{info.cached ? "60 秒缓存" : "实时查询"}</Tag></Space> },
             ]} />
           </Card>
-          <Card title={<Space><CloudUploadOutlined />构建 / 更新主数据缓存<Tag color="warning">第二步接入后端任务</Tag></Space>} className="form-card">
-            <Alert type="info" showIcon message="真实导入由 custom_bt 的 prepare_master 任务执行；当前表单仍在本地模拟。股票池、因子生成与回测已改为直接读公司 ClickHouse，不再依赖本地主缓存。" className="page-stack-item" />
-            <Form form={form} layout="vertical" onFinish={submit} initialValues={{
-              csvPath: "../../../数据/daily_with_maindata_v2.csv", name: "daily_master_import",
-              fields: "open\nclose\nhigh\nlow\nvolume\namount\nTurnoverRate", chunksize: 200000, overwrite: false,
-            }} className="import-form">
-              <Row gutter={12}>
-                <Col span={14}><Form.Item label="源 CSV / TSV 路径" name="csvPath" rules={[{ required: true, message: "请输入源数据路径" }]}><Input placeholder="原始日频面板数据路径" /></Form.Item></Col>
-                <Col span={5}><Form.Item label="运行名称" name="name" rules={[{ required: true, message: "请输入运行名称" }]}><Input /></Form.Item></Col>
-                <Col span={5}><Form.Item label="分块大小（行）" name="chunksize"><InputNumber className="full-width" min={1000} step={10000} /></Form.Item></Col>
-              </Row>
-              <Form.Item label="导入字段（每行一个，支持逗号分隔）" name="fields" rules={[{ required: true, message: "至少填写一个字段" }]}>
-                <Input.TextArea className="code-input" autoSize={{ minRows: 4, maxRows: 8 }} />
-              </Form.Item>
-              <Flex justify="space-between" align="center">
-                <Space>
-                  <Form.Item name="overwrite" valuePropName="checked" noStyle><Checkbox>覆盖已有 master 缓存</Checkbox></Form.Item>
-                  <Tag color="warning">覆盖会改变数据签名，所有股票池与因子运行将失效</Tag>
-                </Space>
-                <Button type="primary" htmlType="submit" loading={submitting} icon={<CloudUploadOutlined />}>提交导入任务</Button>
-              </Flex>
-            </Form>
+          <Card title="研究数据快照" className="data-card">
+            <Descriptions column={2} size="small" bordered items={[
+              { key: "count", label: "快照数量", children: fmtInt(info.snapshot_count) },
+              { key: "latest", label: "最近快照时间", children: info.latest_snapshot_at ?? "—" },
+            ]} />
+            <Alert className="page-stack-item" type="info" showIcon message="研究任务会创建或复用 ClickHouse 数据快照。已有快照保持不变，训练、回测与组合复用同一版本。" />
           </Card>
         </Space>
       )}

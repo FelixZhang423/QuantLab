@@ -1,8 +1,10 @@
 import { apiGet, withQuery } from "../../shared/api/base";
 
 export type MasterInfo = {
+  snapshot_count?: number;
+  latest_snapshot_at?: string | null;
   ready: boolean;
-  /** clickhouse = 股票池、因子与回测都直接读公司库 */
+  /** clickhouse = 唯一事实源；研究任务通过 Parquet 快照读取 */
   data_source?: string;
   store_dir: string;
   rows: number | null;

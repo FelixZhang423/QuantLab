@@ -53,11 +53,6 @@ export const initialTasks: Task[] = [
     logs: ["[07:10:01] 已提交建池任务", "[07:10:02] 等待可用计算资源"],
   },
   {
-    id: 1028, type: "prepare_master", typeLabel: "主缓存导入", name: "daily_master_0616", status: "finished", progress: 100,
-    submittedAt: "06-16 06:30", duration: "8m12s", owner: "系统",
-    logs: ["[06:30:01] 校验源数据", "[06:34:42] 已写入 4,120,000 行", "[06:38:13] 完成，共写入 6,031,842 行"],
-  },
-  {
     id: 1027, type: "backtest_factors", typeLabel: "批量回测", name: "value_pack_06", status: "finished", progress: 100,
     submittedAt: "06-15 17:22", duration: "12m08s", owner: "张研究员", expression: "ts_rank(close, 20) - rank(TurnoverRate)",
     logs: [...commonLogs, "[17:29:05] 已完成 18/24 个因子", "[17:34:10] 完成，RankIC 均值 0.047"],
@@ -75,10 +70,6 @@ export const initialTasks: Task[] = [
   {
     id: 1024, type: "compose_factors", typeLabel: "因子组合", name: "multi_factor_v8", status: "queued", progress: 0,
     submittedAt: "06-15 13:12", duration: "—", owner: "林研究员", logs: ["[13:12:01] 已进入任务队列"],
-  },
-  {
-    id: 1023, type: "prepare_master", typeLabel: "主缓存导入", name: "fundamental_q1", status: "finished", progress: 100,
-    submittedAt: "06-15 11:08", duration: "6m19s", owner: "系统", logs: ["[11:08:01] 开始导入", "[11:14:20] 完成数据校验与索引构建"],
   },
   {
     id: 1022, type: "backtest_factors", typeLabel: "批量回测", name: "turnover_neutral", status: "finished", progress: 100,

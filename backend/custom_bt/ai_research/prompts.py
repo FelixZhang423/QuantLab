@@ -103,7 +103,7 @@ def build_expression_proposal_prompt(
     past_failure_memory: Sequence[Mapping[str, Any]] | None = None,
 ) -> str:
     spec_payload = _spec_payload(spec)
-    fields = context.get("master_store", {}).get("fields", [])
+    fields = context.get("data_source", {}).get("fields", [])
     operators = _operator_names(context)
     max_candidates = config.get("agent", {}).get("max_candidates_per_round", 30)
     payload = {

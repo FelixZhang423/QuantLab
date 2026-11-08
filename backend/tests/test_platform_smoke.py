@@ -5,13 +5,18 @@ from pathlib import Path
 
 import pandas as pd
 
-from repositories.local_store import build_master_store
+from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer
+from unittest.mock import patch
 from custom_bt.factor_backtest import backtest_accepted_factors
 from custom_bt.factor_generation import prepare_factor_runtime
-from custom_bt.pools import create_pool
 
 
 class PlatformSmokeTests(unittest.TestCase):
+    def setUp(self):
+        writer = patch("repositories.company_source.write_pool_panel", side_effect=fake_panel_writer)
+        writer.start()
+        self.addCleanup(writer.stop)
+
     def test_source_to_pool_runtime_and_accepted_backtest(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -34,21 +39,21 @@ class PlatformSmokeTests(unittest.TestCase):
                             "if_down": 0,
                         }
                     )
-            csv_path = root / "daily.csv"
-            pd.DataFrame(rows).to_csv(csv_path, index=False)
-            master = root / "master"
-            build_master_store(csv_path, master, fields=[])
-            pool = create_pool(master, root / "pools", "liquid_2", "2024-01-01", "2024-01-08", top_n=2, min_coverage=1.0)
+            fixture_path = root / "daily.parquet"
+            pd.DataFrame(rows).to_parquet(fixture_path, index=False)
+            snapshots = root / "snapshots"
+            write_company_fixture(fixture_path, snapshots, fields=[])
+            pool = fixture_pool(snapshots, root / "pools", "liquid_2", "2024-01-01", "2024-01-08", top_n=2, min_coverage=1.0)
             runtime = prepare_factor_runtime(
-                master,
-                root / "pools",
-                pool["pool_id"],
-                root / "runtime",
-                ["close", "volume", "amount"],
-                {
+                pools_root=root / "pools",
+                pool_id=pool["pool_id"],
+                runtime_root=root / "runtime",
+                fields=["close", "volume", "amount"],
+                splits={
                     "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-06"},
                     "valid": {"cache_start": "2024-01-02", "cache_end": "2024-01-08"},
                 },
+                snapshot_root=snapshots,
                 max_backtrack_days=1,
                 target_horizon=1,
                 max_future_days=1,
@@ -57,18 +62,17 @@ class PlatformSmokeTests(unittest.TestCase):
 
             factor_run = root / "factor_runs" / "run_smoke"
             factor_run.mkdir(parents=True)
-            run_manifest = {"pool_id": pool["pool_id"], "source_signature": pool["source_signature"]}
+            run_manifest = {"pool_id": pool["pool_id"], "data_source": "clickhouse", "snapshot_id": pool["snapshot_id"], "source_signature": pool["source_signature"]}
             (factor_run / "factor_run.json").write_text(json.dumps(run_manifest), encoding="utf-8")
             factor = {
                 "expression": "$close",
                 "accepted": True,
                 "pool_id": pool["pool_id"],
-                "source_signature": pool["source_signature"],
+                "data_source": "clickhouse", "snapshot_id": pool["snapshot_id"], "source_signature": pool["source_signature"],
             }
             (factor_run / "accepted_factors.jsonl").write_text(json.dumps(factor) + "\n", encoding="utf-8")
 
             result = backtest_accepted_factors(
-                master,
                 root / "pools",
                 factor_run,
                 root / "outputs",
@@ -83,6 +87,7 @@ class PlatformSmokeTests(unittest.TestCase):
                     "min_cost": 1.0,
                     "max_weight_per_stock": 1.0,
                 },
+                snapshot_root=snapshots,
             )
 
             self.assertEqual(result["pool_id"], pool["pool_id"])

@@ -14,8 +14,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from repositories import company_source
-from repositories.local_store import load_meta, normalize_code
-from repositories.runtime_store import export_pool_panel
+from repositories.local_store import normalize_code
+from repositories import snapshot_store
+from repositories.job_store import atomic_write_json
+from repositories.panel_store import resolve_panel_snapshot
+from custom_bt.engine import BacktestConfig
 from adapters.operator_registry import (
     canonical_name,
     generation_operator_names,
@@ -140,7 +143,6 @@ def fundamental_period_mode(fields: Iterable[str]) -> str:
 
 
 def prepare_factor_runtime(
-    master_store: str | Path,
     pools_root: str | Path,
     pool_id: str,
     runtime_root: str | Path,
@@ -152,6 +154,9 @@ def prepare_factor_runtime(
     data_source: Optional[str] = None,
     pool_manifest: Optional[Mapping[str, object]] = None,
     pool_codes: Optional[Iterable[str]] = None,
+    snapshot_root: Optional[str | Path] = None,
+    snapshot_id: Optional[str] = None,
+    as_of: Optional[str] = None,
 ) -> dict:
     """Create pool-specific processed panel and train/valid/test caches.
 
@@ -165,22 +170,15 @@ def prepare_factor_runtime(
         raise ValueError("factor runtime fields must not be empty")
     period_mode = fundamental_period_mode(selected_fields)
     # close 只用于构造未来收益 target；用户没选它时不进入 PPO 特征空间。
-    panel_fields = list(dict.fromkeys([*selected_fields, "close"]))
+    panel_fields = list(dict.fromkeys([*selected_fields, "close", "open", "Ifsuspend", "if_up", "if_down"]))
     resolved_manifest = (
         dict(pool_manifest)
         if pool_manifest is not None
         else load_pool_manifest(pools_root, pool_id)
     )
     source = company_source.resolve_data_source(data_source, resolved_manifest)
-    if source != "clickhouse" and any(
-        field.startswith(company_source.DERIVATIVE_PREFIX) for field in selected_fields
-    ):
-        raise ValueError("derivative fields require clickhouse data source")
-    if source == "clickhouse":
-        meta = company_source.meta()
-    else:
-        meta = load_meta(master_store)
-    if resolved_manifest.get("source_signature") != meta.get("source_signature"):
+    meta = {"source_signature": company_source.source_signature()}
+    if resolved_manifest.get("source_signature") != meta["source_signature"]:
         raise ValueError("pool source signature does not match data source")
     split_payload = {
         name: {"cache_start": str(value["cache_start"]), "cache_end": str(value["cache_end"])}
@@ -195,10 +193,6 @@ def prepare_factor_runtime(
         "target_horizon": target_horizon,
         "max_future_days": max_future_days,
     }
-    runtime_id = hashlib.sha256(json.dumps(runtime_key, sort_keys=True).encode("utf-8")).hexdigest()[:10]
-    runtime_dir = Path(runtime_root).expanduser().resolve() / pool_id / runtime_id
-    processed_dir = runtime_dir / "processed"
-    processed_dir.mkdir(parents=True, exist_ok=True)
     if pool_codes is not None:
         resolved_codes = [
             normalize_code(str(code).strip())
@@ -213,70 +207,74 @@ def prepare_factor_runtime(
     all_ends = [pd.Timestamp(value["cache_end"]) for value in splits.values()]
     panel_start = str(min(all_starts).date())
     panel_end = str(max(all_ends).date())
-    if source == "clickhouse":
-        panel_result = company_source.write_pool_panel(
-            resolved_codes,
-            panel_fields,
-            processed_dir / "panel.parquet",
-            panel_start,
-            panel_end,
-        )
-    else:
-        panel_result = export_pool_panel(
-            master_store,
-            resolved_codes,
-            panel_fields,
-            processed_dir / "panel.parquet",
-            start_date=panel_start,
-            end_date=panel_end,
-        )
+    panel_result = resolve_panel_snapshot(source, resolved_codes, BacktestConfig(panel_start, panel_end),
+                                         pool_id=pool_id, fields=panel_fields,
+                                         snapshot_root=snapshot_root, snapshot_id=snapshot_id, as_of=as_of)
+    snapshot_id = panel_result["snapshot_id"]
+    # Verify bytes even when a completed runtime exists; a pinned corrupt snapshot is an error.
+    snapshot_store._verify(snapshot_id, snapshot_root)
+    panel_result = {**panel_result, "panel_path": str(snapshot_store.snapshot_path(snapshot_id, snapshot_root=snapshot_root))}
+    runtime_key["snapshot_id"] = snapshot_id
+    runtime_key["preprocess_version"] = hashlib.sha256((_single_factor_root() / "single_factor" / "preprocess.py").read_bytes()).hexdigest()
+    runtime_id = hashlib.sha256(json.dumps(runtime_key, sort_keys=True).encode("utf-8")).hexdigest()[:20]
+    runtime_dir = Path(runtime_root).expanduser().resolve() / pool_id / runtime_id
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    processed_dir = snapshot_store.snapshot_path(snapshot_id, snapshot_root=snapshot_root).parent
 
-    _single_factor_root()
-    from single_factor.preprocess import materialize_memmap
+    with snapshot_store._request_lock(runtime_dir.parent, runtime_id):
+        existing = runtime_dir / "runtime_manifest.json"
+        if existing.exists():
+            cached = json.loads(existing.read_text(encoding="utf-8"))
+            for split in cached["splits"].values():
+                directory = Path(split["cache_dir"])
+                required_files = ["dates.npy", "codes.json", "manifest.json", "feature_index.json"]
+                required_files += [field + ".npy" for field in cached["panel_fields"]]
+                if any(not (directory / name).is_file() for name in required_files):
+                    raise ValueError("Runtime cache is incomplete; remove its derived cache before rebuilding")
+            return cached
+        _single_factor_root()
+        from single_factor.preprocess import materialize_memmap
 
-    split_results: Dict[str, dict] = {}
-    for name, split in splits.items():
-        cache_dir = runtime_dir / name
-        manifest = materialize_memmap(
-            processed_dir=processed_dir,
-            output_dir=cache_dir,
-            codes=resolved_codes,
-            fields=panel_fields,
-            start=split["cache_start"],
-            end=split["cache_end"],
-        )
-        split_results[name] = {
-            "cache_dir": str(cache_dir),
-            "cache_start": str(split["cache_start"]),
-            "cache_end": str(split["cache_end"]),
-            "manifest": manifest,
+        split_results: Dict[str, dict] = {}
+        for name, split in splits.items():
+            cache_dir = runtime_dir / name
+            manifest = materialize_memmap(
+                processed_dir=processed_dir,
+                output_dir=cache_dir,
+                codes=resolved_codes,
+                fields=panel_fields,
+                start=split["cache_start"],
+                end=split["cache_end"],
+            )
+            split_results[name] = {
+                "cache_dir": str(cache_dir),
+                "cache_start": str(split["cache_start"]),
+                "cache_end": str(split["cache_end"]),
+                "manifest": manifest,
+            }
+        result = {
+            "runtime_id": runtime_id,
+            "snapshot_id": snapshot_id,
+            "runtime_dir": str(runtime_dir),
+            "processed_dir": str(processed_dir),
+            "pool_id": pool_id,
+            "data_source": source,
+            "source_signature": meta.get("source_signature"),
+            "fields": selected_fields,
+            "panel_fields": panel_fields,
+            "fundamental_period_mode": period_mode,
+            "pool_codes": resolved_codes,
+            "max_backtrack_days": max_backtrack_days,
+            "target_horizon": target_horizon,
+            "max_future_days": max_future_days,
+            "panel": panel_result,
+            "splits": split_results,
         }
-    result = {
-        "runtime_id": runtime_id,
-        "runtime_dir": str(runtime_dir),
-        "processed_dir": str(processed_dir),
-        "pool_id": pool_id,
-        "data_source": source,
-        "source_signature": meta.get("source_signature"),
-        "fields": selected_fields,
-        "panel_fields": panel_fields,
-        "fundamental_period_mode": period_mode,
-        "pool_codes": resolved_codes,
-        "max_backtrack_days": max_backtrack_days,
-        "target_horizon": target_horizon,
-        "max_future_days": max_future_days,
-        "panel": panel_result,
-        "splits": split_results,
-    }
-    (runtime_dir / "runtime_manifest.json").write_text(
-        json.dumps(result, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-    return result
+        atomic_write_json(runtime_dir / "runtime_manifest.json", result)
+        return result
 
 
 def run_factor_generation(
-    master_store: str | Path,
     pools_root: str | Path,
     pool_id: str,
     runtime_root: str | Path,
@@ -293,6 +291,9 @@ def run_factor_generation(
     progress_callback: Optional[Callable[[Dict[str, object]], None]] = None,
     pool_manifest: Optional[Mapping[str, object]] = None,
     pool_codes: Optional[Iterable[str]] = None,
+    snapshot_root: Optional[str | Path] = None,
+    snapshot_id: Optional[str] = None,
+    as_of: Optional[str] = None,
 ) -> dict:
     """Prepare a pool runtime and run the existing PPO factor generator."""
     started_at = datetime.now()
@@ -328,7 +329,6 @@ def run_factor_generation(
 
     report("preparing_runtime", fields=len(selected_fields))
     runtime = prepare_factor_runtime(
-        master_store=master_store,
         pools_root=pools_root,
         pool_id=pool_id,
         runtime_root=runtime_root,
@@ -340,6 +340,7 @@ def run_factor_generation(
         data_source=data_source,
         pool_manifest=pool_manifest,
         pool_codes=pool_codes,
+        snapshot_root=snapshot_root, snapshot_id=snapshot_id, as_of=as_of,
     )
     _single_factor_root()
     from single_factor.config import QualityConfig
@@ -422,13 +423,14 @@ def run_factor_generation(
         "output_dir": factor_run_dir,
         "target_count": target_count,
         "max_attempts": max_attempts,
-        "dataset_signature": runtime["splits"]["train"]["manifest"]["signature"],
+        "dataset_signature": hashlib.sha256((runtime["snapshot_id"] + runtime["splits"]["train"]["manifest"]["signature"]).encode()).hexdigest(),
         "total_timesteps_per_rollout": rollout_timesteps,
         "seed": int(config.get("seed", 0)),
         "device": device,
         "storage_metadata": {
             "pool_id": pool_id,
             "source_signature": runtime["source_signature"],
+            "snapshot_id": runtime["snapshot_id"],
             "runtime_id": runtime_id,
             "data_source": runtime.get("data_source"),
             "operators": operator_names,
@@ -479,6 +481,7 @@ def run_factor_generation(
         "pool_id": pool_id,
         "data_source": runtime.get("data_source"),
         "source_signature": runtime["source_signature"],
+            "snapshot_id": runtime["snapshot_id"],
         "runtime_id": runtime_id,
         "fields": runtime.get("fields"),
         "panel_fields": runtime.get("panel_fields"),

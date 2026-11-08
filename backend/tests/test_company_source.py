@@ -45,9 +45,15 @@ def test_resolve_data_source_prefers_explicit_value_then_manifest():
     assert company_source.resolve_data_source("company") == "clickhouse"
     assert company_source.resolve_data_source("LIVE") == "clickhouse"
     assert company_source.resolve_data_source(None, {"data_source": "clickhouse"}) == "clickhouse"
-    assert company_source.resolve_data_source("local", {"data_source": "clickhouse"}) == "local"
-    assert company_source.resolve_data_source(None, {}) == "local"
-    assert company_source.resolve_data_source(None) == "local"
+    assert company_source.resolve_data_source(None) == "clickhouse"
+    with pytest.raises(ValueError, match="retired"):
+        company_source.resolve_data_source("local", {"data_source": "clickhouse"})
+    with pytest.raises(ValueError, match="Old local"):
+        company_source.resolve_data_source(None, {})
+    with pytest.raises(ValueError, match="Old local"):
+        company_source.resolve_data_source("clickhouse", {"data_source": "local"})
+    with pytest.raises(ValueError):
+        company_source.resolve_data_source("typo")
 
 
 def test_source_signature_and_panel_fields():

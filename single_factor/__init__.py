@@ -1,12 +1,5 @@
-"""Independent single-factor generation pipeline."""
-
-from .config import DataConfig, QualityConfig, RunConfig, UniverseConfig
+"""Snapshot-derived single-factor generation pipeline."""
+from .config import QualityConfig
 from .features import FeatureRegistry
 
-__all__ = [
-    "DataConfig",
-    "FeatureRegistry",
-    "QualityConfig",
-    "RunConfig",
-    "UniverseConfig",
-]
+__all__ = ["FeatureRegistry", "QualityConfig"]

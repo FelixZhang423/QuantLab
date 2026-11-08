@@ -1,4 +1,4 @@
-master_store: "../../../var/data_cache/master"
+data_source: clickhouse
 pools_root: "../../../var/data_cache/pools"
 name: liquid_500
 selection_start: "2021-06-18"

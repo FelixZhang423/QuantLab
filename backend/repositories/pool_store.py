@@ -8,65 +8,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
-import pyarrow.parquet as pq
 
 from repositories.local_store import normalize_code
 
 logger = logging.getLogger(__name__)
-
-
-def available_columns(path: Path) -> set[str]:
-    return set(pq.read_schema(path).names)
-
-
-def load_candidate(
-    path: Path,
-    selection_start: pd.Timestamp,
-    selection_end: pd.Timestamp,
-    exclude_suspended: bool,
-    category: Optional[str],
-    market_code: Optional[str],
-    min_listed_days: int,
-) -> tuple[pd.DataFrame, set[pd.Timestamp]]:
-    available = available_columns(path)
-    wanted = [
-        column
-        for column in [
-            "date",
-            "code",
-            "amount",
-            "volume",
-            "Ifsuspend",
-            "category",
-            "market_code",
-            "ListedDate",
-        ]
-        if column in available
-    ]
-    frame = pd.read_parquet(path, columns=wanted)
-    if frame.empty:
-        return frame, set()
-    frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
-    frame = frame[(frame["date"] >= selection_start) & (frame["date"] <= selection_end)]
-    selection_dates = set(frame["date"].dropna().tolist())
-    if frame.empty:
-        return frame, selection_dates
-    if category is not None and "category" in frame.columns:
-        frame = frame[frame["category"].astype("string").str.lower() == str(category).lower()]
-    if market_code is not None and "market_code" in frame.columns:
-        frame = frame[frame["market_code"].astype("string") == str(market_code)]
-    if exclude_suspended and "Ifsuspend" in frame.columns:
-        frame = frame[pd.to_numeric(frame["Ifsuspend"], errors="coerce").fillna(1).eq(0)]
-    if "volume" in frame.columns:
-        frame = frame[pd.to_numeric(frame["volume"], errors="coerce").fillna(0).gt(0)]
-    if "amount" in frame.columns:
-        frame = frame[pd.to_numeric(frame["amount"], errors="coerce").fillna(0).gt(0)]
-    if min_listed_days > 0:
-        if "ListedDate" not in frame.columns:
-            return frame.iloc[0:0], selection_dates
-        listed = pd.to_datetime(frame["ListedDate"], errors="coerce")
-        frame = frame[(frame["date"] - listed).dt.days >= min_listed_days]
-    return frame, selection_dates
 
 
 def write_pool(

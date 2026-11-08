@@ -1,185 +1,30 @@
 # QuantLab 后端
 
-这是 QuantLab 的后端：独立股票因子生成与回测平台，直接读取原始日频面板 CSV，不依赖 Qlib。
+公司 ClickHouse 是行情、股票维度、财务、估值及衍生字段的唯一生产来源。生成、回测和组合读取不可变 Parquet 快照；本地训练缓存由快照派生，不再导入原始 CSV 或维护本地主缓存。
 
-核心流程：
-
-1. 把 CSV 更新到本地缓存，缓存按股票拆成 `..\var\data_cache\stock_daily\stocks\*.parquet`
-2. 查看当前可用字段和表达式算子
-3. 在网页或命令行输入 alpha 表达式
-4. 执行 TopK 日频回测
-5. 保存 `daily_report.csv`、`annual_metrics.csv`、`trades.csv`、`positions.csv`、`summary.png`
-
-## 1. 进入环境
+## 启动
 
 ```powershell
-cd backend          # 从仓库根目录进入
-conda activate alphagen
+python -m pip install -r requirements.txt
+python -m api
 ```
 
-安装依赖：
+首次取数需要公司网络与 ClickHouse 配置，参考 `configs/clickhouse.env.example`。凭据从环境变量或本地忽略文件加载，不写入 manifest。
 
-```powershell
-py -3 -m pip install -r requirements.txt
-```
-
-## 2. 第一次导入数据
-
-默认只读取核心行情字段，速度更稳：
-
-```powershell
-python -m cli prepare `
-  --csv "..\v_stock_daily_full.csv" `
-  --out "..\var\data_cache\stock_daily"
-```
-
-如果你的 CSV 里新增了自己的因子字段、行业字段、财务字段，并且也想放入缓存：
-
-```powershell
-python -m cli prepare `
-  --csv "..\v_stock_daily_full.csv" `
-  --out "..\var\data_cache\stock_daily" `
-  --all-columns
-```
-
-## 3. 后续补充新数据
-
-以后你拿到新的日频 CSV，继续写入同一个缓存目录即可：
-
-```powershell
-python -m cli update `
-  --csv "..\new_daily_data.csv" `
-  --out "..\var\data_cache\stock_daily" `
-  --all-columns
-```
-
-更新逻辑：
-
-- `code` 统一成 6 位字符串
-- `timestamps` 转成 `date`
-- `vol` 改名为 `volume`
-- 自动计算 `vwap = amount / volume`
-- 按股票拆分保存
-- 同一股票同一天重复时，保留后导入的数据
-- 字段目录写入 `..\var\data_cache\stock_daily\meta.json`
-
-## 4. 统一因子平台工作流
-
-主数据源使用：
-
-```text
-F:\\my_code_file\\因子构建\\数据\\daily_with_maindata_v2.csv
-```
-
-这个文件约 20GB，平台会分块读取并构建主缓存，不会把整个文件加载进内存。主缓存建立后，因子生成和回测只读取所选股票池。
-
-### 4.1 构建主缓存
-
-默认字段配置在 `configs/platform.yaml`，先使用当前技术指标字段；需要更多财务字段时再追加到配置中：
-
-```powershell
-python -m cli prepare-master --config configs/platform.yaml
-```
-
-### 4.2 创建股票池
-
-例如创建流动性前 500 股票池：
+## 工作流
 
 ```powershell
 python -m cli create-pool --config configs/pools/liquid_500.yaml
+python -m cli generate-factors --pool <pool_id> --config configs/factor_generation.yaml
+python -m cli backtest-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
+python -m cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
 ```
 
-每个股票池会保存代码清单、筛选窗口、上市年限、覆盖率、数据签名和成交额统计，生成和回测通过同一个 `pool_id` 绑定。
+默认运行期根是仓库 `var/`，可用 `QL_VAR_ROOT` 覆盖。不可变快照在 `data_cache/snapshots/<snapshot_id>/`，包含 `panel.parquet`、`manifest.json`、`checksums.json`。相同请求复用快照，刷新建立新 ID；已发布面板不覆盖。任务和结果清单记录快照引用，派生 memmap 按快照版本隔离。
 
-### 4.3 在股票池上生成 PPO 因子
+财务按 InfoPublDate、衍生按披露日期 as-of 合并；估值按交易日合并。缺字段、旧 local 池、不兼容的日期范围须报出明确错误，不能回退本地文件。旧结果继续可查看，重新运行前需在 ClickHouse 上重新建池、生成并绑定快照。旧磁盘文件不会自动删除。
 
-```powershell
-python -m cli generate-factors `
-  --pool "<pool_id>" `
-  --config configs/factor_generation.yaml
-```
-
-生成结果位于 `var/factor_runs/<run_id>/`，包括：
-
-```text
-factor_run.json
-accepted_factors.jsonl
-rejected_candidates.jsonl
-checkpoints/
-```
-
-### 4.4 只回测合格因子
-
-```powershell
-python -m cli backtest-factors `
-  --pool "<pool_id>" `
-  --factor-run "<run_id>" `
-  --config configs/default.yaml
-```
-
-回测结果位于 `var/outputs/saved_backtests/factor/<pool_id>/<run_id>/`，包含每个因子的收益、Sharpe、最大回撤、换手率和交易成本汇总。Web/平台任务提交时会再套一层批次目录 `<backtest_id>/`（即 job_id），重复回测不覆盖历史结果。
-
-### 4.5 网页查看
-
-前端是独立的 React 应用，启动方式见 [../frontend/README.md](../frontend/README.md)：股票池、因子生成、因子回测与结果中心都在那里查看。
-
-旧的 `var/data_cache/stock_daily` 和 `sample_store` 只在新主缓存与一次端到端流程验证通过后再删除。
-
-## 5. 查看字段和算子
-
-查看当前缓存里有哪些字段可以写进表达式：
-
-```powershell
-python -m cli fields --data "..\var\data_cache\stock_daily"
-```
-
-查看当前有哪些算子：
-
-```powershell
-python -m cli operators
-```
-
-当前内置算子已经扩展到 Brain 风格的主要可实现部分：
-
-- `arithmetic`：`abs`、`add`、`densify`、`divide`、`inverse`、`log`、`max`、`min`、`multiply`、`power`、`reverse`、`sign`、`signed_power`、`sqrt`、`subtract`
-- `cross_section`：`normalize`、`quantile`、`rank`、`scale`、`winsorize`、`zscore`
-- `group`：`group_backfill`、`group_mean`、`group_neutralize`、`group_rank`、`group_scale`、`group_zscore`
-- `logic`：`equal`、`greater`、`greater_equal`、`if_else`、`is_nan`、`less`、`less_equal`、`not_equal`、`where`，并兼容 `and(...) / or(...) / not(...)`
-- `time_series`：`days_from_last_change`、`hump`、`kth_element`、`last_diff_value`、`ts_arg_max`、`ts_arg_min`、`ts_av_diff`、`ts_backfill`、`ts_corr`、`ts_count_nans`、`ts_covariance`、`ts_decay_linear`、`ts_delay`、`ts_delta`、`ts_mean`、`ts_product`、`ts_quantile`、`ts_rank`、`ts_regression`、`ts_scale`、`ts_std_dev`、`ts_step`、`ts_sum`、`ts_zscore`
-- `transformational`：`bucket`、`trade_when`
-- `vector`：`vec_avg`、`vec_sum`
-
-说明：本地 Python 表达式里 `and/or/not` 是保留字，系统会自动把函数调用形式的 `and(...) / or(...) / not(...)` 转成内部别名 `and_ / or_ / not_`。
-
-## 6. 命令行回测
-
-编辑 `configs\default.yaml` 里的表达式和参数，然后运行：
-
-```powershell
-python -m cli backtest `
-  --data "..\var\data_cache\stock_daily" `
-  --alpha-config "configs\default.yaml" `
-  --run-name "demo_top50"
-```
-
-输出目录：
-
-```text
-outputs\demo_top50\
-  daily_report.csv
-  annual_metrics.csv
-  trades.csv
-  positions.csv
-  summary.json
-  summary.png
-  manifest.json
-```
-
-查看已保存结果：
-
-```powershell
-python -m cli runs --outputs "outputs"
-```
+详见 [仓库说明](../README.md) 与 [Web API](docs/web_api.md)。
 
 ## 7. 表达式例子
 
@@ -246,12 +91,6 @@ register_operator("neg", _neg, category="custom", description="Negative value.")
 - 成本 = 买入费率 / 卖出费率 + 滑点 + 最低手续费
 
 这套逻辑目前不做空、不融资、不用 Qlib。
-
-## Import note
-
-The configured source file is tab-separated despite its `.csv` suffix. The master-cache importer auto-detects tab, comma, semicolon, and pipe separators; `configs/platform.yaml` uses `delimiter: auto`.
-
-For a large source, build the master cache once. Factor generation and factor backtesting then read only the selected pool from that cache; the full source is not loaded into memory for each factor.
 
 ## MySQL 集中存储（股票池 / 因子 / 回测）
 
@@ -337,16 +176,12 @@ python -m api
 - `POST /api/factor-backtests` 提交批量因子回测（可传 `factor_ids` 只回测勾选因子；202 + job_id）
 - `GET /api/factor-backtests`、`GET /api/factor-backtests/{backtest_id}` 批次列表与汇总/失败明细（每行带 `run_key`）
 - `GET /api/factor-backtests/{backtest_id}/files/{file_name}` 下载批次汇总/失败 CSV
-- `POST /api/manual-backtests` 按股票池 + Alpha 表达式提交手动回测（202 + job_id；公司库池实时读面板，旧本地池回退 `var/data_cache/master`）
+- `POST /api/manual-backtests` 按股票池 + Alpha 表达式提交手动回测（202 + job_id；从不可变快照读取面板，拒绝旧 local 池）
 - `GET /api/results`、`GET /api/results/{run_name}` 已保存回测结果（净值/年度指标/文件清单；手动回测 `run_key = manual/<job_id>/<run_name>`）
 - `GET /api/results/detail?run_key=...`、`GET /api/results/file?run_key=...` 按相对路径打开/下载任意层级结果（嵌套因子结果用这个）
 - `GET /api/results/{run_name}/files/{file_name}` 下载旧扁平结果文件（按 manifest 白名单）
 
-边界：股票池候选、建池选样、因子生成面板、因子回测面板与手动回测面板**全部直接读公司 ClickHouse**，不再依赖本地
-`var/data_cache/master`。公司库有、本地缓存没有的股票同样可以建池和回测。公司库签名固定为
-`clickhouse:dws.ll_stock_daily_sharing`；旧本地缓存池 manifest 没有 `data_source` 时仍按本地数据源读取，
-仅用于兼容历史池/因子运行。行业只取 `dim.stock_main_info_fd.FirstIndustryName` 单级行业（申万一级；
-`Industry` 列是细分行业编码，不能直接当单级行业用）；市场/板块由代码前缀推导。
+边界：股票池候选与建池选样直接读 ClickHouse，研究面板通过不可变快照读取。逻辑来源签名标识公司库，快照 ID 和校验和固定实际数据版本。旧本地缓存池只可查看历史结果，不能继续执行。行业取 `dim.stock_main_info_fd.FirstIndustryName`，市场/板块由代码前缀推导。
 
 前端开发时由 vite 把 `/api` 代理到该地址（见 `frontend/vite.config.ts`，可用 `QL_API_TARGET` 覆盖）。
 建池、批量因子回测与手动回测的 POST 已接入；结果详情页只读真实结果（`/api/results` + `/api/results/detail`，

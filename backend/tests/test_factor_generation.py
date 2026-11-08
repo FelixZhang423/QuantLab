@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from repositories.local_store import build_master_store
+from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer
+from unittest.mock import patch
 from custom_bt.factor_generation import (
     fundamental_period_mode,
     prepare_factor_runtime,
@@ -12,11 +13,15 @@ from custom_bt.factor_generation import (
     resolve_generation_operators,
     run_factor_generation,
 )
-from custom_bt.pools import create_pool
 from quantops.registry import generation_operator_names
 
 
 class FactorGenerationTests(unittest.TestCase):
+    def setUp(self):
+        writer = patch("repositories.company_source.write_pool_panel", side_effect=fake_panel_writer)
+        writer.start()
+        self.addCleanup(writer.stop)
+
     def test_fundamental_period_mode_rejects_mixed_basis(self):
         self.assertEqual(
             fundamental_period_mode(["close", "fund_OperatingReenue"]),
@@ -86,12 +91,12 @@ class FactorGenerationTests(unittest.TestCase):
                             "Ifsuspend": 0,
                         }
                     )
-            csv_path = root / "daily.csv"
-            pd.DataFrame(rows).to_csv(csv_path, index=False)
-            master_dir = root / "master"
-            build_master_store(csv_path, master_dir, fields=[])
-            pool = create_pool(
-                master_dir,
+            fixture_path = root / "daily.parquet"
+            pd.DataFrame(rows).to_parquet(fixture_path, index=False)
+            snapshots_dir = root / "snapshots"
+            write_company_fixture(fixture_path, snapshots_dir, fields=[])
+            pool = fixture_pool(
+                snapshots_dir,
                 root / "pools",
                 "all",
                 "2024-01-01",
@@ -101,7 +106,7 @@ class FactorGenerationTests(unittest.TestCase):
             )
 
             result = prepare_factor_runtime(
-                master_store=master_dir,
+                snapshot_root=snapshots_dir,
                 pools_root=root / "pools",
                 pool_id=pool["pool_id"],
                 runtime_root=root / "factor_runtime",
@@ -139,12 +144,12 @@ class FactorGenerationTests(unittest.TestCase):
                             "Ifsuspend": 0,
                         }
                     )
-            csv_path = root / "daily.csv"
-            pd.DataFrame(rows).to_csv(csv_path, index=False)
-            master_dir = root / "master"
-            build_master_store(csv_path, master_dir, fields=[])
-            pool = create_pool(
-                master_dir,
+            fixture_path = root / "daily.parquet"
+            pd.DataFrame(rows).to_parquet(fixture_path, index=False)
+            snapshots_dir = root / "snapshots"
+            write_company_fixture(fixture_path, snapshots_dir, fields=[])
+            pool = fixture_pool(
+                snapshots_dir,
                 root / "pools",
                 "all",
                 "2024-01-01",
@@ -157,7 +162,7 @@ class FactorGenerationTests(unittest.TestCase):
             ).read_text(encoding="utf-8").split()
 
             result = prepare_factor_runtime(
-                master_store=master_dir,
+                snapshot_root=snapshots_dir,
                 pools_root=root / "missing_pools",
                 pool_id=pool["pool_id"],
                 runtime_root=root / "factor_runtime",
@@ -193,12 +198,12 @@ class FactorGenerationTests(unittest.TestCase):
                             "Ifsuspend": 0,
                         }
                     )
-            csv_path = root / "daily.csv"
-            pd.DataFrame(rows).to_csv(csv_path, index=False)
-            master_dir = root / "master"
-            build_master_store(csv_path, master_dir, fields=[])
-            pool = create_pool(
-                master_dir,
+            fixture_path = root / "daily.parquet"
+            pd.DataFrame(rows).to_parquet(fixture_path, index=False)
+            snapshots_dir = root / "snapshots"
+            write_company_fixture(fixture_path, snapshots_dir, fields=[])
+            pool = fixture_pool(
+                snapshots_dir,
                 root / "pools",
                 "all",
                 "2024-01-01",
@@ -220,7 +225,7 @@ class FactorGenerationTests(unittest.TestCase):
 
             progress = []
             result = run_factor_generation(
-                master_store=master_dir,
+                snapshot_root=snapshots_dir,
                 pools_root=root / "pools",
                 pool_id=pool["pool_id"],
                 runtime_root=root / "factor_runtime",
@@ -274,12 +279,12 @@ class FactorGenerationTests(unittest.TestCase):
                             "Ifsuspend": 0,
                         }
                     )
-            csv_path = root / "daily.csv"
-            pd.DataFrame(rows).to_csv(csv_path, index=False)
-            master_dir = root / "master"
-            build_master_store(csv_path, master_dir, fields=[])
-            pool = create_pool(
-                master_dir,
+            fixture_path = root / "daily.parquet"
+            pd.DataFrame(rows).to_parquet(fixture_path, index=False)
+            snapshots_dir = root / "snapshots"
+            write_company_fixture(fixture_path, snapshots_dir, fields=[])
+            pool = fixture_pool(
+                snapshots_dir,
                 root / "pools",
                 "all",
                 "2024-01-01",
@@ -295,7 +300,7 @@ class FactorGenerationTests(unittest.TestCase):
                 attempts_exhausted = False
 
             result = run_factor_generation(
-                master_store=master_dir,
+                snapshot_root=snapshots_dir,
                 pools_root=root / "pools",
                 pool_id=pool["pool_id"],
                 runtime_root=root / "factor_runtime",
@@ -335,12 +340,12 @@ class FactorGenerationTests(unittest.TestCase):
                             "Ifsuspend": 0,
                         }
                     )
-            csv_path = root / "daily.csv"
-            pd.DataFrame(rows).to_csv(csv_path, index=False)
-            master_dir = root / "master"
-            build_master_store(csv_path, master_dir, fields=[])
-            pool = create_pool(
-                master_dir,
+            fixture_path = root / "daily.parquet"
+            pd.DataFrame(rows).to_parquet(fixture_path, index=False)
+            snapshots_dir = root / "snapshots"
+            write_company_fixture(fixture_path, snapshots_dir, fields=[])
+            pool = fixture_pool(
+                snapshots_dir,
                 root / "pools",
                 "all",
                 "2024-01-01",
@@ -359,7 +364,7 @@ class FactorGenerationTests(unittest.TestCase):
                 return FakeRunnerResult()
 
             common = {
-                "master_store": master_dir,
+                "snapshot_root": snapshots_dir,
                 "pools_root": root / "pools",
                 "pool_id": pool["pool_id"],
                 "runtime_root": root / "factor_runtime",

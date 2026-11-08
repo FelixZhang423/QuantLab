@@ -55,7 +55,7 @@ DEFAULT_AGENT_CONFIG: dict[str, Any] = {
         "require_tool_call_limit": True,
     },
     "paths": {
-        "master_store": "../var/data_cache/master",
+        "snapshot_root": "../var/data_cache/snapshots",
         "pools_root": "../var/data_cache/pools",
         "runtime_root": "../var/data_cache/factor_runtime",
         "factor_runs_root": "../var/factor_runs",

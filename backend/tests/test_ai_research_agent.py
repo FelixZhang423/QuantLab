@@ -4,6 +4,17 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def company_metadata(monkeypatch):
+    from repositories import company_source
+    monkeypatch.setattr(company_source, "meta", lambda: {
+        "n_stocks": 2, "fields": ["close", "volume"],
+        "date_min": "2024-01-01", "date_max": "2024-01-31",
+        "source_signature": "sig_a", "data_source": "clickhouse",
+    })
+    monkeypatch.setattr(company_source, "panel_field_names", lambda: {"close", "volume"})
+
+
 def test_ai_agent_config_loads_defaults_and_merges_override(tmp_path):
     from custom_bt.ai_research.config import load_agent_config
 
@@ -143,8 +154,8 @@ def test_context_snapshot_reads_local_platform_state_and_identity_lock(tmp_path)
 
     snapshot = build_context_snapshot(master, pools_root, factor_runs_root, saved_root)
 
-    assert snapshot["master_store"]["n_stocks"] == 2
-    assert snapshot["master_store"]["fields"] == ["close", "volume"]
+    assert snapshot["data_source"]["n_stocks"] == 2
+    assert {"close", "volume", "fund_ROE", "val_PE"} <= set(snapshot["data_source"]["fields"])
     assert snapshot["pools"][0]["pool_id"] == "pool_a"
     assert snapshot["recent_factor_runs"][0]["run_id"] == "run_a"
     assert snapshot["saved_results"][0]["pool_id"] == "pool_a"
@@ -234,7 +245,7 @@ def test_expression_prompt_includes_whitelists_identity_and_json_contract():
     prompt = build_expression_proposal_prompt(
         spec,
         {
-            "master_store": {"fields": ["close", "volume"]},
+            "data_source": {"fields": ["close", "volume"]},
             "operators": ["rank", "ts_mean"],
             "identity_lock": {"pool_id": "pool_a", "source_signature": "sig_a"},
         },
@@ -304,7 +315,7 @@ def test_prompt_builders_do_not_emit_direct_trading_targets():
         identity_lock={"pool_id": "pool_a", "source_signature": "sig_a"},
     )
     context = {
-        "master_store": {"fields": ["close", "volume"]},
+        "data_source": {"fields": ["close", "volume"]},
         "pools": [{"pool_id": "pool_a"}],
         "operators": ["rank", "ts_mean"],
         "identity_lock": {"pool_id": "pool_a", "source_signature": "sig_a"},
@@ -600,7 +611,7 @@ def test_ai_research_runner_creates_model_backed_research_spec_session(tmp_path)
         "llm": {"provider": "deepseek", "model": "deepseek-v4-flash"},
         "research_defaults": {"pool_id": "pool_a", "target_horizon": 20},
         "paths": {
-            "master_store": "data_cache/master",
+            "snapshot_root": "data_cache/snapshots",
             "pools_root": "data_cache/pools",
             "factor_runs_root": "factor_runs",
             "saved_results_root": "outputs/saved_backtests",
@@ -628,7 +639,7 @@ def test_validate_candidate_expression_uses_local_fields_and_operators():
     from custom_bt.ai_research.tools import validate_candidate_expression
 
     context = {
-        "master_store": {"fields": ["close", "volume"]},
+        "data_source": {"fields": ["close", "volume"]},
         "operators": ["rank", "ts_mean"],
         "identity_lock": {"pool_id": "pool_a", "source_signature": "sig_a"},
     }
@@ -702,7 +713,7 @@ def test_ai_tool_executor_materializes_candidates_and_creates_backtest_job(tmp_p
         },
     ]
     context = {
-        "master_store": {"fields": ["close", "volume"], "source_signature": "sig_a"},
+        "data_source": {"fields": ["close", "volume"], "source_signature": "sig_a"},
         "identity_lock": {"pool_id": "pool_a", "source_signature": "sig_a"},
     }
     config = {
@@ -718,7 +729,7 @@ def test_ai_tool_executor_materializes_candidates_and_creates_backtest_job(tmp_p
             "test_end": "2024-12-31",
         },
         "paths": {
-            "master_store": "data_cache/master",
+            "snapshot_root": "data_cache/snapshots",
             "pools_root": "data_cache/pools",
             "factor_runs_root": "factor_runs",
             "saved_results_root": "outputs/saved_backtests",
@@ -785,14 +796,14 @@ def test_ai_tool_executor_can_run_created_job_when_enabled(tmp_path, monkeypatch
     store = ExperimentStore(tmp_path / "outputs" / "ai_research")
     session_dir = store.create_session("unit_run_job_session", {"objective": "test"})
     context = {
-        "master_store": {"fields": ["close", "volume"], "source_signature": "sig_a"},
+        "data_source": {"fields": ["close", "volume"], "source_signature": "sig_a"},
         "identity_lock": {"pool_id": "pool_a", "source_signature": "sig_a"},
     }
     config = {
         "agent": {"max_tool_calls_per_round": 8},
         "research_defaults": {"pool_id": "pool_a", "target_horizon": 20},
         "paths": {
-            "master_store": "data_cache/master",
+            "snapshot_root": "data_cache/snapshots",
             "pools_root": "data_cache/pools",
             "factor_runs_root": "factor_runs",
             "saved_results_root": "outputs/saved_backtests",
@@ -971,7 +982,7 @@ def test_ai_research_runner_runs_candidate_tool_plan_session(tmp_path):
         "llm": {"provider": "deepseek", "model": "deepseek-v4-flash"},
         "research_defaults": {"pool_id": "pool_a", "target_horizon": 20},
         "paths": {
-            "master_store": "data_cache/master",
+            "snapshot_root": "data_cache/snapshots",
             "pools_root": "data_cache/pools",
             "factor_runs_root": "factor_runs",
             "saved_results_root": "outputs/saved_backtests",
@@ -1091,7 +1102,7 @@ def test_ai_research_runner_executes_tool_plan_when_enabled(tmp_path, monkeypatc
         "llm": {"provider": "deepseek", "model": "deepseek-v4-flash"},
         "research_defaults": {"pool_id": "pool_a", "target_horizon": 20},
         "paths": {
-            "master_store": "data_cache/master",
+            "snapshot_root": "data_cache/snapshots",
             "pools_root": "data_cache/pools",
             "factor_runs_root": "factor_runs",
             "saved_results_root": "outputs/saved_backtests",

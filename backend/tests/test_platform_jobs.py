@@ -6,55 +6,12 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from repositories.local_store import build_master_store
 from repositories.job_store import update_job_status
 from workers.job_dispatcher import create_platform_job, run_platform_job
 
 
 class PlatformJobTests(unittest.TestCase):
-    def test_duplicate_master_jobs_are_rejected_while_one_is_running(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            first = create_platform_job(root / "jobs", "prepare_master", {"store_dir": "one"})
-            update_job_status(first, "running", "importing")
 
-            with self.assertRaisesRegex(RuntimeError, "already running"):
-                create_platform_job(root / "jobs", "prepare_master", {"store_dir": "two"})
-
-    def test_master_job_persists_import_progress(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            source = root / "daily.csv"
-            pd.DataFrame(
-                {
-                    "code": ["1", "2"],
-                    "timestamps": ["2024-01-01", "2024-01-01"],
-                    "open": [10.0, 20.0],
-                    "close": [10.2, 20.2],
-                    "high": [10.3, 20.3],
-                    "low": [9.8, 19.8],
-                    "vol": [1000.0, 2000.0],
-                    "amount": [10000.0, 40000.0],
-                }
-            ).to_csv(source, index=False)
-            job_dir = create_platform_job(
-                root / "jobs",
-                "prepare_master",
-                {
-                    "csv_path": str(source),
-                    "store_dir": str(root / "master"),
-                    "fields": [],
-                    "chunksize": 2,
-                    "overwrite": True,
-                },
-            )
-
-            run_platform_job(job_dir)
-
-            status = json.loads((job_dir / "status.json").read_text(encoding="utf-8"))
-            self.assertEqual(status["status"], "finished")
-            self.assertEqual(status["progress"]["rows_read"], 2)
-            self.assertEqual(status["progress"]["stocks_touched"], 2)
 
     def test_generate_factor_jobs_get_unique_default_run_ids(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -184,51 +141,6 @@ class PlatformJobTests(unittest.TestCase):
             self.assertEqual(snapshots[3]["progress"]["stage"], "finished")
             self.assertEqual(read_status()["status"], "finished")
 
-    def test_create_and_run_pool_job_updates_status_and_writes_manifest(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            rows = []
-            for date in pd.date_range("2024-01-01", periods=3, freq="D"):
-                for code, amount in [("000001", 1000.0), ("000002", 2000.0)]:
-                    price = 10.0 + int(code[-1]) + date.day * 0.1
-                    rows.append(
-                        {
-                            "code": code,
-                            "timestamps": date.strftime("%Y-%m-%d"),
-                            "open": price,
-                            "close": price + 0.2,
-                            "high": price + 0.3,
-                            "low": price - 0.1,
-                            "vol": 1000.0,
-                            "amount": amount,
-                            "Ifsuspend": 0,
-                        }
-                    )
-            source = root / "daily.csv"
-            pd.DataFrame(rows).to_csv(source, index=False)
-            build_master_store(source, root / "master", fields=[], chunksize=10, overwrite=True)
-
-            job_dir = create_platform_job(
-                root / "jobs",
-                "create_pool",
-                {
-                    "store_dir": str(root / "master"),
-                    "pools_root": str(root / "pools"),
-                    "name": "liquid_2",
-                    "selection_start": "2024-01-01",
-                    "selection_end": "2024-01-03",
-                    "top_n": 2,
-                    "min_coverage": 1.0,
-                    "exclude_suspended": True,
-                },
-            )
-
-            result = run_platform_job(job_dir)
-
-            status = json.loads((job_dir / "status.json").read_text(encoding="utf-8"))
-            self.assertEqual(status["status"], "finished")
-            self.assertEqual(result["n_stocks"], 2)
-            self.assertTrue((root / "pools" / result["pool_id"] / "manifest.json").exists())
 
     def test_create_pool_job_dispatches_to_company_source(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -238,7 +150,6 @@ class PlatformJobTests(unittest.TestCase):
                 "create_pool",
                 {
                     "data_source": "clickhouse",
-                    "store_dir": str(root / "missing-master"),  # 公司库分支应忽略
                     "pools_root": str(root / "pools"),
                     "name": "company_pool",
                     "selection_start": "2024-01-01",
@@ -250,11 +161,10 @@ class PlatformJobTests(unittest.TestCase):
             with patch(
                 "workers.job_dispatcher.create_pool_from_company",
                 return_value={"pool_id": "company_pool_abc"},
-            ) as company, patch("workers.job_dispatcher.create_pool") as local:
+            ) as company:
                 result = run_platform_job(job_dir)
 
             self.assertEqual(result["pool_id"], "company_pool_abc")
-            local.assert_not_called()
             company.assert_called_once()
             kwargs = company.call_args.kwargs
             self.assertEqual(kwargs["pools_root"], str(root / "pools"))
@@ -262,35 +172,12 @@ class PlatformJobTests(unittest.TestCase):
             self.assertNotIn("store_dir", kwargs)
             self.assertNotIn("data_source", kwargs)
 
-    def test_create_pool_job_without_source_still_uses_local_master(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            job_dir = create_platform_job(
-                root / "jobs",
-                "create_pool",
-                {
-                    "store_dir": str(root / "master"),
-                    "pools_root": str(root / "pools"),
-                    "name": "legacy_pool",
-                    "selection_start": "2024-01-01",
-                    "selection_end": "2024-01-03",
-                },
-            )
-
-            with patch(
-                "workers.job_dispatcher.create_pool", return_value={"pool_id": "legacy_abc"}
-            ) as local, patch("workers.job_dispatcher.create_pool_from_company") as company:
-                result = run_platform_job(job_dir)
-
-            self.assertEqual(result["pool_id"], "legacy_abc")
-            company.assert_not_called()
-            self.assertEqual(local.call_args.kwargs["store_dir"], str(root / "master"))
 
     def test_backtest_factors_platform_job_injects_batch_id_and_progress(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             payload = {
-                "master_store": "master",
+                "snapshot_root": "snapshots",
                 "pools_root": "pools",
                 "factor_run_dir": "factor_run",
                 "outputs_root": "outputs",
@@ -366,3 +253,23 @@ class PlatformJobTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_removed_master_operation_rejected(tmp_path):
+    import pytest
+    with pytest.raises(ValueError, match="unsupported"):
+        create_platform_job(tmp_path, "prepare_master", {})
+
+
+def test_pool_job_defaults_to_company_and_rejects_local(tmp_path):
+    import pytest
+    payload = {"pools_root": str(tmp_path / "pools"), "name": "pool",
+               "selection_start": "2024-01-01", "selection_end": "2024-01-03"}
+    job = create_platform_job(tmp_path / "jobs", "create_pool", payload)
+    with patch("workers.job_dispatcher.create_pool_from_company", return_value={"pool_id": "p"}) as company:
+        assert run_platform_job(job) == {"pool_id": "p"}
+    company.assert_called_once()
+    payload["data_source"] = "local"
+    job = create_platform_job(tmp_path / "jobs", "create_pool", payload)
+    with pytest.raises(ValueError):
+        run_platform_job(job)

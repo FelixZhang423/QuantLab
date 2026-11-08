@@ -1,3 +1,5 @@
+> 2026-11-08：数据上下文来自 ClickHouse 元数据；执行工具创建或复用不可变 Parquet 快照，再运行训练、回测和组合。旧本地池不可继续执行，须重新建池；历史研究 session 和结果仍可查看。
+
 # AI Research Agent 全流程说明
 
 本文档说明当前 `backend` 中 AI 研究 Agent 的实际运行流程。这里的“AI 研究”不是独立交易系统，而是一个位于本地量化平台之上的研究编排层：它把自然语言研究目标交给 DeepSeek 生成结构化研究计划和候选因子，再用本地字段、操作符、回测和组合模块做校验与执行。
@@ -38,7 +40,7 @@
 
 AI 研究链路依赖本地平台已经有可用的数据和股票池：
 
-- 主缓存：`var/data_cache/master/meta.json`
+- 数据来源：公司 ClickHouse；研究任务绑定不可变 Parquet 快照。
 - 股票池：`var/data_cache/pools/<pool_id>/manifest.json`
 - 操作符注册表：来自 `adapters.expressions.list_operators()`
 - 可选历史因子运行：`var/factor_runs/*/factor_run.json`
@@ -148,7 +150,7 @@ LLM response content is not valid JSON
 
 ```python
 build_context_snapshot(
-    master_store,
+    data_source,
     pools_root,
     factor_runs_root,
     saved_results_root,
@@ -158,7 +160,7 @@ build_context_snapshot(
 
 这个快照是 AI 的“研究边界”，主要包含：
 
-- 主缓存信息：行数、股票数、字段清单、字段 catalog、日期范围、source signature。
+- ClickHouse 数据源信息：行数、股票数、字段清单、字段 catalog、日期范围、source signature。
 - 股票池列表：pool id、股票数、筛选窗口、流动性/覆盖率条件等。
 - 当前选中的股票池：`selected_pool`
 - 本地可用操作符：`operators`
@@ -265,7 +267,7 @@ validate_candidate_expressions(candidates, context)
 
 1. 用 Python AST 解析表达式，先排除语法错误。
 2. 收集表达式里使用的字段名和操作符名。
-3. 检查字段是否存在于 `context["master_store"]["fields"]`。
+3. 检查字段是否存在于 `context["data_source"]["fields"]`。
 4. 检查操作符是否存在于本地 `operators` 白名单。
 5. 构造一个小型 synthetic panel。
 6. 调用现有表达式引擎 `evaluate_expression()` 真跑一遍。

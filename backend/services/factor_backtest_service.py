@@ -1,6 +1,7 @@
 """因子运行与批量因子回测查询/提交。"""
 from __future__ import annotations
 
+from repositories.snapshot_store import snapshot_manifest
 from errors import DomainError, make_error
 
 import common
@@ -53,7 +54,7 @@ from repositories import company_source, mysql_store  # noqa: E402
 
 from custom_bt.canonical_expression import normalize_expression  # noqa: E402
 
-from repositories.local_store import load_meta, normalize_code  # noqa: E402
+from repositories.local_store import normalize_code  # noqa: E402
 
 from custom_bt.docs import enrich_operators  # noqa: E402
 
@@ -137,6 +138,7 @@ def _factor_run_summary(run_dir: Path) -> Dict[str, Any]:
         "pool_id": manifest.get("pool_id"),
         "data_source": manifest.get("data_source") or "local",
         "source_signature": manifest.get("source_signature"),
+        "snapshot_id": manifest.get("snapshot_id"),
         "runtime_id": manifest.get("runtime_id"),
         "created_at": created_at,
         "accepted_count": int(accepted_count or 0),
@@ -313,6 +315,7 @@ def _batch_summary(batch_dir: Path) -> Dict[str, Any]:
         "top_k": manifest.get("top_k"),
         "initial_cash": manifest.get("initial_cash"),
         "run_key_prefix": manifest.get("run_key_prefix"),
+        "snapshot_id": manifest.get("snapshot_id"),
         "summary_file": manifest.get("summary_file") or "factor_backtest_summary.csv",
         "failures_file": manifest.get("failures_file") or "factor_backtest_failures.csv",
         "output_dir": str(batch_dir),
@@ -480,18 +483,20 @@ def create_factor_backtest(request: FactorBacktestRequest) -> Dict[str, Any]:
         raise make_error(status_code=422, detail="该因子运行缺少 pool_id，无法回测")
     pool_dir = _safe_child(common.POOLS_ROOT, pool_id)
     pool_manifest = _manifest_or_404(pool_dir, "manifest.json", "pool")
-    source = company_source.resolve_data_source(
-        run_manifest.get("data_source") or pool_manifest.get("data_source")
-    )
-    if source == "clickhouse":
-        source_meta = company_source.meta()
-    else:
-        source_meta = load_meta(common.MASTER_DIR) or {}
-        if not source_meta:
-            raise make_error(
-                status_code=503,
-                detail="本地主缓存未就绪：请先运行 prepare_master 导入 data_cache/master",
-            )
+    try:
+        source = company_source.resolve_data_source(None, pool_manifest)
+        company_source.resolve_data_source(None, run_manifest)
+    except ValueError as exc:
+        raise make_error(status_code=422, detail=str(exc)) from None
+    effective_snapshot_id = request.snapshot_id or run_manifest.get("snapshot_id")
+    try:
+        source_meta = (snapshot_manifest(effective_snapshot_id, snapshot_root=common.SNAPSHOT_ROOT)
+                       if effective_snapshot_id else company_source.meta())
+    except live_db.LiveDBError as exc:
+        from common import _live_error
+        raise _live_error(exc) from None
+    except (ValueError, OSError) as exc:
+        raise make_error(status_code=422, detail=f"快照不可用：{exc}") from None
     source_signature = source_meta.get("source_signature")
     if pool_manifest.get("source_signature") != source_signature:
         raise make_error(
@@ -565,7 +570,9 @@ def create_factor_backtest(request: FactorBacktestRequest) -> Dict[str, Any]:
         "max_weight_per_stock": request.max_weight_per_stock,
     }
     payload: Dict[str, Any] = {
-        "master_store": str(common.MASTER_DIR),
+        "snapshot_root": str(common.SNAPSHOT_ROOT),
+        "snapshot_id": effective_snapshot_id,
+        "as_of": request.as_of,
         "data_source": source,
         "pools_root": str(common.POOLS_ROOT),
         "factor_run_dir": str(run_dir),

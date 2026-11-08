@@ -638,7 +638,7 @@ export function PoolsPage({ addTask, navigate }: { addTask: TaskAdder; navigate:
                       </Flex>
                     </div>
                   )}
-                  <Text type="secondary">池 ID 由「名称 + 数据签名」哈希生成：主缓存重建或换机器后池 ID 会变化，旧因子运行需重新绑定。</Text>
+                  <Text type="secondary">池 ID 标识股票池筛选结果；研究运行另行绑定不可变快照 ID，确保数据版本可追溯。</Text>
                   <Divider style={{ margin: 0 }} />
                   <Space wrap>
                     <Button icon={<CopyOutlined />} onClick={applyPoolTemplate}>以此为模板新建</Button>

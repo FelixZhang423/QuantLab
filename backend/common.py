@@ -40,7 +40,7 @@ from repositories import company_source, mysql_store  # noqa: E402
 
 from custom_bt.canonical_expression import normalize_expression  # noqa: E402
 
-from repositories.local_store import load_meta, normalize_code  # noqa: E402
+from repositories.local_store import normalize_code  # noqa: E402
 
 from custom_bt.docs import enrich_operators  # noqa: E402
 
@@ -75,7 +75,7 @@ from config.settings import (  # noqa: E402  (再导出，兼容既有 import)
     FIELD_CATALOG_PATH,
     FIELD_DOC_PATH,
     JOBS_ROOT,
-    MASTER_DIR,
+    SNAPSHOT_ROOT,
     POOLS_ROOT,
     PROJECT_ROOT,
     RESULTS_ROOT,
