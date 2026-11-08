@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import time
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -14,27 +15,22 @@ def now() -> str:
 
 def atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
     payload = json.dumps(data, ensure_ascii=False, indent=2)
-    last_error: PermissionError | None = None
-    for attempt in range(10):
-        tmp.write_text(payload, encoding="utf-8")
-        try:
-            tmp.replace(path)
-            return
-        except PermissionError as exc:
-            last_error = exc
-            time.sleep(min(0.1 * (attempt + 1), 1.0))
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                     prefix=path.name + ".", suffix=".tmp", delete=False) as handle:
+        tmp = Path(handle.name)
+        handle.write(payload)
     try:
-        path.write_text(payload, encoding="utf-8")
-        return
-    except PermissionError:
-        return
+        for attempt in range(10):
+            try:
+                tmp.replace(path)
+                return
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                time.sleep(min(0.1 * (attempt + 1), 1.0))
     finally:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        tmp.unlink(missing_ok=True)
 
 
 def load_job_status(job_dir: str | Path) -> Dict[str, Any]:

@@ -34,6 +34,7 @@ class QualityConfig:
     min_coverage: float = 0.8
     min_train_ic: Optional[float] = None
     min_valid_ic: Optional[float] = None
+    # Legacy config compatibility only; test data never gates candidate admission.
     min_test_ic: Optional[float] = None
     min_icir: Optional[float] = None
     score_ic_weight: float = 0.5

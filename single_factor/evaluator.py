@@ -142,7 +142,7 @@ class SingleFactorEvaluator:
         if self._threshold_failed(train.icir, self.quality.min_icir):
             return f"train ICIR below {self.quality.min_icir:.3f}"
 
-        for name, threshold in (("valid", self.quality.min_valid_ic), ("test", self.quality.min_test_ic)):
+        for name, threshold in (("valid", self.quality.min_valid_ic),):
             if name not in segments:
                 continue
             if segments[name].degenerate:
@@ -153,13 +153,17 @@ class SingleFactorEvaluator:
                 return f"{name} IC below {threshold:.3f}"
         return None
 
+    def evaluate_holdout(self, expr: Expression) -> SegmentMetrics:
+        """Evaluate a frozen expression on the test set; never used for admission or PPO reward."""
+        if self.test_panel is None:
+            raise ValueError("No test panel configured")
+        return self._segment_metrics(expr, self.test_panel)
+
     def evaluate(self, expr: Expression) -> SingleFactorMetrics:
         expression = serialize_alphagen_expression(expr)
         panels = {"train": self.train_panel}
         if self.valid_panel is not None:
             panels["valid"] = self.valid_panel
-        if self.test_panel is not None:
-            panels["test"] = self.test_panel
         try:
             segments = {
                 name: self._segment_metrics(expr, panel)

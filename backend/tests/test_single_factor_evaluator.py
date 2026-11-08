@@ -43,3 +43,21 @@ class DegenerateExpressionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_candidate_evaluation_never_reads_holdout():
+    from unittest.mock import patch
+    from single_factor.evaluator import SegmentMetrics
+    evaluator = make_evaluator()
+    evaluator.test_panel = object()
+    good = SegmentMetrics(ic=0.5, rank_ic=0.5, icir=1.0, coverage=1.0, valid_days=10)
+    def segment(expr, panel):
+        assert panel is not evaluator.test_panel
+        return good
+    with patch.object(evaluator, "_segment_metrics", side_effect=segment):
+        result = evaluator.evaluate(Constant(1.0))
+    assert result.accepted
+    assert "test" not in result.segments
+    with patch.object(evaluator, "_segment_metrics", return_value=good) as evaluate:
+        assert evaluator.evaluate_holdout(Constant(1.0)) == good
+        assert evaluate.call_args.args[1] is evaluator.test_panel

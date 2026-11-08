@@ -78,7 +78,7 @@ python -m single_factor.cli run --config single_factor_runtime_500_liquid.json
 For automatic restart after a server interruption, run from PowerShell:
 
 ```powershell
-.un_single_factor_server.ps1
+.\single_factor\run_server.ps1
 ```
 
 The script writes timestamped logs under the run output directory and reuses
@@ -111,3 +111,8 @@ python -m single_factor.cli materialize-splits --config single_factor/runtime.js
 The runner writes `accepted_factors.jsonl`, `rejected_candidates.jsonl`, `expression_index.json`, `run_state.json`, and PPO checkpoints. It stops at the target count or the maximum attempt count and can be resumed from the same output directory.
 
 For a server, install the existing project requirements plus `pyarrow`, `gymnasium`, `stable-baselines3`, and `sb3-contrib`. Run the command under a process supervisor so a restart reuses `run_state.json` and the output directory.
+
+
+### Holdout evaluation
+
+Candidate evaluation and PPO use train/valid only. The legacy `min_test_ic` setting no longer affects admission. After freezing an expression, call `SingleFactorEvaluator.evaluate_holdout(expr)` to obtain test metrics; this method does not change admission or reward.

@@ -45,6 +45,10 @@ def _tradable(row: pd.Series) -> bool:
 
 
 def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfig) -> BacktestResult:
+    if config.rebalance_freq != "1D" or config.price != "next_open":
+        raise ValueError("Only rebalance_freq='1D' and price='next_open' are supported")
+    if config.top_k < 1 or not 0 < config.max_weight_per_stock <= 1:
+        raise ValueError("top_k must be positive and max_weight_per_stock must be in (0, 1]")
     data = panel.copy()
     scores = alpha.copy()
     data["date"] = pd.to_datetime(data["date"])
@@ -68,18 +72,19 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
     trade_rows: List[Dict[str, object]] = []
     position_rows: List[Dict[str, object]] = []
     prev_account = cash
+    last_prices: Dict[str, float] = {}
 
     for i, date in enumerate(dates):
         date = pd.Timestamp(date)
         today = by_date[date]
-        next_date = pd.Timestamp(dates[i + 1]) if i + 1 < len(dates) else None
+        signal_date = pd.Timestamp(dates[i - 1]) if i > 0 else None
         trade_cost = 0.0
         trade_amount = 0.0
         trade_count = 0
 
-        if next_date is not None and date in alpha_by_date:
-            next_panel = by_date[next_date]
-            raw_scores = alpha_by_date[date].dropna().sort_values(ascending=False)
+        if signal_date is not None and signal_date in alpha_by_date:
+            next_panel = today
+            raw_scores = alpha_by_date[signal_date].dropna().sort_values(ascending=False)
             candidates = []
             for code in raw_scores.index:
                 if code not in next_panel.index:
@@ -94,9 +99,10 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
                     break
 
             account_before = cash + sum(
-                shares * float(today.loc[code, "close"])
+                shares * (float(today.loc[code, "open"])
+                          if code in today.index and pd.notna(today.loc[code, "open"])
+                          else last_prices[code])
                 for code, shares in holdings.items()
-                if code in today.index and pd.notna(today.loc[code, "close"])
             )
             max_names = max(int(1.0 / config.max_weight_per_stock), config.top_k)
             weight = min(1.0 / max(len(candidates), 1), config.max_weight_per_stock)
@@ -105,23 +111,33 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
             target_value = {code: account_before * weight for code in candidates}
 
             for code, shares in list(holdings.items()):
-                if code in target_value or code not in next_panel.index:
+                if code not in next_panel.index:
                     continue
                 row = next_panel.loc[code]
+                if not _tradable(row):
+                    continue
                 if config.exclude_limit_down_sell and row.get("if_down", 0) == 1:
                     continue
                 price = float(row["open"]) * (1.0 - config.slippage)
+                target_shares = target_value.get(code, 0.0) / float(row["open"])
+                shares = max(shares - target_shares, 0.0)
+                if shares <= 0:
+                    continue
                 amount = shares * price
                 fee = _cost(amount, config.sell_cost, config.min_cost)
                 cash += amount - fee
                 trade_cost += fee
                 trade_amount += amount
                 trade_count += 1
-                holdings.pop(code, None)
-                trade_rows.append({"date": next_date, "code": code, "side": "sell", "price": price, "shares": shares, "amount": amount, "cost": fee, "reason": "rebalance"})
+                holdings[code] -= shares
+                if holdings[code] <= 1e-10:
+                    holdings.pop(code)
+                trade_rows.append({"date": date, "code": code, "side": "sell", "price": price, "shares": shares, "amount": amount, "cost": fee, "reason": "rebalance"})
 
             for code, target in target_value.items():
                 row = next_panel.loc[code]
+                if config.exclude_limit_up_buy and row.get("if_up", 0) == 1:
+                    continue
                 price = float(row["open"]) * (1.0 + config.slippage)
                 current_shares = holdings.get(code, 0.0)
                 current_value = current_shares * price
@@ -137,24 +153,29 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
                     fee = _cost(amount, config.buy_cost, config.min_cost)
                 if shares <= 0 or amount + fee > cash:
                     continue
+                last_prices.setdefault(code, float(row["open"]))
                 holdings[code] = current_shares + shares
                 cash -= amount + fee
                 trade_cost += fee
                 trade_amount += amount
                 trade_count += 1
-                trade_rows.append({"date": next_date, "code": code, "side": "buy", "price": price, "shares": shares, "amount": amount, "cost": fee, "reason": "rebalance"})
+                trade_rows.append({"date": date, "code": code, "side": "buy", "price": price, "shares": shares, "amount": amount, "cost": fee, "reason": "rebalance"})
 
+        for code, row in today.iterrows():
+            if pd.notna(row["close"]):
+                last_prices[code] = float(row["close"])
         stock_value = 0.0
+        day_positions = []
         for code, shares in holdings.items():
-            if code in today.index and pd.notna(today.loc[code, "close"]):
-                price = float(today.loc[code, "close"])
-                value = shares * price
-                stock_value += value
-                alpha_value = float(alpha_by_date.get(date, pd.Series(dtype=float)).get(code, float("nan")))
-                position_rows.append({"date": date, "code": code, "weight": 0.0, "shares": shares, "price": price, "value": value, "alpha": alpha_value})
+            price = last_prices[code]
+            value = shares * price
+            stock_value += value
+            alpha_value = float(alpha_by_date.get(date, pd.Series(dtype=float)).get(code, float("nan")))
+            day_positions.append({"date": date, "code": code, "weight": 0.0, "shares": shares, "price": price, "value": value, "alpha": alpha_value})
         account = cash + stock_value
-        for row in position_rows[-len(holdings):] if holdings else []:
+        for row in day_positions:
             row["weight"] = row["value"] / account if account > 0 else 0.0
+        position_rows.extend(day_positions)
         daily_ret = account / prev_account - 1.0 if prev_account else 0.0
         turnover = trade_amount / prev_account if prev_account else 0.0
         daily_rows.append({"date": date, "account": account, "return": daily_ret, "cost": trade_cost / prev_account if prev_account else 0.0, "turnover": turnover, "cash": cash, "stock_value": stock_value, "pnl": account - config.initial_cash, "drawdown": 0.0, "trade_count": trade_count, "holding_count": len(holdings)})
