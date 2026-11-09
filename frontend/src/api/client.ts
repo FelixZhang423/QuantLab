@@ -8,6 +8,7 @@ export * from "../features/pools/api";
 export * from "../features/results/api";
 export * from "../features/factor-backtest/api";
 export * from "../features/factor-generation/api";
+export * from "../features/composition/api";
 export * from "../features/manual-backtest/api";
 
 import { fetchJob } from "../shared/api/base";
@@ -16,6 +17,7 @@ import { poolApi } from "../features/pools/api";
 import { resultApi } from "../features/results/api";
 import { factorApi } from "../features/factor-backtest/api";
 import { generationApi } from "../features/factor-generation/api";
+import { compositionApi } from "../features/composition/api";
 import { manualApi } from "../features/manual-backtest/api";
 
 export const api = {
@@ -25,5 +27,6 @@ export const api = {
   ...resultApi,
   ...factorApi,
   ...generationApi,
+  ...compositionApi,
   ...manualApi,
 };

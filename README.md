@@ -55,10 +55,10 @@ python -m cli create-pool --config configs/pools/liquid_500.yaml
 python -m cli generate-factors --pool <pool_id> --config configs/factor_generation.yaml
 python -m cli confirm-factors --factor-run <run_id> --config configs/factor_generation.yaml
 python -m cli backtest-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
-python -m cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml --sweep-sizes 10,20,30
+python -m cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml --sweep-sizes 10,20,30 --weight-method equal
 ```
 
-第一次研究任务构建快照；相同请求复用已发布快照。首次构建可涉及多个源表的 SQL，不等于所有字段只能执行一条 SQL。回测与组合优先绑定因子运行的快照；字段或范围不满足时应明确报错，不得静默覆盖或补查。Web 上也可创建股票池、生成因子、提交手动/批量回测并查看结果。
+第一次研究任务构建快照；相同请求复用已发布快照。首次构建可涉及多个源表的 SQL，不等于所有字段只能执行一条 SQL。回测与组合优先绑定因子运行的快照；字段或范围不满足时应明确报错，不得静默覆盖或补查。Web 上也可创建股票池、生成因子、提交手动/批量回测、做等权/MSE 因子组合并查看最新一期选股清单。
 
 ## 不可变快照
 

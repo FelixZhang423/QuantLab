@@ -159,6 +159,9 @@ def compose_factors_cmd(args: argparse.Namespace) -> None:
         sweep_sizes=_parse_int_list(args.sweep_sizes),
         max_factors=args.max_factors,
         objective_type=args.objective_type,
+        weight_method=args.weight_method,
+        factor_ids=args.factor_id,
+        z_clip=args.z_clip,
         target_horizon=args.target_horizon,
         min_marginal_ic_improvement=args.min_marginal_ic_improvement,
         min_marginal_rank_ic_improvement=args.min_marginal_rank_ic_improvement,
@@ -306,6 +309,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_compose.add_argument("--sweep-sizes", default=None, help="Comma/newline separated sizes, e.g. 10,20,30")
     p_compose.add_argument("--max-factors", type=int, default=100)
     p_compose.add_argument("--objective-type", default="mse")
+    p_compose.add_argument("--weight-method", choices=["mse", "equal"], default="mse")
+    p_compose.add_argument("--factor-id", action="append", default=None, help="Only compose these factor ids; repeatable")
+    p_compose.add_argument("--z-clip", type=float, default=None, help="Clip daily cross-section z-scores to +/- this value")
     p_compose.add_argument("--target-horizon", type=int, default=20)
     p_compose.add_argument("--min-marginal-ic-improvement", type=float, default=None)
     p_compose.add_argument("--min-marginal-rank-ic-improvement", type=float, default=None)

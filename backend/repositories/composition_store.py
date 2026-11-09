@@ -37,6 +37,31 @@ def write_size_outputs(
     ]).to_csv(out_dir / "composition_summary.csv", index=False, encoding="utf-8-sig")
 
 
+def write_latest_screen(out_dir: Path, screen: Mapping[str, Any]) -> None:
+    """写最新一期选股清单：JSON 带单因子贡献，CSV 为全市场扁平记录。"""
+    payload = {key: value for key, value in screen.items() if key != "flat_rows"}
+    (out_dir / "latest_screen.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+    flat_rows = screen.get("flat_rows") or []
+    pd.DataFrame(list(flat_rows)).to_csv(
+        out_dir / "latest_screen.csv", index=False, encoding="utf-8-sig"
+    )
+
+
+def write_composition_manifest(
+    output_base: Path,
+    composition_id: str,
+    manifest: Mapping[str, Any],
+) -> None:
+    run_dir = output_base / composition_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "composition_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+
 def write_run_outputs(
     output_base: Path,
     composition_id: str,

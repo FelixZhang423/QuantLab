@@ -174,6 +174,164 @@ class FactorCompositionTests(unittest.TestCase):
         self.assertTrue(np.isfinite(second_day).all())
         np.testing.assert_allclose(second_day.to_numpy(), np.zeros(4), atol=1e-12)
 
+    def test_daily_cross_section_zscore_clips_outliers(self):
+        values = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2024-01-01"] * 4),
+                "code": ["000001", "000002", "000003", "000004"],
+                "alpha": [1.0, 2.0, 3.0, 100.0],
+            }
+        )
+
+        normalized = daily_cross_section_zscore(values, clip=1.0)
+
+        self.assertLessEqual(float(normalized["alpha"].abs().max()), 1.0 + 1e-12)
+        self.assertEqual(int((normalized["alpha"] == 1.0).sum()), 1)
+
+    def test_select_pool_equal_weight_uses_one_over_n_without_optimizer(self):
+        records = [
+            {"factor_id": "f1", "pool_id": "pool_a", "accepted": True, "expression": "close", "score": 1.0, "ic": 0.10},
+            {"factor_id": "f2", "pool_id": "pool_a", "accepted": True, "expression": "ma5", "score": 0.9, "ic": 0.06},
+            {"factor_id": "f3", "pool_id": "pool_a", "accepted": True, "expression": "ChangePCT", "score": 0.8, "ic": 0.04},
+        ]
+        panel = _toy_panel().rename(columns={"timestamps": "date", "vol": "volume"})
+        candidates = load_composition_candidates(records, "pool_a", selection_metric="score")
+
+        with patch(
+            "custom_bt.factor_composition.optimize_mse_weights",
+            side_effect=AssertionError("equal weight must not call the MSE optimizer"),
+        ):
+            selected = select_composition_pool(
+                panel,
+                candidates,
+                max_factors=3,
+                weight_method="equal",
+                z_clip=3.0,
+            )
+
+        self.assertEqual([item.factor_id for item in selected.components], ["f1", "f2", "f3"])
+        np.testing.assert_allclose(
+            [item.weight for item in selected.components],
+            np.full(3, 1.0 / 3.0),
+            atol=1e-12,
+        )
+        self.assertEqual(selected.optimization.method, "equal_weight")
+        self.assertEqual(selected.optimization.iterations, 0)
+        self.assertTrue(selected.optimization.converged)
+
+    def test_select_pool_equal_weight_rejects_extra_candidates_at_capacity(self):
+        records = [
+            {"factor_id": "f1", "pool_id": "pool_a", "accepted": True, "expression": "close", "score": 1.0, "ic": 0.10},
+            {"factor_id": "f2", "pool_id": "pool_a", "accepted": True, "expression": "ma5", "score": 0.9, "ic": 0.06},
+            {"factor_id": "f3", "pool_id": "pool_a", "accepted": True, "expression": "ChangePCT", "score": 0.8, "ic": 0.04},
+        ]
+        panel = _toy_panel().rename(columns={"timestamps": "date", "vol": "volume"})
+        candidates = load_composition_candidates(records, "pool_a", selection_metric="score")
+
+        selected = select_composition_pool(panel, candidates, max_factors=2, weight_method="equal")
+
+        self.assertEqual([item.factor_id for item in selected.components], ["f1", "f2"])
+        np.testing.assert_allclose([item.weight for item in selected.components], [0.5, 0.5])
+        capacity_rejections = [row for row in selected.rejections if row.get("reason") == "capacity_limit"]
+        self.assertEqual([row["factor_id"] for row in capacity_rejections], ["f3"])
+
+    def test_select_pool_equal_weight_deduplicates_on_absolute_mutual_ic(self):
+        records = [
+            {"factor_id": "f1", "pool_id": "pool_a", "accepted": True, "expression": "close", "score": 1.0, "ic": 0.10},
+            {"factor_id": "f2", "pool_id": "pool_a", "accepted": True, "expression": "-close", "score": 0.9, "ic": 0.10},
+        ]
+        panel = _toy_panel().rename(columns={"timestamps": "date", "vol": "volume"})
+        candidates = load_composition_candidates(records, "pool_a", selection_metric="score")
+
+        selected = select_composition_pool(
+            panel,
+            candidates,
+            max_factors=2,
+            mutual_ic_threshold=0.8,
+            weight_method="equal",
+        )
+
+        self.assertEqual([item.factor_id for item in selected.components], ["f1"])
+        self.assertEqual(selected.rejections[0]["reason"], "mutual_ic")
+        self.assertEqual(selected.rejections[0]["comparison"], "abs")
+        self.assertLess(selected.rejections[0]["mutual_ic"], -0.99)
+        self.assertGreater(selected.rejections[0]["gate_value"], 0.99)
+
+    def test_latest_screen_skips_untradable_names_and_reports_contributions(self):
+        from custom_bt.composition_screen import build_latest_screen
+
+        panel = pd.DataFrame(
+            [
+                {"date": "2024-01-02", "code": "000001", "open": 10.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-02", "code": "000002", "open": 20.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-02", "code": "000003", "open": 30.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-03", "code": "000001", "open": 10.0, "Ifsuspend": 1, "if_up": 0},
+                {"date": "2024-01-03", "code": "000002", "open": 20.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-03", "code": "000003", "open": 30.0, "Ifsuspend": 0, "if_up": 1},
+            ]
+        )
+        signal = pd.Timestamp("2024-01-02")
+        z1 = pd.DataFrame({"date": [signal] * 3, "code": ["000001", "000002", "000003"], "alpha": [2.0, 0.0, -2.0]})
+        z2 = pd.DataFrame({"date": [signal] * 3, "code": ["000001", "000002", "000003"], "alpha": [0.0, 2.0, -2.0]})
+        composite = pd.DataFrame({"date": [signal] * 3, "code": ["000001", "000002", "000003"], "alpha": [1.0, 1.0, -2.0]})
+        candidate_1 = CompositionCandidate("f1", "close", "close", "close", "pool_a", None, {}, {})
+        candidate_2 = CompositionCandidate("f2", "ma5", "ma5", "ma5", "pool_a", None, {}, {})
+        components = [
+            SelectedComponent(candidate_1, z1, z1, 0.5),
+            SelectedComponent(candidate_2, z2, z2, 0.5),
+        ]
+
+        screen = build_latest_screen(composite, components, panel, top_k=2, row_limit=10)
+
+        self.assertEqual(screen["signal_date"], "2024-01-02")
+        self.assertEqual(screen["execution_date"], "2024-01-03")
+        self.assertFalse(screen["execution_pending"])
+        self.assertEqual(screen["selected_count"], 1)
+        self.assertEqual(screen["buyable_count"], 1)
+        by_code = {row["code"]: row for row in screen["rows"]}
+        self.assertEqual(by_code["000001"]["blocked_reason"], "next_open_suspended")
+        self.assertFalse(by_code["000001"]["selected"])
+        self.assertEqual(by_code["000002"]["status"], "buyable")
+        self.assertTrue(by_code["000002"]["selected"])
+        self.assertEqual(by_code["000003"]["blocked_reason"], "next_open_limit_up")
+        self.assertAlmostEqual(
+            sum(item["contribution"] for item in by_code["000001"]["contributions"]),
+            by_code["000001"]["composite_score"],
+        )
+        self.assertEqual(len(screen["flat_rows"]), 3)
+
+    def test_latest_screen_marks_execution_pending_without_next_trading_day(self):
+        from custom_bt.composition_screen import build_latest_screen
+
+        panel = pd.DataFrame(
+            [
+                {"date": "2024-01-02", "code": "000001", "open": 10.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-02", "code": "000002", "open": 20.0, "Ifsuspend": 0, "if_up": 0},
+            ]
+        )
+        signal = pd.Timestamp("2024-01-02")
+        z = pd.DataFrame({"date": [signal] * 2, "code": ["000001", "000002"], "alpha": [1.0, -1.0]})
+        composite = pd.DataFrame({"date": [signal] * 2, "code": ["000001", "000002"], "alpha": [1.0, -1.0]})
+        candidate = CompositionCandidate("f1", "close", "close", "close", "pool_a", None, {}, {})
+
+        screen = build_latest_screen(
+            composite,
+            [SelectedComponent(candidate, z, z, 1.0)],
+            panel,
+            top_k=1,
+            max_weight_per_stock=1.0,
+        )
+
+        self.assertTrue(screen["execution_pending"])
+        self.assertIsNone(screen["execution_date"])
+        self.assertIsNone(screen["buyable_count"])
+        self.assertEqual(screen["selected_count"], 1)
+        selected = [row for row in screen["rows"] if row["selected"]]
+        self.assertEqual([row["code"] for row in selected], ["000001"])
+        self.assertEqual(selected[0]["status"], "pending_next_open")
+        self.assertIsNone(selected[0]["buyable_next_open"])
+        self.assertAlmostEqual(selected[0]["target_weight"], 1.0)
+
     def test_composite_combination_applies_weights_to_preprocessed_alphas(self):
         base = pd.DataFrame(
             {
@@ -437,6 +595,19 @@ class FactorCompositionTests(unittest.TestCase):
                 self.assertIn("ic", manifest["composition_metrics"])
                 self.assertEqual(manifest["target_horizon"], 1)
                 self.assertTrue((path / "composition_admission_log.json").exists())
+                self.assertTrue((path / "latest_screen.json").exists())
+                self.assertTrue((path / "latest_screen.csv").exists())
+                screen = json.loads((path / "latest_screen.json").read_text(encoding="utf-8"))
+                self.assertEqual(screen["signal_date"], "2024-01-08")
+                self.assertIn("rows", screen)
+                self.assertNotIn("flat_rows", screen)
+            root_manifest = json.loads(
+                (Path(result["manifest_path"])).read_text(encoding="utf-8")
+            )
+            self.assertEqual(root_manifest["composition_id"], result["composition_id"])
+            self.assertEqual(root_manifest["completed_sizes"], [2, 3])
+            self.assertEqual(root_manifest["default_size"], 3)
+            self.assertEqual([entry["size"] for entry in root_manifest["sizes"]], [2, 3])
             runs = list_runs(root / "outputs" / "saved_backtests")
             self.assertEqual({run["result_type"] for run in runs}, {"composite"})
             self.assertEqual(len(runs), 2)
@@ -574,6 +745,93 @@ class FactorCompositionTests(unittest.TestCase):
             self.assertEqual(result["underfilled_final_size"], 2)
             manifest = json.loads((Path(result["output_dirs"][0]) / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["max_factors"], 2)
+
+    def test_compose_factors_equal_weight_with_manual_ids_and_z_clip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "daily.parquet"
+            _toy_panel().to_parquet(source, index=False)
+            write_company_fixture(source, root / "snapshots", fields=["ma5"], chunksize=16, overwrite=True)
+            pool_manifest = fixture_pool(
+                root / "snapshots",
+                root / "pools",
+                name="toy",
+                selection_start="2024-01-01",
+                selection_end="2024-01-08",
+                top_n=4,
+                min_coverage=1.0,
+            )
+            run_dir = root / "factor_runs" / "run_a"
+            run_dir.mkdir(parents=True)
+            (run_dir / "factor_run.json").write_text(
+                json.dumps(
+                    {
+                        "run_id": "run_a",
+                        "pool_id": pool_manifest["pool_id"],
+                        "data_source": "clickhouse", "snapshot_id": pool_manifest["snapshot_id"], "source_signature": pool_manifest["source_signature"],
+                        "accepted_count": 3,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "confirmed_factors.jsonl").write_text(
+                "\n".join(
+                    json.dumps(row)
+                    for row in [
+                        {"factor_id": "f1", "accepted": True, "expression": "close", "score": 1.0, "ic": 0.08, "coverage": 1.0},
+                        {"factor_id": "f2", "accepted": True, "expression": "ma5", "score": 0.8, "ic": 0.04, "coverage": 1.0},
+                        {"factor_id": "f3", "accepted": True, "expression": "ChangePCT", "score": 0.6, "ic": 0.02, "coverage": 1.0},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            publish_confirmed(run_dir)
+
+            result = compose_factors(
+                snapshot_root=root / "snapshots",
+                pools_root=root / "pools",
+                pool_id=pool_manifest["pool_id"],
+                factor_run_dirs=[run_dir],
+                outputs_root=root / "outputs" / "saved_backtests",
+                backtest_config={
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-01-08",
+                    "top_k": 2,
+                    "initial_cash": 1_000_000.0,
+                },
+                weight_method="equal",
+                factor_ids=["f2"],
+                z_clip=1.5,
+                mutual_ic_threshold=0.8,
+                sweep_sizes=[1],
+                max_factors=1,
+            )
+
+            self.assertEqual(result["weight_method"], "equal")
+            self.assertEqual(result["completed_sizes"], [1])
+            out_dir = Path(result["output_dirs"][0])
+            manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["weight_method"], "equal")
+            self.assertEqual(manifest["optimization"]["method"], "equal_weight")
+            self.assertEqual(manifest["selected_factor_ids"], ["f2"])
+            self.assertEqual(manifest["requested_factor_ids"], ["f2"])
+            self.assertEqual(manifest["z_clip"], 1.5)
+            self.assertEqual(manifest["factor_preprocess"]["clip"], 1.5)
+            weights = json.loads((out_dir / "factor_weights.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(weights), 1)
+            self.assertEqual(weights[0]["factor_id"], "f2")
+            self.assertEqual(weights[0]["weight"], 1.0)
+            self.assertEqual(weights[0]["weight_method"], "equal")
+            self.assertIsNone(weights[0]["raw_optimizer_weight"])
+            self.assertEqual(weights[0]["preprocess"]["clip"], 1.5)
+            root_manifest = json.loads(
+                (Path(result["manifest_path"])).read_text(encoding="utf-8")
+            )
+            self.assertEqual(root_manifest["weight_method"], "equal")
+            self.assertEqual(root_manifest["z_clip"], 1.5)
+            self.assertEqual(root_manifest["requested_factor_ids"], ["f2"])
+            self.assertEqual(root_manifest["default_size"], 1)
+            self.assertEqual(root_manifest["sizes"][0]["screen"]["signal_date"], "2024-01-08")
 
 
 if __name__ == "__main__":

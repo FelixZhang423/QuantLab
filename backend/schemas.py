@@ -71,6 +71,42 @@ class FactorBacktestRequest(BaseModel):
     max_weight_per_stock: float = 0.03
 
 
+class FactorCompositionRequest(BaseModel):
+    snapshot_id: Optional[str] = None
+    as_of: Optional[str] = None
+    pool_id: str
+    factor_run_ids: List[str]
+    # None = 自动按 selection_metric 排序取前 max_factors 个；
+    # 显式列表 = 只组合这些 confirmed 因子（仍会做 mutual IC 去重与容量上限）。
+    factor_ids: Optional[List[str]] = None
+    weight_method: str = "equal"
+    selection_metric: str = "score"
+    min_score: Optional[float] = None
+    min_ic: Optional[float] = None
+    min_rank_ic: Optional[float] = None
+    min_coverage: Optional[float] = None
+    min_backtest_sharpe: Optional[float] = None
+    mutual_ic_threshold: float = 0.8
+    z_clip: Optional[float] = 3.0
+    sweep_sizes: List[int] = Field(default_factory=lambda: [10, 20, 30])
+    max_factors: int = 30
+    target_horizon: int = 20
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    top_k: int = 50
+    initial_cash: float = 100_000_000.0
+    rebalance_freq: str = "1D"
+    commission: float = 0.0003
+    transfer_fee: float = 0.00001
+    stamp_duty: float = 0.0005
+    # Explicit historic all-in fees override the components for that side.
+    buy_cost: Optional[float] = None
+    sell_cost: Optional[float] = None
+    slippage: float = 0.001
+    min_cost: float = 5.0
+    max_weight_per_stock: float = 0.03
+
+
 class ManualBacktestRequest(BaseModel):
     snapshot_id: Optional[str] = None
     as_of: Optional[str] = None

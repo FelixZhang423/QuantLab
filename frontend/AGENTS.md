@@ -12,12 +12,13 @@ React 19 + Vite + TypeScript + Ant Design 5 + ECharts 6。真实数据经 `/api/
   - `data-browser/`：数据总览 / 字段 / 股票 / 操作符
   - `pools/`、`factor-generation/`、`factor-backtest/`、`manual-backtest/`
   - `results/`：结果详情 / 批次结果 / 结果分析
-  - `composition/`、`system/`：因子组合、用户/审计（仍是 mock）
+  - `composition/`：因子组合（等权 / MSE、多规模回测、最新选股）
+  - `system/`：用户/审计（仍是 mock）
 - `src/components/`：`Brand` / `Charts` / `LoadGate` / `FilterChips` 等跨 feature 组件
 - `src/shared/api/base.ts`：fetch 基座、`ApiError`、`useApiData` / `useJobPolling`
 - `src/features/<feature>/api.ts`：该 feature 的类型与请求；`index.ts` 是对外出口
 - `src/api/client.ts`：兼容 barrel（合并各 feature API），新代码优先从 feature 内导入
-- `src/features/<feature>/mock.ts`：仅服务尚未接入后端的页面（tasks / results / composition / system）
+- `src/features/<feature>/mock.ts`：仅服务尚未接入后端的页面（tasks / results / system）
 - `src/shared/domain/`：factorCategories / fieldCategories 等跨 feature 领域工具
 - `src/index.css`：Tailwind CSS v4 入口与全局样式
 
@@ -27,7 +28,7 @@ React 19 + Vite + TypeScript + Ant Design 5 + ECharts 6。真实数据经 `/api/
 - 页面跳转通过 `PageNav` 回调，任务提交通过 `TaskAdder` 回调，由 `src/app/App.tsx` 统一持有状态；不要引入路由库或全局状态库。
 - 服务端数据从 `src/api/client.ts` 取；新增接口时先在那里补类型和函数，不要在各页面里散落 `fetch`。feature 专属接口可放到该 feature 的 `api.ts`。
 - 后台任务是异步的：提交后拿 `job_id`，用 `useJobPolling` 轮询到 `finished` / `failed`。
-- 仍是 mock 的模块：任务中心、用户与权限、审计日志、因子组合提交表单。接入真实后端时替换对应页面里的 mock 数据。
+- 仍是 mock 的模块：任务中心、用户与权限、审计日志。接入真实后端时替换对应页面里的 mock 数据。
 
 ## 样式
 

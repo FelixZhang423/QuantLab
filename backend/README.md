@@ -18,7 +18,7 @@ python -m cli create-pool --config configs/pools/liquid_500.yaml
 python -m cli generate-factors --pool <pool_id> --config configs/factor_generation.yaml
 python -m cli confirm-factors --factor-run <run_id> --config configs/factor_generation.yaml
 python -m cli backtest-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
-python -m cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
+python -m cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml --weight-method equal
 ```
 
 默认运行期根是仓库 `var/`，可用 `QL_VAR_ROOT` 覆盖。不可变快照在 `data_cache/snapshots/<snapshot_id>/`，包含 `panel.parquet`、`manifest.json`、`checksums.json`。相同请求复用快照，刷新建立新 ID；已发布面板不覆盖。任务和结果清单记录快照引用，派生 memmap 按快照版本隔离。
@@ -174,9 +174,13 @@ python -m api
 - `GET /api/pools`、`GET /api/pools/{pool_id}` 股票池清单与明细（含池内代码与筛选来源）
 - `DELETE /api/pools/{pool_id}?confirm=true` 删除股票池（同步清理本地目录 + MySQL 记录；因子运行/历史回测不级联删除）
 - `GET /api/factor-runs`、`GET /api/factor-runs/{run_id}` 因子运行与合格因子清单（`factor_id` 可直接用于提交）
+- `POST /api/factor-generations` 提交 PPO 因子生成（202 + job_id；后台子进程，进度轮询）
 - `POST /api/factor-backtests` 提交批量因子回测（可传 `factor_ids` 只回测勾选因子；202 + job_id）
 - `GET /api/factor-backtests`、`GET /api/factor-backtests/{backtest_id}` 批次列表与汇总/失败明细（每行带 `run_key`）
 - `GET /api/factor-backtests/{backtest_id}/files/{file_name}` 下载批次汇总/失败 CSV
+- `POST /api/factor-compositions` 提交因子组合（等权 / MSE、多规模回测；202 + job_id）
+- `GET /api/factor-compositions`、`GET /api/factor-compositions/{composition_id}` 组合历史与指定规模指标/权重
+- `GET /api/factor-compositions/{composition_id}/screen` 最新一期 TopK 选股清单（次日可买状态 + 单因子贡献）
 - `POST /api/manual-backtests` 按股票池 + Alpha 表达式提交手动回测（202 + job_id；从不可变快照读取面板，拒绝旧 local 池）
 - `GET /api/results`、`GET /api/results/{run_name}` 已保存回测结果（净值/年度指标/文件清单；手动回测 `run_key = manual/<job_id>/<run_name>`）
 - `GET /api/results/detail?run_key=...`、`GET /api/results/file?run_key=...` 按相对路径打开/下载任意层级结果（嵌套因子结果用这个）
@@ -185,8 +189,9 @@ python -m api
 边界：股票池候选与建池选样直接读 ClickHouse，研究面板通过不可变快照读取。逻辑来源签名标识公司库，快照 ID 和校验和固定实际数据版本。旧本地缓存池只可查看历史结果，不能继续执行。行业取 `dim.stock_main_info_fd.FirstIndustryName`，市场/板块由代码前缀推导。
 
 前端开发时由 vite 把 `/api` 代理到该地址（见 `frontend/vite.config.ts`，可用 `QL_API_TARGET` 覆盖）。
-建池、批量因子回测与手动回测的 POST 已接入；结果详情页只读真实结果（`/api/results` + `/api/results/detail`，
-兼容手动 `config.backtest` 与因子扁平 `config`）；因子生成/组合的提交端点仍在后续步骤。
+建池、因子生成、批量因子回测、因子组合与手动回测的 POST 均已接入；结果详情页只读真实结果（`/api/results` + `/api/results/detail`，
+兼容手动 `config.backtest` 与因子扁平 `config`）。因子组合默认等权（`weight_method=equal`），也可切 `mse`；结果目录包含
+`composition_manifest.json`、各规模 `factor_weights.json` 与 `latest_screen.json/.csv`。
 
 已接入的真实数据清单（各端点的实测值）与前后端技术栈详见 [docs/web_api.md](docs/web_api.md)。
 

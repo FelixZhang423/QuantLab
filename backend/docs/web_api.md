@@ -2,8 +2,8 @@
 
 # Web API 数据清单与技术栈（React 前端接入）
 
-> 更新时间：2026-10-27（股票池、因子生成与回测全部切公司 ClickHouse，见 §2.8；同日股票池删除 `DELETE /api/pools/{pool_id}` + 前端删除/模板新建，见 §2.8.1；同日手动回测接入真实后台任务，见 §2.10；同日晚间结果详情页改为只读真实结果，见 §2.11）｜ 后端代码：`backend/api/` ｜ 前端接入层：`frontend/src/api/client.ts`
-> 相关：README「Web API（React 前端用）」、`quantops/README.md`、`progress.md`「2026-10-10 React 原型接入只读 API（第一步）」「2026-10-10 展示端点切换 ClickHouse 实时数据」「2026-10-14 算子抽成独立库 quantops」「2026-10-15 后端日志落盘」「2026-10-20 股票池接入公司数据库真实股票」「2026-10-25 MySQL 集中存档」「2026-10-25 因子批量回测接入 Web」「2026-10-27 股票池 MySQL 主读 + 删除/模板新建」「2026-10-27 全链路切换公司 ClickHouse」「2026-10-27 手动回测 + 结果详情页接真实结果」
+> 更新时间：2026-11-09（因子组合接入 Web：等权 / MSE 组合、历史清单与最新一期选股，见 §2.13；此前 2026-10-27 股票池、因子生成与回测全部切公司 ClickHouse，见 §2.8；同日股票池删除 `DELETE /api/pools/{pool_id}` + 前端删除/模板新建，见 §2.8.1；同日手动回测接入真实后台任务，见 §2.10；同日晚间结果详情页改为只读真实结果，见 §2.11）｜ 后端代码：`backend/api/` ｜ 前端接入层：`frontend/src/api/client.ts`
+> 相关：README「Web API（React 前端用）」、`quantops/README.md`、`progress.md`「2026-10-10 React 原型接入只读 API（第一步）」「2026-10-10 展示端点切换 ClickHouse 实时数据」「2026-10-14 算子抽成独立库 quantops」「2026-10-15 后端日志落盘」「2026-10-20 股票池接入公司数据库真实股票」「2026-10-25 MySQL 集中存档」「2026-10-25 因子批量回测接入 Web」「2026-10-27 股票池 MySQL 主读 + 删除/模板新建」「2026-10-27 全链路切换公司 ClickHouse」「2026-10-27 手动回测 + 结果详情页接真实结果」「2026-11-09 因子组合等权改造 + 最新选股清单」
 
 ## 1. 架构总览
 
@@ -18,16 +18,18 @@
                  ├─ 股票池 → MySQL `pools` / `pool_codes` 优先，连不上回退 var/data_cache/pools/
                  ├─ 操作符 / 因子运行 / 回测结果 → 复用 custom_bt 现有函数 + 直接读本地文件
                  │        var/factor_runs/、var/outputs/saved_backtests/
-                 ├─ POST /api/pools、POST /api/factor-backtests、POST /api/manual-backtests
+                 ├─ POST /api/pools、/api/factor-generations、/api/factor-backtests、
+                 │   /api/factor-compositions、/api/manual-backtests
                  │        → create_platform_job + workers/job_runner.py 子进程
-                 │        var/outputs/jobs/<job_id>/ → create_pool_from_company / backtest_accepted_factors / run_manual_backtest
+                 │        var/outputs/jobs/<job_id>/ → create_pool_from_company / run_factor_generation /
+                 │        backtest_accepted_factors / compose_factors / run_manual_backtest
                  └─ DELETE /api/pools/{pool_id}?confirm=true
                           → 同步删除 MySQL 记录 + var/data_cache/pools/<pool_id>/（不删因子运行/历史回测）
 ```
 
 - **ClickHouse 唯一事实源**：数据总览 / 字段 / 股票列表 / 股票池候选与建池选样查询公司库（只读 HTTP，见 §2.7），研究面板使用不可变快照。股票池列表/详情优先读 MySQL，未配置或连不上时回退本地 `var/data_cache/pools/`；因子运行与回测结果仍读本地文件（结果目录）。
 - **数据源签名固定**：公司库为 `clickhouse:dws.ll_stock_daily_sharing`；旧本地缓存池的 manifest 没有 `data_source`，仍按本地数据源读取以兼容历史池/因子运行。新建池、因子运行与回测的 manifest 都记录 `data_source`。
-- **写操作有 `POST /api/pools`、`POST /api/factor-backtests`、`POST /api/manual-backtests`、`DELETE /api/pools/{pool_id}`**：三个 POST 只创建后台任务（202 + job_id），由子进程执行，不在 API 进程内同步运行（子进程同样只对 ClickHouse 执行 `SELECT`）；`DELETE` 是同步操作（需 `confirm=true`），同时清理 MySQL 与本地目录，不级联删除因子运行 / 历史回测。因子生成 / 因子组合的提交端点仍未接入（见 §6）。
+- **写操作有 `POST /api/pools`、`POST /api/factor-generations`、`POST /api/factor-backtests`、`POST /api/factor-compositions`、`POST /api/manual-backtests`、`DELETE /api/pools/{pool_id}`**：五个 POST 只创建后台任务（202 + job_id），由子进程执行，不在 API 进程内同步运行（子进程同样只对 ClickHouse 执行 `SELECT`）；`DELETE` 是同步操作（需 `confirm=true`），同时清理 MySQL 与本地目录，不级联删除因子运行 / 历史回测。
 - **因子回测结果按批次版本化**：`var/outputs/saved_backtests/factor/<pool_id>/<run_id>/<backtest_id>/<factor_id>/`，`backtest_id` 即平台任务 job_id；同一因子运行用不同参数重复回测不会覆盖历史批次（§2.9）。
 - 端口：后端 8000（`QL_API_HOST` / `QL_API_PORT` 可改），前端 8443（`PORT` 可改），代理目标用 `QL_API_TARGET` 覆盖。
 - 实时数据源凭据：环境变量 `QL_CH_PASSWORD`（及可选 `QL_CH_HOST/PORT/USER`）优先，其次 `configs/clickhouse.local.env`（已 gitignore）；未配置时所有依赖公司库的端点（三个展示端点、三个候选端点、`POST /api/pools`、公司库池的 `POST /api/factor-backtests` / `POST /api/manual-backtests`）返回 503 + 中文原因，其余端点不受影响。
@@ -50,6 +52,8 @@
 | `GET /api/factor-runs` `/{run_id}` | 因子回测（运行选择）/ 因子生成（运行历史） | **本地 `var/factor_runs/` + MySQL `factor_runs` 合并**：本地 `factor_run.json` + `accepted_factors.jsonl`，MySQL 提供训练元数据与跨机器记录 | 合格因子清单、生成指标、训练时长 / 设备 / 超参数 |
 | `POST /api/factor-backtests` | 因子回测（提交） | 复用 `backtest_accepted_factors`，按 pool/run 绑定的快照读取面板（旧 local 来源拒绝执行） | 202 + `job_id`（后台任务） |
 | `GET /api/factor-backtests` `/{backtest_id}` `/.../files/{file}` | 因子回测（批次结果） | `var/outputs/saved_backtests/factor/<pool>/<run>/<backtest_id>/` | 批次汇总行、失败明细与 CSV 下载 |
+| `POST /api/factor-compositions` | 因子组合（提交） | 多个已确认 factor run + 快照面板，复用 `compose_factors` 后台任务（等权 / MSE） | 202 + `job_id`（后台任务） |
+| `GET /api/factor-compositions` `/{composition_id}` `/.../screen` | 因子组合（结果与最新选股） | `var/outputs/saved_backtests/composite/<pool_id>/<composition_id>/` | 权重、多规模指标、最新一期 TopK 选股清单 |
 | `POST /api/manual-backtests` | 手动回测（提交） | 股票池本地目录优先、MySQL 兜底；按 manifest 绑定的快照读取面板（旧 local 来源拒绝执行），后台执行 `run_manual_backtest` | 202 + `job_id`（后台任务） |
 | `GET /api/jobs/{job_id}` | 手动回测（进度） | `var/outputs/jobs/<job_id>/status.json` 的 `progress.stage` + `message` | loading_panel → evaluating → running → finished |
 | `GET /api/results/detail?run_key=...`、`GET /api/results/file` | 手动 / 因子回测结果 | 任意层级的结果目录（`run_key` 相对路径） | 手动结果 `manual/<job_id>/<run_name>` 直接复用详情/下载 |
@@ -480,15 +484,112 @@ GET /api/factor-generations/defaults + GET /api/pools（选择真实股票池）
 
 **算子子集**：`POST` 的 `operators` 会一路传到 `SingleFactorEnv`，PPO 的 action space 只包含所选算子；未选择时保持原行为（全部 22 个）。`accepted_factors.jsonl` 的 storage metadata 会记录 `operators / operator_mode`，`factor_run.json` 同步保存。
 
+### 2.13 因子组合与最新一期选股（2026-11-09）
+
+链路：
+
+```
+POST /api/factor-compositions（202 + job_id）
+  → workers/job_runner.py 子进程 → workers/job_dispatcher.py → compose_factors
+  → 读取多个 factor run 的 confirmed_factors.jsonl + 股票池绑定的快照面板
+  → 因子方向校正 → 每日截面 z-score（可选 ±z_clip 截断）
+  → 按 selection_metric 排序自动取前 max_factors，或只用手动 factor_ids
+  → mutual IC 去重 → 容量上限 → 等权（默认）或 Alphagen MSE/Adam 权重
+  → 多规模组合回测 → var/outputs/saved_backtests/composite/<pool_id>/<composition_id>/
+GET /api/jobs/{job_id} 轮询
+GET /api/factor-compositions?pool_id=&limit=
+GET /api/factor-compositions/{composition_id}?pool_id=&size=
+GET /api/factor-compositions/{composition_id}/screen?pool_id=&size=&limit=
+```
+
+**`POST /api/factor-compositions`**（202）请求示例：
+
+```json
+{
+  "pool_id": "bank_20261020",
+  "factor_run_ids": ["ppo_run_20261101_ab12"],
+  "factor_ids": null,
+  "weight_method": "equal",
+  "selection_metric": "score",
+  "mutual_ic_threshold": 0.8,
+  "z_clip": 3.0,
+  "sweep_sizes": [5, 10, 20],
+  "max_factors": 20,
+  "target_horizon": 20,
+  "start_date": "2024-01-01",
+  "end_date": "2026-06-12",
+  "top_k": 50,
+  "rebalance_freq": "1W",
+  "max_weight_per_stock": 0.03
+}
+```
+
+- `factor_ids` 省略或 `null` = 按 `selection_metric`（当前只支持 `score`）自动取前 `max_factors` 个；显式列表 = 只组合这些 confirmed 因子，仍会做 mutual IC 去重和容量上限。列表里的因子必须来自所选运行且已通过测试确认，否则 422。
+- **等权（默认）**：入选因子权重全部为 `1/N`，不调用优化器；综合 alpha = 各因子按训练 IC 方向校正后、每日截面 z-score 的等权平均。**MSE**：沿用 Alphagen 的 MSE + Adam + L1 权重优化，权重不强制和为 1，并可按优化器权重剔除最弱因子。
+- `z_clip` 为每日截面 z-score 的对称截断阈值（如 `3.0` 表示 ±3σ）；`null` 表示不截断。截断会改变当日均值，这是有意的极值处理，不是 bug。
+- mutual IC 去重：MSE 用**带符号**的 mutual IC 与阈值比较；等权用**绝对值**比较（`|IC| > threshold` 视为重复）。等权无法通过优化器权重剔除因子，达到容量后新候选直接以 `capacity_limit` 拒绝，因此最终入选数可能小于请求规模。
+- `sweep_sizes` 是组合规模（因子数）列表，必须全部为正且不超过 `max_factors`；实际入选不足时按实际数量回测，清单中的 `underfilled_final_size` 会记录；`default_size` 取已完成的最大规模。
+- 所有 `factor_run_ids` 必须属于同一个 `pool_id`，且已完成测试确认、本地运行目录存在、`source_signature` 与当前数据源一致；多个运行的快照不一致时必须显式传 `snapshot_id`，否则 422。`start_date` / `end_date` 省略时跟随股票池的 `selection_start ~ selection_end`。
+- 参数范围：`weight_method ∈ {equal, mse}`、`top_k 1–1000`、`max_factors 1–500`、`mutual_ic_threshold 0–1`、`z_clip 0–10`（`null` 关闭）、`target_horizon 1–250`、`rebalance_freq ∈ {1D, 1W, 2W, 1M}`、`max_weight_per_stock (0, 1]`。
+- 提交时返回的 `warnings` 会提示三类风险：`top_k × max_weight_per_stock < 1`（组合必然留现金）、等权模式下 mutual IC 阈值 > 0.9（去重偏弱）、候选因子数少于 `max_factors`（规模会不足）。
+- 返回 `{job_id, status:"queued", operation:"compose_factors", pool_id, data_source, weight_method, factor_run_ids, factor_ids, candidate_total, selected_total, warnings, request_summary}`。
+
+**任务的 `progress`**（`GET /api/jobs/{job_id}`）按阶段写入：`stage ∈ {loaded, evaluating, correlating, evaluating_marginal, selecting, optimizing_weights, backtesting}`，并带 `candidate_index / candidate_count / accepted_count`；回测阶段额外带 `current_size / completed_sizes`。前端按候选进度和已完成规模估算进度条。
+
+**`GET /api/factor-compositions/{composition_id}`**（需 `pool_id`，可选 `size`，默认最大规模）返回：
+
+```json
+{
+  "composition_id": "...",
+  "pool_id": "...",
+  "size": 20,
+  "available_sizes": [5, 10, 20],
+  "manifest": {
+    "weight_method": "equal",
+    "z_clip": 3.0,
+    "mutual_ic_threshold": 0.8,
+    "candidate_count": 24,
+    "selected_count": 20,
+    "rejected_count": 4,
+    "requested_sizes": [5, 10, 20],
+    "completed_sizes": [5, 10, 20],
+    "default_size": 20,
+    "sizes": [{"size": 20, "composition_metrics": {}, "backtest_summary": {}, "screen": {}}]
+  },
+  "result": {"size": 20, "composition_metrics": {"ic": 0.05, "rank_ic": 0.06, "icir": 1.2, "coverage": 0.98}, "backtest_summary": {"annual_return": 0.18, "sharpe": 1.4, "max_drawdown": -0.09, "average_turnover": 0.22}, "screen": {}},
+  "weights": [{"factor_id": "...", "expression": "...", "weight": 0.05, "weight_method": "equal", "training_ic": 0.08, "direction": 1}]
+}
+```
+
+API 层递归把 NaN/Inf 转成 `null`，浏览器可直接 `JSON.parse`。组合结果目录还会写：
+
+| 文件 | 内容 |
+| --- | --- |
+| `composition_manifest.json` | 组合根清单：来源运行/快照、权重方法、z-clip、mutual IC、候选/入选/剔除数、各规模指标与 `output_dir` |
+| `<composition_id>_size_XXX/factor_weights.json` | 因子权重、方向、训练 IC、预处理表达式、单因子指标 |
+| `<composition_id>_size_XXX/latest_screen.json` | 最新一期完整选股清单（含每只股票的单因子贡献） |
+| `<composition_id>_size_XXX/latest_screen.csv` | 同一清单的扁平 CSV（不含 contributions，便于 Excel 查看） |
+
+**`GET /api/factor-compositions/{composition_id}/screen`**（需 `pool_id`，可选 `size` / `limit`，默认 200，最大 1000）返回最新信号日的选股清单：
+
+- `signal_date = 组合 alpha 的最后一个交易日`，按综合分降序排名；
+- `execution_date = 面板中 signal_date 之后的下一个交易日`；若数据还没有下一交易日，`execution_pending=true`，先按信号日排名选 TopK；
+- 有下一交易日时，逐名检查开盘可买性：下一交易日无行情 / 停牌 / 开盘价缺失 / 涨停都会被标记 `blocked` 并跳过，继续按排名补足 `top_k`；
+- 行状态：`buyable`（次日可买）、`pending_next_open`（待次日校验）、`blocked`（次日不可买）、`not_selected`（未选中）；`blocked_reason` 为 `next_open_missing_row / next_open_suspended / next_open_missing / next_open_limit_up`；
+- 每行带 `rank / code / name / composite_score / target_weight / status` 和 `contributions`（各因子的 `zscore / weight / contribution`），前端可展开查看；`name` 由 API 读取时按代码从公司库 `dim.stock_main_info_fd.ChiNameAbbr` 补全（进程内缓存 600s；公司库不可用时为 `null`，不影响选股结果）；
+- 响应包含 `factors`（因子权重与方向）、`total_ranked`、`selected_count`、`buyable_count`（执行日待定时为 `null`）、`planned_weight_per_stock`、`returned_rows / total_returned_rows`。落盘的 `latest_screen.json/.csv` 仍只含代码与数值字段，名称只在 API 响应中补齐。
+
+前端「因子组合」页已全部接真实后端（§3 的 mock 提交表单已移除）：默认等权、自动 TopN 或手动勾选因子、mutual IC / z-clip / 多规模参数可调；提交后轮询任务，结果区展示组合 IC/IR、回测指标、因子权重、多规模对比、最新一期选股清单与单因子贡献，并可载入历史组合、下载权重 JSON。
+
 ## 3. 仍是演示数据的部分
 
 以下页面/表单数据来自 `src/mockData.ts`、`src/mockExtended.ts`，**未接真实数据**：
 
 - 任务中心（建池/因子回测/手动回测/因子生成任务的 `GET /api/jobs/{job_id}` 已暴露并用于对应页面，任务中心页面本身仍渲染 mock）
 - 用户管理、审计日志
-- 因子组合的**提交表单**；因子生成页的大模型（LLM）选项暂时禁用，PPO 路径已全部接真实后端（§2.12）
+- 因子生成页的大模型（LLM）选项暂时禁用，PPO 路径已全部接真实后端（§2.12）
 
-股票池创建表单**已不再是 mock**：候选来自公司库，提交走 `POST /api/pools` 并轮询任务状态（§2.8）。因子回测页也已完成真实接入：运行/因子来自 `var/factor_runs/`，提交走 `POST /api/factor-backtests`，轮询进度并读取批次结果（§2.9）。手动回测页同样已接真实后端：股票池来自 `/api/pools`，提交走 `POST /api/manual-backtests`，轮询任务并直接展示结果（§2.10）。
+股票池创建表单**已不再是 mock**：候选来自公司库，提交走 `POST /api/pools` 并轮询任务状态（§2.8）。因子回测页已完成真实接入：运行/因子来自 `var/factor_runs/`，提交走 `POST /api/factor-backtests`，轮询进度并读取批次结果（§2.9）。手动回测页同样已接真实后端：股票池来自 `/api/pools`，提交走 `POST /api/manual-backtests`，轮询任务并直接展示结果（§2.10）。因子组合页也已接真实后端：提交走 `POST /api/factor-compositions`，结果与最新选股清单分别读取 `/api/factor-compositions/{id}` 与 `/screen`（§2.13）。
 
 后端作业机制已就绪：`platform_jobs.py` 支持 5 种操作（create_pool / generate_factors / backtest_factors / compose_factors / manual_backtest），与 CLI 端共用 `var/outputs/jobs/` 目录。
 
@@ -610,8 +711,8 @@ py -3 -m cli mysql-sync       # 本地 pools / factor_runs / saved_backtests 全
 - ~~`POST /api/factor-backtests`~~ 已完成（2026-10-25，§2.9）：运行列表、批次进度、版本化输出、批次查询与结果跳转均已接通。
 - ~~`POST /api/backtest`（手工表达式）~~ 已完成（2026-10-27，`POST /api/manual-backtests`，§2.10）：股票池选择、表达式校验、后台执行、进度轮询与结果预览均已接通。
 - ~~`POST /api/factor-generations`~~ 已完成（2026-11-02，§2.12）：默认参数、字段/算子/切分校验、后台 PPO 子进程、进度轮询与真实结果展示均已接通。
-- 待接：`POST /api/factor-compositions`，同样复用 `create_platform_job` / `run_platform_job`。
-- 任务中心改读 `var/outputs/jobs/*/status.json` 状态机（queued → running → finished/failed）；目前股票池页、因子回测页与手动回测页分别轮询各自提交的任务。
+- ~~`POST /api/factor-compositions`~~ 已完成（2026-11-09，§2.13）：等权/MSE 组合、历史清单、最新一期选股与单因子贡献均已接通；同样复用 `create_platform_job` / `run_platform_job`。
+- 任务中心改读 `var/outputs/jobs/*/status.json` 状态机（queued → running → finished/failed）；目前股票池页、因子回测页、因子生成页、组合页与手动回测页分别轮询各自提交的任务。
 - 用户 / 审计页面保持演示数据（无真实后端）
 
 ## 7. 已知坑（均已处理）
@@ -653,6 +754,9 @@ py -3 -m cli mysql-sync       # 本地 pools / factor_runs / saved_backtests 全
 | 因子运行根目录口径不一致（API / mysql-sync / CLI 配置） | 统一解析到工作区根目录 `var/factor_runs/`：API 默认 `WORKSPACE_ROOT/factor_runs`（`QL_FACTOR_RUNS_ROOT` 可覆盖），`mysql_store.sync_all` 默认 `PROJECT_ROOT.parent/factor_runs`，`configs/factor_generation.yaml` 已改为 `../../factor_runs` |
 | 前端切运行/批次时 `useApiData` 仍短暂保留上一条数据 | 渲染前校验 `runDetail.run_id === runId`、`batch.factor_run_id === runId`，不匹配按加载中处理 |
 | 批次进度在任务 `finished` 时丢失 | `update_job_status` 只在 queued/running 清空 progress；finished/failed 保留最后一次进度与 result |
+| 等权组合没有优化器权重可用来剔除因子 | 达到 `max_factors` 后新候选直接以 `capacity_limit` 拒绝；mutual IC 用绝对值比较，最终入选数可能小于请求规模 |
+| 因子 z-score 截断后当日均值不再为 0 | `z_clip` 是极值处理，会改变截面均值；单测只断言最大绝对值受限，不要求均值仍为 0 |
+| 最新选股按排名取 TopK 时，次日停牌/涨停股票会占掉名额 | 有下一交易日数据时逐名检查可买性，跳过 `next_open_suspended / next_open_missing / next_open_limit_up / next_open_missing_row` 并继续补足 TopK；执行日待定时按信号日排名展示 |
 
 ## 8. 如何验证「前端数据 = 数据库数据」
 

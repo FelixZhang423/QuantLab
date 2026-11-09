@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.errors import install_error_handlers
 from api.routers import (
+    composition,
     data,
     factor_backtest,
     factor_generation,
@@ -49,5 +50,6 @@ app.include_router(pools.router)
 app.include_router(jobs.router)
 app.include_router(factor_generation.router)
 app.include_router(factor_backtest.router)
+app.include_router(composition.router)
 app.include_router(manual_backtest.router)
 app.include_router(results.router)
