@@ -247,9 +247,9 @@ export function buildBacktestAnalysis(
     : watch > 0 ? "暂不建议直接进入组合，可延长样本区间或换股票池复核后再决定。"
       : "不建议用于组合，建议调整表达式或更换股票池重新生成。";
   const limitations = [
-    algorithm === "未记录" ? "生成算法未记录，无法回溯生成参数。" : `生成算法：${algorithm}。`,
-    "分析为前端规则模拟（LLM 未接入）。",
-    "回测为单一路径，未做滚动样本外与参数敏感性检验。",
+    algorithm === "未记录" ? "当前结果未提供生成算法信息；生成参数请结合对应的因子运行记录核对。" : `生成算法：${algorithm}。`,
+    "总结依据当前回测指标和预设规则生成，用于辅助比较与筛选。",
+    "本总结仅评价当前回测区间与参数下的表现，不代表滚动样本外或参数敏感性检验结论。",
   ];
   if (failures > 0) limitations.push(`${failures} 个因子回测异常，未纳入分析。`);
   const analysis: BacktestAnalysis = {
@@ -352,14 +352,14 @@ export function BacktestAnalysisCard({ batch, rows, failures, algorithm }: {
 
   if (!batch.completed) {
     return (
-      <Card size="small" title="大模型分析总结（演示）">
+      <Card size="small" title="分析总结">
         <Text type="secondary">本批次没有成功的回测结果，暂不分析。</Text>
       </Card>
     );
   }
   if (loading || !analysis) {
     return (
-      <Card size="small" title="大模型分析总结（演示）">
+      <Card size="small" title="分析总结">
         <Skeleton active paragraph={{ rows: 5 }} />
       </Card>
     );
@@ -367,7 +367,7 @@ export function BacktestAnalysisCard({ batch, rows, failures, algorithm }: {
   return (
     <Card
       size="small"
-      title="大模型分析总结（演示）"
+      title="分析总结"
       extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => setTick((value) => value + 1)}>重新分析</Button>}
     >
       <Space direction="vertical" size={12} className="full-width">
@@ -380,7 +380,7 @@ export function BacktestAnalysisCard({ batch, rows, failures, algorithm }: {
           { key: "categories", label: "分类分布", children: analysis.categoryCounts.length ? analysis.categoryCounts.map((item) => `${item.label} ${item.count}`).join(" · ") : "—" },
         ]} />
         <div>
-          <Text strong>专家解读</Text>
+          <Text strong style={{ display: "inline-block", marginRight: 24, verticalAlign: "top", paddingTop: 6 }}>专家解读</Text>
           <Space direction="vertical" size={6} style={{ marginTop: 6 }}>
             {analysis.summary.map((line) => <Text key={line}>{line}</Text>)}
           </Space>
@@ -391,7 +391,7 @@ export function BacktestAnalysisCard({ batch, rows, failures, algorithm }: {
         />
         <Table rowKey="factor_id" size="small" pagination={false} columns={analysisColumns} dataSource={analysis.factors} scroll={{ x: 900 }} />
         <div>
-          <Text strong>局限说明</Text>
+          <Text strong>分析说明</Text>
           <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             {analysis.limitations.map((line) => <li key={line}><Text type="secondary">{line}</Text></li>)}
           </ul>
@@ -491,7 +491,7 @@ export function SingleResultAnalysisCard({ detail, algorithm }: { detail: Result
       : `原因：${verdict.reasons.join("；")}。建议调整表达式或重新生成。`;
 
   const header = (
-    <Space><Text strong>大模型分析总结（演示）</Text></Space>
+    <Space><Text strong>分析总结</Text></Space>
   );
   const rerun = <Button size="small" icon={<ReloadOutlined />} onClick={() => setTick((value) => value + 1)}>重新分析</Button>;
 
@@ -508,7 +508,7 @@ export function SingleResultAnalysisCard({ detail, algorithm }: { detail: Result
             { key: "expression", label: "表达式", children: <Text code>{expression || "—"}</Text> },
           ]} />
           <div>
-            <Text strong>专家解读</Text>
+            <Text strong style={{ display: "inline-block", marginRight: 24, verticalAlign: "top", paddingTop: 6 }}>专家解读</Text>
             <Space direction="vertical" size={6} style={{ marginTop: 6 }}>
               {singleNarrative(detail, verdict).map((line) => <Text key={line}>{line}</Text>)}
             </Space>
@@ -518,11 +518,11 @@ export function SingleResultAnalysisCard({ detail, algorithm }: { detail: Result
             showIcon message={verdictText} description={suggestion}
           />
           <div>
-            <Text strong>局限说明</Text>
+            <Text strong>分析说明</Text>
             <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-              <li><Text type="secondary">{algorithm === "未记录" ? "生成算法未记录，无法回溯生成参数。" : `生成算法：${algorithm}。`}</Text></li>
-              <li><Text type="secondary">分析为前端规则模拟（LLM 未接入）。</Text></li>
-              <li><Text type="secondary">回测为单一路径，未做滚动样本外与参数敏感性检验。</Text></li>
+              <li><Text type="secondary">{algorithm === "未记录" ? "当前结果未提供生成算法信息；生成参数请结合对应的因子运行记录核对。" : `生成算法：${algorithm}。`}</Text></li>
+              <li><Text type="secondary">总结依据当前回测指标和预设规则生成，用于辅助比较与筛选。</Text></li>
+              <li><Text type="secondary">本总结仅评价当前回测区间与参数下的表现，不代表滚动样本外或参数敏感性检验结论。</Text></li>
             </ul>
           </div>
         </Space>

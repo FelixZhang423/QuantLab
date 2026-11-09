@@ -2144,3 +2144,25 @@ def test_pending_confirmation_does_not_expose_partial_confirmed_file(master, tmp
     _write_json(run_dir / "confirmation_manifest.json", {"status": "running"})
     assert factor_backtest_service._factor_run_summary(run_dir)["confirmed_count"] == 0
     assert factor_backtest_service._accepted_factor_rows(run_dir) == []
+
+
+def test_stock_list_filters_totals_and_sorts_before_pagination(monkeypatch):
+    _stub_universe(monkeypatch)
+    result = data_service.get_stocks(limit=1, offset=1, industries=["银行"], sort_by="latest_close", sort_order="desc")
+    assert result["n_stocks_all"] == 5
+    assert result["total"] == 2
+    assert result["total_rows"] == 200
+    assert [item["code"] for item in result["items"]] == ["600000"]
+    assert result["queried_at"]
+    assert data_service.get_stocks(q="不存在")["total_rows"] == 0
+    assert data_service.get_stocks(suspended="yes")["items"][0]["code"] == "920879"
+    with pytest.raises(DomainError):
+        data_service.get_stocks(sort_by="invalid")
+
+
+def test_stock_list_refresh_invalidates_cache(monkeypatch):
+    _stub_universe(monkeypatch)
+    cleared = []
+    monkeypatch.setattr(live_db, "clear_cache", lambda keys: cleared.append(keys))
+    data_service.get_stocks(refresh=True)
+    assert cleared == [("stock_rows", "dim_profiles")]

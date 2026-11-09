@@ -105,7 +105,7 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
     result: { title: "结果详情", subtitle: "指标、净值、年度表现与结果文件" },
     data_overview: { title: "数据总览", subtitle: "ClickHouse 数据规模与研究快照" },
     fields: { title: "数据字段", subtitle: "可用于因子表达式的字段" },
-    stocks: { title: "股票列表", subtitle: "缓存内全部股票概览" },
+    stocks: { title: "股票列表", subtitle: "公司 ClickHouse 股票行情概览" },
     operators: { title: "操作符", subtitle: "Brain 风格表达式算子" },
     pools: { title: "股票池", subtitle: "创建与查看命名股票池" },
     factor_generation: { title: "因子生成", subtitle: "PPO 自动搜索可解释因子表达式" },

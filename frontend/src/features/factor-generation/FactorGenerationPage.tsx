@@ -314,13 +314,12 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
     return `${operator.name}${operator.description_cn}`.toLowerCase().includes(operatorSearch.toLowerCase());
   });
 
-  // 后端默认参数：首次加载后写入字段、PPO 参数与质量阈值。
+  // 后端默认参数：首次加载后写入 PPO 参数与质量阈值，字段由用户选择。
   useEffect(() => {
     const defaults = defaultsApi.data;
     if (!defaults || defaultsApplied.current) return;
     defaultsApplied.current = true;
     form.setFieldsValue({
-      fields: defaults.fields,
       targetHorizon: defaults.target_horizon,
       maxBacktrackDays: defaults.max_backtrack_days,
       targetFactorCount: defaults.target_factor_count,
@@ -455,6 +454,10 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
 
   const submit = async (values: GenFormValues) => {
     const fields = values.fields ?? [];
+    if (!values.operators?.length) {
+      message.error("请至少选择一个操作符");
+      return;
+    }
     if (fields.length === 0) {
       message.error("请至少选择一个因子字段");
       return;
@@ -483,13 +486,17 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
     const pickedOperators = (values.operators ?? []).filter((name) =>
       genOperators.some((operator) => operator.name === name),
     );
+    if (!pickedOperators.length) {
+      message.error("请至少选择一个 PPO 支持的操作符");
+      return;
+    }
     setSubmitting(true);
     try {
       const response = await api.createFactorGeneration({
         pool_id: values.pool,
         run_name: values.name,
         fields,
-        operators: pickedOperators.length ? pickedOperators : undefined,
+        operators: pickedOperators,
         splits: { train, valid, test },
         max_backtrack_days: values.maxBacktrackDays,
         target_horizon: values.targetHorizon,
@@ -710,7 +717,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
 
   return (
     <>
-      <Row gutter={16} className="backtest-layout">
+      <Row gutter={16} className="backtest-layout factor-generation-layout">
         <Col span={10}>
           <Card title={<Space><RobotOutlined />PPO 生成参数</Space>} className="form-card">
             {defaultsApi.error && (
@@ -775,9 +782,9 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                 />
               )}
               <Form.Item
-                label={`可用字段（已选 ${selectedFields.length}${defaultsApi.data ? ` / 默认 ${defaultsApi.data.field_count}` : ""}）`}
+                label={`数据字段（已选 ${selectedFields.length}）`}
                 required
-                extra="默认使用 configs/factor_generation.yaml 的字段；财务流量字段需统一口径：累计（fund_X）与单季（fund_X_q）不能混用。"
+                extra="请选择参与因子生成的数据字段；财务流量字段需统一口径：累计（fund_X）与单季（fund_X_q）不能混用。"
               >
                 <Flex gap={6} wrap align="center">
                   {selectedFields.slice(0, 8).map((field) => <Tag key={field}>{field}</Tag>)}
@@ -786,7 +793,8 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                 </Flex>
               </Form.Item>
               <Form.Item
-                label={`操作符（${selectedOperators.length ? `已选 ${selectedOperators.length}` : `未选 = 全部 PPO 支持算子`}）`}
+                label={`操作符（已选 ${selectedOperators.length}）`}
+                required
                 extra={allOperators.length > 0 ? `PPO 可采样 ${genOperators.length} / API 共 ${allOperators.length} 个算子` : undefined}
               >
                 <Flex gap={6} wrap align="center">
@@ -816,8 +824,6 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                   description={defaultsApi.data.warnings.join("；")}
                 />
               ) : null}
-              <Alert type="info" showIcon message="train / valid / test 不重叠，边界至少隔离 target_horizon 个交易日，历史预热不计入指标区间。" style={{ marginBottom: 12 }} />
-              <Alert type="info" showIcon message="验证和测试的 IC、RankIC、ICIR 符号均须与训练 IC 相同。测试确认门槛固定：coverage ≥ 0.9，|IC| / |RankIC| ≥ 0.03，|ICIR| ≥ 0.3；确认后不可据测试结果反复调参。" style={{ marginBottom: 12 }} />
               <Form.Item label="训练段 train" name="train" rules={[{ required: true, message: "请选择训练段" }]}><DatePicker.RangePicker className="full-width" disabledDate={disabledSplitDate} /></Form.Item>
               <Form.Item label="验证段 valid" name="valid" rules={[{ required: true, message: "请选择验证段" }]}><DatePicker.RangePicker className="full-width" disabledDate={disabledSplitDate} /></Form.Item>
               <Form.Item label="测试段 test" name="test" rules={[{ required: true, message: "请选择测试段" }]}><DatePicker.RangePicker className="full-width" disabledDate={disabledSplitDate} /></Form.Item>
@@ -828,6 +834,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                 <Col span={12}><Form.Item label="目标因子数" name="targetFactorCount"><InputNumber className="full-width" min={1} max={200} /></Form.Item></Col>
               </Row>
               <Divider orientation="left" plain>质量阈值</Divider>
+              <Alert type="info" showIcon message="验证和测试的 IC、RankIC、ICIR 符号均须与训练 IC 相同。测试确认门槛固定：coverage ≥ 0.9，|IC| / |RankIC| ≥ 0.03，|ICIR| ≥ 0.3；确认后不可据测试结果反复调参。" style={{ marginBottom: 12 }} />
               <Row gutter={12}>
                 <Col span={12}><Form.Item label="训练／验证最低覆盖率" name="minCoverage" rules={[{ type: "number", min: 0.9, max: 1 }]}><InputNumber className="full-width" min={0.9} max={1} step={0.05} /></Form.Item></Col>
                 <Col span={12}><Form.Item label="最低训练 |IC|" name="minTrainIc" rules={[{ type: "number", min: 0.05, max: 1 }]}><InputNumber className="full-width" min={0.05} max={1} step={0.01} /></Form.Item></Col>
@@ -848,7 +855,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
             </Form>
           </Card>
         </Col>
-        <Col span={14}>
+        <Col span={14} className="factor-generation-results">
           <Space direction="vertical" size={16} className="full-width">
             {active && (
               <Card
@@ -1057,6 +1064,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                     {filteredHistoryRuns.length !== historyRuns.length ? `，筛选后 ${filteredHistoryRuns.length} 次` : ""}
                     ；训练时长、运行设备与超参数写入 MySQL，展开行可查看明细。
                   </Text>
+                  <div className="factor-history-viewport">
                   <Table
                     rowKey="run_id"
                     size="small"
@@ -1069,7 +1077,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                     locale={{ emptyText: <Empty description="还没有因子生成记录" /> }}
                     expandable={{
                       expandedRowRender: (run) => (
-                        <Space direction="vertical" size={12} className="full-width">
+                        <Space direction="vertical" size={12} className="full-width factor-history-details">
                           <Descriptions
                             size="small" column={3}
                             items={[
@@ -1108,6 +1116,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                       ),
                     }}
                   />
+                  </div>
                 </>
               )}
             </Card>
@@ -1189,7 +1198,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
             onChange={setOperatorCategory}
           />
           <Flex justify="space-between" gap={12} wrap align="center">
-            <Text type="secondary">仅显示 PPO 支持的 {genOperators.length} 个；未选择 = 使用全部支持算子</Text>
+            <Text type="secondary">仅显示 PPO 支持的 {genOperators.length} 个；请主动选择参与生成的操作符</Text>
             <Input.Search allowClear value={operatorSearch} onChange={(event) => setOperatorSearch(event.target.value)} placeholder="搜索操作符 / 说明" style={{ width: 260 }} />
           </Flex>
           <Flex justify="space-between" gap={12} wrap align="center">

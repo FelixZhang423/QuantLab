@@ -19,8 +19,12 @@ def get_fields() -> Dict[str, Any]:
     return data_service.get_fields()
 
 @router.get('/api/data/stocks')
-def get_stocks(q: str=Query('', description='按股票代码或名称匹配'), limit: int=Query(0, ge=0, description='0 表示不截断'), offset: int=Query(0, ge=0)) -> Dict[str, Any]:
-    return data_service.get_stocks(q, limit, offset)
+def get_stocks(q: str = '', limit: int = Query(50, ge=0, le=500), offset: int = Query(0, ge=0),
+               industries: List[str] = Query(default=[]), exchanges: List[str] = Query(default=[]),
+               boards: List[str] = Query(default=[]), listed_states: List[str] = Query(default=[]),
+               suspended: str = 'all', sort_by: str = 'code', sort_order: str = 'asc', refresh: bool = False) -> Dict[str, Any]:
+    return data_service.get_stocks(q, limit, offset, industries, exchanges, boards, listed_states,
+                                   suspended, sort_by, sort_order, refresh)
 
 @router.get('/api/universe/options')
 def get_universe_options() -> Dict[str, Any]:

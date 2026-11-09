@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert, Button, Card, Col, Descriptions, Flex, Input, Pagination, Row, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
 } from "antd";
@@ -253,37 +253,81 @@ export function FieldsPage() {
 export function StocksPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const stocksApi = useApiData(() => api.stocks());
+  const [pageSize, setPageSize] = useState(20);
+  const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<Record<string, string[]>>({});
+  const [suspended, setSuspended] = useState("all");
+  const [sort, setSort] = useState({ sort_by: "code", sort_order: "asc" });
+  const refreshRequested = useRef(false);
+  const optionsApi = useApiData(api.universeOptions);
+  useEffect(() => {
+    const timer = setTimeout(() => { setQuery(search.trim()); setPage(1); }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const stocksApi = useApiData(() => {
+    const refresh = refreshRequested.current;
+    refreshRequested.current = false;
+    return api.stocks({ q: query, limit: pageSize, offset: (page - 1) * pageSize,
+      ...filters, suspended, ...sort, refresh });
+  }, [query, page, pageSize, filters, suspended, sort]);
   const items = stocksApi.data?.items ?? [];
-  const keyword = search.trim();
-  const filtered = items.filter((s) => s.code.includes(keyword) || (s.name ?? "").includes(keyword));
   const columns: TableColumnsType<StockInfo> = [
-    { title: "股票代码", dataIndex: "code", width: 110, sorter: (a, b) => a.code.localeCompare(b.code), render: (v) => <Text code>{v}</Text> },
+    { title: "股票代码", dataIndex: "code", width: 110, sorter: true, render: (v) => <Text code>{v}</Text> },
     { title: "名称", dataIndex: "name", width: 140, ellipsis: true, render: (v) => v || "—" },
-    { title: "数据行数", dataIndex: "rows", align: "right", sorter: (a, b) => a.rows - b.rows, render: (v) => fmtInt(v) },
+    { title: "行业", dataIndex: "industry", width: 120 },
+    { title: "板块", dataIndex: "board", width: 120 },
+    { title: "上市状态（库内值）", dataIndex: "listed_state", width: 150, render: (v) => v == null ? "未知" : <Tag>{v}</Tag> },
+    { title: "交易状态", dataIndex: "latest_ifsuspend", width: 110, render: (v) => v === 1 ? <Tag color="orange">停牌</Tag> : v === 0 ? <Tag color="green">正常</Tag> : "未知" },
+    { title: "数据行数", dataIndex: "rows", align: "right", sorter: true, render: (v) => fmtInt(v) },
     { title: "起止日期", key: "range", width: 220, render: (_, s) => <Text type="secondary">{s.start_date} ~ {s.end_date}</Text> },
     { title: "最近交易日", dataIndex: "latest_date", width: 120 },
-    { title: "最近收盘价", dataIndex: "latest_close", align: "right", sorter: (a, b) => (a.latest_close ?? 0) - (b.latest_close ?? 0), render: (v) => fmtPrice(v) },
+    { title: "最近收盘价", dataIndex: "latest_close", align: "right", sorter: true, render: (v) => fmtPrice(v) },
     { title: "最近成交量", dataIndex: "latest_volume", align: "right", render: (v) => fmtInt(v) },
     { title: "最近成交额", dataIndex: "latest_amount", align: "right", render: (v) => (v == null ? "—" : `¥${v.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}`) },
   ];
   return (
     <Space direction="vertical" size={16} className="page-stack">
       <Row gutter={16}>
-        <Col span={8}><Card className="metric-card metric-blue"><Statistic title="股票数量" value={stocksApi.data?.n_stocks_all ?? 0} suffix="只" /></Card></Col>
-        <Col span={8}><Card className="metric-card metric-cyan"><Statistic title="总数据行数" value={stocksApi.data?.total_rows ?? 0} /></Card></Col>
-        <Col span={8}><Card className="metric-card metric-violet"><Statistic title="当前筛选数量" value={filtered.length} suffix="只" /></Card></Col>
+        <Col span={8}><Card className="metric-card metric-blue"><Statistic title="全库股票数" value={stocksApi.data?.n_stocks_all ?? 0} suffix="只" /></Card></Col>
+        <Col span={8}><Card className="metric-card metric-cyan"><Statistic title="匹配数据行数" value={stocksApi.data?.total_rows ?? 0} /></Card></Col>
+        <Col span={8}><Card className="metric-card metric-violet"><Statistic title="匹配股票数" value={stocksApi.data?.total ?? 0} suffix="只" /></Card></Col>
       </Row>
       <Card className="filter-card">
         <Flex justify="space-between" gap={16} wrap>
-          <Input.Search allowClear value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索股票代码 / 名称" className="task-search" prefix={<SearchOutlined />} />
-          <Text type="secondary">实时聚合 dws.ll_stock_daily_sharing（60 秒缓存）· 名称来自 dim.stock_main_info_fd</Text>
+          <Input.Search allowClear value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="搜索股票代码 / 名称" className="task-search" prefix={<SearchOutlined />} />
+          <Button icon={<ReloadOutlined />} loading={stocksApi.loading} onClick={() => {
+            refreshRequested.current = true; stocksApi.reload(); optionsApi.reload();
+          }}>刷新公司数据</Button>
         </Flex>
+        <Flex gap={12} wrap style={{ marginTop: 12 }}>
+          {(["industries", "exchanges", "boards", "listed_states"] as const).map((key, index) => (
+            <Select key={key} mode="multiple" allowClear showSearch optionFilterProp="label"
+              placeholder={["行业", "市场", "板块", "上市状态（库内值）"][index]} style={{ minWidth: 170 }}
+              value={filters[key] ?? []} loading={optionsApi.loading}
+              options={optionsApi.data?.[key].map((option) => ({ value: option.value, label: `${option.label} (${option.count})` }))}
+              onChange={(value) => { setFilters((old) => ({ ...old, [key]: value })); setPage(1); }} />
+          ))}
+          <Select value={suspended} style={{ width: 140 }} onChange={(value) => { setSuspended(value); setPage(1); }}
+            options={[{value: "all", label: "全部交易状态"}, {value: "yes", label: "停牌"}, {value: "no", label: "正常交易"}]} />
+        </Flex>
+        <Text type="secondary">公司 ClickHouse · 查询时间 {stocksApi.data?.queried_at ?? "—"} · {stocksApi.data?.cached ? "缓存命中" : "本次查询更新"} · 缓存有效期 {stocksApi.data?.cache_ttl_seconds ?? "—"} 秒。刷新会绕过服务端缓存；状态以最新记录为准。</Text>
+        {optionsApi.error && <Alert type="warning" message="筛选选项读取失败" description={optionsApi.error} />}
       </Card>
       <LoadGate state={stocksApi} hint={LIVE_HINT}>
         <Card className="data-card">
-          <Table rowKey="code" size="middle" columns={columns} dataSource={filtered.slice((page - 1) * 20, page * 20)} pagination={false} />
-          <Flex justify="flex-end" className="table-pagination"><Pagination current={page} pageSize={20} total={filtered.length} showSizeChanger={false} onChange={setPage} /></Flex>
+          <Table rowKey="code" size="middle" columns={columns} dataSource={items} loading={stocksApi.loading}
+            scroll={{ x: 1700 }} pagination={{ current: page, pageSize, total: stocksApi.data?.total ?? 0,
+              showSizeChanger: true, pageSizeOptions: [20, 50, 100], showTotal: (total) => `共 ${total} 只股票` }}
+            onChange={(pagination, _, sorter, extra) => {
+              if (extra.action === "sort") {
+                const selected = Array.isArray(sorter) ? sorter[0] : sorter;
+                setSort({ sort_by: selected.order ? String(selected.field) : "code", sort_order: selected.order === "descend" ? "desc" : "asc" });
+                setPage(1);
+              } else {
+                setPage(pagination.pageSize !== pageSize ? 1 : pagination.current ?? 1);
+                setPageSize(pagination.pageSize ?? 20);
+              }
+            }} />
         </Card>
       </LoadGate>
     </Space>

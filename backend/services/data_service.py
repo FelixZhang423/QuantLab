@@ -203,36 +203,31 @@ def get_fields() -> Dict[str, Any]:
         }
     )
 
-def get_stocks(
-    q: str = "",
-    limit: int = 0,
-    offset: int = 0,
-) -> Dict[str, Any]:
-    try:
-        live = live_db.live_stock_rows()
-    except live_db.LiveDBError as exc:
-        raise _live_error(exc) from None
-    items = [dict(item) for item in live.data]
-    keyword = q.strip().lower()
-    if keyword:
-        items = [
-            item
-            for item in items
-            if keyword in item["code"] or keyword in str(item.get("name") or "").lower()
-        ]
-    total = len(items)
-    total_rows = sum(item["rows"] for item in items)
-    page = items[offset:] if limit <= 0 else items[offset : offset + limit]
-    return _sanitize(
-        {
-            "total": total,
-            "total_rows": total_rows,
-            "n_stocks_all": len(live.data),
-            "items": page,
-            "cached": live.cached,
-            "queried_at": live.queried_at,
-        }
-    )
+def get_stocks(q: str = "", limit: int = 0, offset: int = 0,
+               industries=None, exchanges=None, boards=None, listed_states=None,
+               suspended: str = "all", sort_by: str = "code", sort_order: str = "asc",
+               refresh: bool = False) -> Dict[str, Any]:
+    allowed = {"code", "rows", "latest_close"}
+    if sort_by not in allowed or sort_order not in {"asc", "desc"} or suspended not in {"all", "yes", "no"}:
+        raise make_error(status_code=422, detail="无效的排序或停牌筛选参数")
+    if refresh:
+        live_db.clear_cache(("stock_rows", "dim_profiles"))
+    live = _live_universe()
+    items = _filtered_universe(live, q=q, industries=industries or [], exchanges=exchanges or [],
+                              boards=boards or [], listed_states=listed_states or [])
+    if suspended != "all":
+        items = [item for item in items if item.get("latest_ifsuspend") == (1 if suspended == "yes" else 0)]
+    # 稳定次排序；缺失价格始终放在末尾。
+    items = sorted(items, key=lambda item: item["code"])
+    present = [item for item in items if item.get(sort_by) is not None]
+    missing = [item for item in items if item.get(sort_by) is None]
+    items = sorted(present, key=lambda item: item[sort_by], reverse=sort_order == "desc") + missing
+    return _sanitize({"total": len(items), "total_rows": sum(item["rows"] for item in items),
+                      "n_stocks_all": len(live.data),
+                      "items": items[offset:] if limit <= 0 else items[offset:offset + limit],
+                      "cached": live.cached, "queried_at": live.queried_at,
+                      "cache_ttl_seconds": live.cache_ttl_seconds})
+
 
 def get_universe_options() -> Dict[str, Any]:
     """全库行业/市场/板块分布（候选全部来自公司库）。"""

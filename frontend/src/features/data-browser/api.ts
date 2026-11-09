@@ -63,6 +63,8 @@ export type StockInfo = {
   latest_volume: number | null;
   latest_amount: number | null;
   /** 以下字段来自 dim.stock_main_info_fd（/api/data/stocks 与候选池共用） */
+  exchange?: string;
+  board?: string;
   industry?: string | null;
   /** 申万一级行业代码（industry 是名称） */
   industry_code?: string | null;
@@ -167,8 +169,8 @@ export const dataApi = {
     metadata_error?: string | null;
     status_counts?: Record<FieldStatus, number>;
   }>("/api/data/fields"),
-  stocks: (params: { q?: string; limit?: number; offset?: number } = {}) =>
-    apiGet<{ total: number; total_rows: number; n_stocks_all: number; items: StockInfo[] }>(
+  stocks: (params: { q?: string; limit?: number; offset?: number; industries?: string[]; exchanges?: string[]; boards?: string[]; listed_states?: string[]; suspended?: string; sort_by?: string; sort_order?: string; refresh?: boolean } = {}) =>
+    apiGet<{ total: number; total_rows: number; n_stocks_all: number; items: StockInfo[]; cached: boolean; queried_at: string; cache_ttl_seconds: number }>(
       withQuery("/api/data/stocks", params),
     ),
   operators: () => apiGet<{ total: number; operators: OperatorInfo[] }>("/api/operators"),

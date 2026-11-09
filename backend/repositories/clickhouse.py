@@ -597,12 +597,13 @@ _cache_generation: Dict[str, int] = {}
 class LiveResult:
     """一次业务查询的结果：数据本身 + 是否命中缓存 + 数据对应的查询时刻。"""
 
-    __slots__ = ("data", "cached", "queried_at")
+    __slots__ = ("data", "cached", "queried_at", "cache_ttl_seconds")
 
-    def __init__(self, data: Any, cached: bool, queried_at: str) -> None:
+    def __init__(self, data: Any, cached: bool, queried_at: str, cache_ttl_seconds: float = 0) -> None:
         self.data = data
         self.cached = cached
         self.queried_at = queried_at
+        self.cache_ttl_seconds = cache_ttl_seconds
 
 
 def _key_lock(key: str) -> threading.Lock:
@@ -613,11 +614,16 @@ def _key_lock(key: str) -> threading.Lock:
         return lock
 
 
-def clear_cache() -> None:
+def clear_cache(keys: Optional[Iterable[str]] = None) -> None:
     """清空 TTL 缓存（测试用）。"""
     with _cache_guard:
-        _cache_values.clear()
-        _cache_generation.clear()
+        if keys is None:
+            _cache_values.clear()
+            _cache_generation.clear()
+        else:
+            for key in keys:
+                _cache_values.pop(key, None)
+                _cache_generation.pop(key, None)
 
 
 def _cached(key: str, ttl: float, produce: Callable[[], Any]) -> LiveResult:
@@ -632,19 +638,19 @@ def _cached(key: str, ttl: float, produce: Callable[[], Any]) -> LiveResult:
     """
     entry = _cache_values.get(key)
     if entry is not None and ttl > 0 and time.monotonic() - entry[0] < ttl:
-        return LiveResult(entry[2], True, entry[1])
+        return LiveResult(entry[2], True, entry[1], ttl)
     seen = _cache_generation.get(key)  # 进锁前记下当前代数
     with _key_lock(key):
         entry = _cache_values.get(key)
         within_ttl = entry is not None and ttl > 0 and time.monotonic() - entry[0] < ttl
         joined = entry is not None and _cache_generation.get(key) != seen
         if entry is not None and (within_ttl or joined):
-            return LiveResult(entry[2], within_ttl, entry[1])
+            return LiveResult(entry[2], within_ttl, entry[1], ttl)
         data = produce()
         queried_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         _cache_values[key] = (time.monotonic(), queried_at, copy.deepcopy(data))
         _cache_generation[key] = _cache_generation.get(key, 0) + 1
-        return LiveResult(data, False, queried_at)
+        return LiveResult(data, False, queried_at, ttl)
 
 
 # ---------- 业务查询 ----------

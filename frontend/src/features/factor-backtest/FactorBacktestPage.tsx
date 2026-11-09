@@ -53,6 +53,8 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
   const [runId, setRunId] = useState<string | undefined>();
   const [selected, setSelected] = useState<React.Key[]>([]);
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [factorPage, setFactorPage] = useState(1);
+  const [factorPageSize, setFactorPageSize] = useState(10);
   const [submitting, setSubmitting] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -90,6 +92,7 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
     // 切换运行/首次加载后默认全选；用户取消勾选不会被轮询覆盖
     setSelected(factors.map((factor) => factor.factor_id));
     setCategoryFilter("all");
+    setFactorPage(1);
   }, [factors]);
   const selectedIds = selected.map(String);
   const allSelected = factors.length > 0 && selectedIds.length === factors.length;
@@ -173,14 +176,14 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
             : `任务状态：${job.status}`;
 
   const factorColumns: TableColumnsType<FactorValidityRow> = [
-    { title: "因子 ID", dataIndex: "factor_id", width: 200, render: (v) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
-    { title: "表达式", dataIndex: "expression", ellipsis: true, render: (v) => <Text code>{v}</Text> },
+    { title: "因子 ID", dataIndex: "factor_id", width: 180, ellipsis: true, render: (v) => <Tooltip title={v}><Text code ellipsis>{v}</Text></Tooltip> },
+    { title: "表达式", dataIndex: "expression", width: 260, ellipsis: true, render: (v) => <Tooltip title={v}><Text code ellipsis copyable>{v}</Text></Tooltip> },
     { title: "测试 IC", dataIndex: "test_ic", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_ic, b.test_ic), render: (v) => formatMetric(v, 4) },
     { title: "测试 RankIC", dataIndex: "test_rank_ic", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_rank_ic, b.test_rank_ic), render: (v) => formatMetric(v, 4) },
     { title: "测试 ICIR", dataIndex: "test_icir", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_icir, b.test_icir), render: (v) => formatMetric(v, 2) },
     { title: "测试覆盖率", dataIndex: "test_coverage", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_coverage, b.test_coverage), render: (v) => formatFraction(v, 1) },
     { title: "测试有效天数", dataIndex: "test_days", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_days, b.test_days), render: (v) => formatMetric(v, 0) },
-    { title: "合格原因", key: "qualification", width: 430, render: (_, record) => <Text>{qualificationReason(record, (runDetail?.hyperparameters?.quality ?? {}) as Record<string, unknown>)}</Text> },
+    { title: "合格原因", key: "qualification", width: 240, ellipsis: true, render: (_, record) => <Tooltip title={qualificationReason(record, (runDetail?.hyperparameters?.quality ?? {}) as Record<string, unknown>)}><Text ellipsis>{qualificationReason(record, (runDetail?.hyperparameters?.quality ?? {}) as Record<string, unknown>)}</Text></Tooltip> },
     {
       title: "类别",
       key: "category",
@@ -351,13 +354,16 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
                 <FilterChips
                   items={[{ key: "all", label: "全部", count: factors.length }, ...factorCategoryCounts]}
                   value={categoryFilter}
-                  onChange={(key) => setCategoryFilter(key)}
+                  onChange={(key) => { setCategoryFilter(key); setFactorPage(1); }}
                 />
                 <Text type="secondary">表格展示原始表达式在测试集上的真实指标，缺失显示「—」。通过 train／valid 质量门槛的是可接受因子；经独立 test 门槛确认后才是合格因子。回测方向仅由训练 IC 确定，负 IC 因子自动反向；不使用验证集或测试集选方向。</Text>
                 <Table
-                  rowKey="factor_id" size="middle" columns={factorColumns} dataSource={filteredFactors}
-                  loading={runDetailApi.loading} pagination={false} scroll={{ x: 1600, y: 420 }}
-                  rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys) }}
+                  rowKey="factor_id" size="middle" tableLayout="fixed" columns={factorColumns} dataSource={filteredFactors}
+                  loading={runDetailApi.loading} scroll={{ x: 1400 }}
+                  pagination={{ current: factorPage, pageSize: factorPageSize, showSizeChanger: true,
+                    pageSizeOptions: [10, 20, 50], showTotal: (total) => `共 ${total} 个因子`,
+                    onChange: (page, size) => { setFactorPage(size !== factorPageSize ? 1 : page); setFactorPageSize(size); } }}
+                  rowSelection={{ preserveSelectedRowKeys: true, selectedRowKeys: selected, onChange: (keys) => setSelected(keys) }}
                   locale={{ emptyText: runDetail && factors.length === 0 ? "该运行没有合格因子" : "请选择因子运行" }}
                 />
               </Space>

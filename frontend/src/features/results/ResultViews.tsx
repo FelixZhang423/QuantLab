@@ -22,14 +22,14 @@ const yearlyValue = (value: number | null | undefined, suffix = "") =>
 const yearlyColumns: TableColumnsType<YearlyDatum> = [
   { title: "年份", dataIndex: "year" },
   {
-    title: "收益", dataIndex: "returns", align: "right", sorter: (a, b) => a.returns - b.returns,
+    title: "区间累计收益率（%）", dataIndex: "returns", align: "right", sorter: (a, b) => a.returns - b.returns,
     render: (v) => v == null ? "—" : <Text type={v >= 0 ? "danger" : "success"}>{v.toFixed(2)}%</Text>,
   },
-  { title: "夏普", dataIndex: "sharpe", align: "right", render: (v) => yearlyValue(v) },
-  { title: "最大回撤", dataIndex: "drawdown", align: "right", render: (v) => yearlyValue(v, "%") },
-  { title: "换手率", dataIndex: "turnover", align: "right", render: (v) => yearlyValue(v, "%") },
-  { title: "成本", dataIndex: "cost", align: "right", render: (v) => yearlyValue(v, "%") },
-  { title: "胜率", dataIndex: "winRate", align: "right", render: (v) => yearlyValue(v, "%") },
+  { title: "年化夏普比率", dataIndex: "sharpe", align: "right", render: (v) => yearlyValue(v) },
+  { title: "年内最大回撤（%）", dataIndex: "drawdown", align: "right", render: (v) => yearlyValue(v, "%") },
+  { title: "日均换手率（%）", dataIndex: "turnover", align: "right", render: (v) => yearlyValue(v, "%") },
+  { title: "累计交易成本率（%）", dataIndex: "cost", align: "right", render: (v) => yearlyValue(v, "%") },
+  { title: "盈利交易日占比（%）", dataIndex: "winRate", align: "right", render: (v) => yearlyValue(v, "%") },
 ];
 
 function RealMetric({ title, value, suffix = "%", tone }: { title: string; value: number | null; suffix?: string; tone: string }) {
@@ -67,10 +67,10 @@ function splitResultConfig(detail: ResultDetail): { config: Record<string, unkno
   return { config, backtest };
 }
 
-function formatPercentValue(value: unknown): string {
+function formatPercentValue(value: unknown, digits = 2): string {
   if (value === null || value === undefined || value === "") return "—";
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(2)}%` : "—";
+  return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(digits)}%` : "—";
 }
 
 function formatMoney(value: unknown): string {
@@ -170,8 +170,9 @@ function RealResultView({
           { key: "range", label: "回测区间", children: rangeText },
           { key: "topk", label: "持仓", children: topkText },
           { key: "capital", label: "初始资金", children: capitalText },
-          { key: "buy", label: "买入费率", children: formatPercentValue(backtest.buy_cost) },
-          { key: "sell", label: "卖出费率", children: formatPercentValue(backtest.sell_cost) },
+          { key: "commission", label: "佣金（双向）", children: formatPercentValue(backtest.commission) },
+          { key: "transfer", label: "过户费（双向）", children: formatPercentValue(backtest.transfer_fee, 3) },
+          { key: "stamp", label: "印花税（卖出）", children: formatPercentValue(backtest.stamp_duty) },
           { key: "slippage", label: "滑点", children: formatPercentValue(backtest.slippage) },
           { key: "weight", label: "单票权重上限", children: formatPercentValue(backtest.max_weight_per_stock) },
         ]} />
@@ -188,7 +189,7 @@ function RealResultView({
         <Col span={15}><Card title="策略净值与回撤" className="data-card">{detail.equity.length > 0 ? <EquityChart data={detail.equity} /> : <Empty description="无每日净值数据" />}</Card></Col>
         <Col span={9}><Card title="年度收益" extra={<Text type="secondary">红涨绿跌</Text>} className="data-card">{detail.yearly.length > 0 ? <YearlyChart data={detail.yearly} /> : <Empty description="无年度指标" />}</Card></Col>
       </Row>
-      <Card title="年度指标" className="data-card"><Table rowKey="year" size="middle" pagination={false} columns={yearlyColumns} dataSource={detail.yearly} /></Card>
+      <Card title="年度指标" className="data-card"><Table rowKey="year" size="middle" pagination={false} scroll={{ x: 1050 }} columns={yearlyColumns} dataSource={detail.yearly} /></Card>
       <SingleResultAnalysisCard detail={detail} algorithm={algorithm} />
       <Row gutter={16}>
         <Col span={14}><ResearchNote runKey={detail.run_key} /></Col>
