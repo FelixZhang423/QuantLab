@@ -19,7 +19,6 @@ from custom_bt.factor_composition import (
     daily_mutual_ic,
     daily_cross_section_zscore,
     load_composition_candidates,
-    optimize_mse_weights,
     select_composition_pool,
     compose_factors,
 )
@@ -197,17 +196,12 @@ class FactorCompositionTests(unittest.TestCase):
         panel = _toy_panel().rename(columns={"timestamps": "date", "vol": "volume"})
         candidates = load_composition_candidates(records, "pool_a", selection_metric="score")
 
-        with patch(
-            "custom_bt.factor_composition.optimize_mse_weights",
-            side_effect=AssertionError("equal weight must not call the MSE optimizer"),
-        ):
-            selected = select_composition_pool(
-                panel,
-                candidates,
-                max_factors=3,
-                weight_method="equal",
-                z_clip=3.0,
-            )
+        selected = select_composition_pool(
+            panel,
+            candidates,
+            max_factors=3,
+            z_clip=3.0,
+        )
 
         self.assertEqual([item.factor_id for item in selected.components], ["f1", "f2", "f3"])
         np.testing.assert_allclose(
@@ -228,7 +222,7 @@ class FactorCompositionTests(unittest.TestCase):
         panel = _toy_panel().rename(columns={"timestamps": "date", "vol": "volume"})
         candidates = load_composition_candidates(records, "pool_a", selection_metric="score")
 
-        selected = select_composition_pool(panel, candidates, max_factors=2, weight_method="equal")
+        selected = select_composition_pool(panel, candidates, max_factors=2)
 
         self.assertEqual([item.factor_id for item in selected.components], ["f1", "f2"])
         np.testing.assert_allclose([item.weight for item in selected.components], [0.5, 0.5])
@@ -248,7 +242,6 @@ class FactorCompositionTests(unittest.TestCase):
             candidates,
             max_factors=2,
             mutual_ic_threshold=0.8,
-            weight_method="equal",
         )
 
         self.assertEqual([item.factor_id for item in selected.components], ["f1"])
@@ -386,42 +379,6 @@ class FactorCompositionTests(unittest.TestCase):
         self.assertEqual(selected.rejections[0]["factor_id"], "f2")
         self.assertEqual(selected.rejections[0]["reason"], "mutual_ic")
 
-    def test_optimizer_is_deterministic_and_not_equal_weight_by_default(self):
-        ic = np.array([0.08, 0.03, 0.01], dtype=float)
-        mutual = np.array(
-            [
-                [1.0, 0.2, 0.1],
-                [0.2, 1.0, 0.4],
-                [0.1, 0.4, 1.0],
-            ],
-            dtype=float,
-        )
-
-        first = optimize_mse_weights(ic, mutual, l1_alpha=0.001)
-        second = optimize_mse_weights(ic, mutual, l1_alpha=0.001)
-
-        np.testing.assert_allclose(first.weights, second.weights, atol=1e-12)
-        self.assertTrue(np.isfinite(first.weights).all())
-        self.assertGreater(np.abs(first.weights).sum(), 0.0)
-        self.assertFalse(np.allclose(first.weights, np.repeat(first.weights.mean(), len(first.weights))))
-
-    def test_optimizer_uses_alphagen_style_adam_without_exploding_on_indefinite_matrix(self):
-        ic = np.array([0.05, 0.04, 0.03], dtype=float)
-        mutual = np.array(
-            [
-                [1.0, 0.99, -0.99],
-                [0.99, 1.0, 0.99],
-                [-0.99, 0.99, 1.0],
-            ],
-            dtype=float,
-        )
-
-        result = optimize_mse_weights(ic, mutual, l1_alpha=0.005)
-
-        self.assertTrue(np.isfinite(result.weights).all())
-        self.assertLess(float(np.abs(result.weights).max()), 20.0)
-        self.assertGreater(result.iterations, 800)
-
     def test_select_pool_reports_candidate_before_expensive_evaluation(self):
         records = [
             {"factor_id": "f1", "pool_id": "pool_a", "accepted": True, "expression": "close", "score": 1.0, "ic": 0.10},
@@ -448,23 +405,14 @@ class FactorCompositionTests(unittest.TestCase):
         panel = _targeted_panel()
         candidates = load_composition_candidates(records, "pool_a", selection_metric="score")
 
-        def fake_optimize(ic_vector, mutual_ic_matrix):
-            return WeightOptimizationResult(
-                weights=np.ones(len(ic_vector), dtype=float),
-                objective=0.0,
-                iterations=1,
-                converged=True,
-            )
-
-        with patch("custom_bt.factor_composition.optimize_mse_weights", side_effect=fake_optimize):
-            selected = select_composition_pool(
-                panel,
-                candidates,
-                max_factors=2,
-                mutual_ic_threshold=0.99,
-                target_horizon=1,
-                min_marginal_ic_improvement=0.001,
-            )
+        selected = select_composition_pool(
+            panel,
+            candidates,
+            max_factors=2,
+            mutual_ic_threshold=0.99,
+            target_horizon=1,
+            min_marginal_ic_improvement=0.001,
+        )
 
         self.assertEqual([item.factor_id for item in selected.components], ["good"])
         self.assertEqual(selected.rejections[-1]["factor_id"], "noise")
@@ -473,32 +421,7 @@ class FactorCompositionTests(unittest.TestCase):
         self.assertEqual(selected.admission_log[0]["factor_id"], "good")
         self.assertGreater(selected.admission_log[0]["after"]["ic"], 0.99)
 
-    def test_select_pool_defers_weight_optimization_until_weights_are_needed(self):
-        records = [
-            {"factor_id": "f1", "pool_id": "pool_a", "accepted": True, "expression": "close", "score": 1.0, "ic": 0.10},
-            {"factor_id": "f2", "pool_id": "pool_a", "accepted": True, "expression": "ma5", "score": 0.9, "ic": 0.06},
-            {"factor_id": "f3", "pool_id": "pool_a", "accepted": True, "expression": "ChangePCT", "score": 0.8, "ic": 0.04},
-        ]
-        panel = _toy_panel().rename(columns={"timestamps": "date", "vol": "volume"})
-        candidates = load_composition_candidates(records, "pool_a", selection_metric="score")
-        optimized_sizes = []
-
-        def fake_optimize(ic_vector, mutual_ic_matrix):
-            optimized_sizes.append(len(ic_vector))
-            return WeightOptimizationResult(
-                weights=np.ones(len(ic_vector), dtype=float),
-                objective=0.0,
-                iterations=1,
-                converged=True,
-            )
-
-        with patch("custom_bt.factor_composition.optimize_mse_weights", side_effect=fake_optimize):
-            selected = select_composition_pool(panel, candidates, max_factors=3)
-
-        self.assertEqual([item.factor_id for item in selected.components], ["f1", "f2", "f3"])
-        self.assertEqual(optimized_sizes, [3])
-
-    def test_select_pool_reports_final_weight_optimization_stage(self):
+    def test_select_pool_reports_final_equal_weight_stage(self):
         records = [
             {"factor_id": "f1", "pool_id": "pool_a", "accepted": True, "expression": "close", "score": 1.0, "ic": 0.10},
             {"factor_id": "f2", "pool_id": "pool_a", "accepted": True, "expression": "ma5", "score": 0.9, "ic": 0.06},
@@ -507,19 +430,10 @@ class FactorCompositionTests(unittest.TestCase):
         candidates = load_composition_candidates(records, "pool_a", selection_metric="score")
         events = []
 
-        def fake_optimize(ic_vector, mutual_ic_matrix):
-            self.assertTrue(any(event.get("stage") == "optimizing_weights" for event in events))
-            return WeightOptimizationResult(
-                weights=np.ones(len(ic_vector), dtype=float),
-                objective=0.0,
-                iterations=1,
-                converged=True,
-            )
-
-        with patch("custom_bt.factor_composition.optimize_mse_weights", side_effect=fake_optimize):
-            select_composition_pool(panel, candidates, max_factors=2, progress_callback=events.append)
+        selected = select_composition_pool(panel, candidates, max_factors=2, progress_callback=events.append)
 
         self.assertIn("optimizing_weights", [event.get("stage") for event in events])
+        np.testing.assert_allclose([item.weight for item in selected.components], [0.5, 0.5])
 
     def test_compose_factors_saves_each_sweep_size_as_unified_composite_result(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -799,7 +713,6 @@ class FactorCompositionTests(unittest.TestCase):
                     "top_k": 2,
                     "initial_cash": 1_000_000.0,
                 },
-                weight_method="equal",
                 factor_ids=["f2"],
                 z_clip=1.5,
                 mutual_ic_threshold=0.8,
@@ -822,7 +735,6 @@ class FactorCompositionTests(unittest.TestCase):
             self.assertEqual(weights[0]["factor_id"], "f2")
             self.assertEqual(weights[0]["weight"], 1.0)
             self.assertEqual(weights[0]["weight_method"], "equal")
-            self.assertIsNone(weights[0]["raw_optimizer_weight"])
             self.assertEqual(weights[0]["preprocess"]["clip"], 1.5)
             root_manifest = json.loads(
                 (Path(result["manifest_path"])).read_text(encoding="utf-8")

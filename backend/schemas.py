@@ -79,7 +79,6 @@ class FactorCompositionRequest(BaseModel):
     # None = 自动按 selection_metric 排序取前 max_factors 个；
     # 显式列表 = 只组合这些 confirmed 因子（仍会做 mutual IC 去重与容量上限）。
     factor_ids: Optional[List[str]] = None
-    weight_method: str = "equal"
     selection_metric: str = "score"
     min_score: Optional[float] = None
     min_ic: Optional[float] = None

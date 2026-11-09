@@ -1,7 +1,5 @@
 import { apiGet, apiPost, withQuery } from "../../shared/api/base";
 
-export type CompositionWeightMethod = "equal" | "mse";
-
 export type FactorCompositionRequest = {
   snapshot_id?: string;
   as_of?: string;
@@ -9,7 +7,6 @@ export type FactorCompositionRequest = {
   factor_run_ids: string[];
   /** 省略 = 自动按 selection_metric 取前 max_factors 个；显式列表 = 只组合这些因子 */
   factor_ids?: string[];
-  weight_method?: CompositionWeightMethod;
   selection_metric?: string;
   min_score?: number;
   min_ic?: number;
@@ -42,7 +39,6 @@ export type FactorCompositionResponse = {
   operation: string;
   pool_id: string;
   data_source: string;
-  weight_method: CompositionWeightMethod;
   factor_run_ids: string[];
   factor_ids: string[] | null;
   candidate_total: number;
@@ -104,8 +100,8 @@ export type CompositionManifest = {
   source_snapshot_ids: string[];
   source_factor_run_ids: string[];
   run_dirs: string[];
-  weight_method: CompositionWeightMethod;
-  objective_type: string;
+  /** 历史产物兼容字段：新组合恒为 "equal" */
+  weight_method?: string | null;
   selection_metric: string;
   mutual_ic_threshold: number;
   z_clip: number | null;
@@ -130,8 +126,6 @@ export type CompositionFactorWeight = {
   expression: string | null;
   preprocessed_expression: string | null;
   weight: number;
-  weight_method: CompositionWeightMethod;
-  raw_optimizer_weight: number | null;
   applied_to: string;
   preprocess: Record<string, unknown>;
   marginal: Record<string, unknown> | null;
@@ -211,7 +205,8 @@ export type CompositionSummary = {
   composition_id: string;
   pool_id: string;
   created_at: string | null;
-  weight_method: CompositionWeightMethod | null;
+  /** 历史产物兼容字段：新组合恒为 "equal" */
+  weight_method?: string | null;
   candidate_count: number | null;
   selected_count: number | null;
   completed_sizes: number[];

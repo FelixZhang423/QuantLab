@@ -178,7 +178,7 @@ python -m api
 - `POST /api/factor-backtests` 提交批量因子回测（可传 `factor_ids` 只回测勾选因子；202 + job_id）
 - `GET /api/factor-backtests`、`GET /api/factor-backtests/{backtest_id}` 批次列表与汇总/失败明细（每行带 `run_key`）
 - `GET /api/factor-backtests/{backtest_id}/files/{file_name}` 下载批次汇总/失败 CSV
-- `POST /api/factor-compositions` 提交因子组合（等权 / MSE、多规模回测；202 + job_id）
+- `POST /api/factor-compositions` 提交因子组合（等权 1/N、多规模回测；202 + job_id）
 - `GET /api/factor-compositions`、`GET /api/factor-compositions/{composition_id}` 组合历史与指定规模指标/权重
 - `GET /api/factor-compositions/{composition_id}/screen` 最新一期 TopK 选股清单（次日可买状态 + 单因子贡献）
 - `POST /api/manual-backtests` 按股票池 + Alpha 表达式提交手动回测（202 + job_id；从不可变快照读取面板，拒绝旧 local 池）
@@ -190,7 +190,7 @@ python -m api
 
 前端开发时由 vite 把 `/api` 代理到该地址（见 `frontend/vite.config.ts`，可用 `QL_API_TARGET` 覆盖）。
 建池、因子生成、批量因子回测、因子组合与手动回测的 POST 均已接入；结果详情页只读真实结果（`/api/results` + `/api/results/detail`，
-兼容手动 `config.backtest` 与因子扁平 `config`）。因子组合默认等权（`weight_method=equal`），也可切 `mse`；结果目录包含
+兼容手动 `config.backtest` 与因子扁平 `config`）。因子组合固定为等权 1/N；结果目录包含
 `composition_manifest.json`、各规模 `factor_weights.json` 与 `latest_screen.json/.csv`。
 
 已接入的真实数据清单（各端点的实测值）与前后端技术栈详见 [docs/web_api.md](docs/web_api.md)。

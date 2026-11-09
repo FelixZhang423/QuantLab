@@ -52,7 +52,7 @@ class WeightOptimizationResult:
     objective: float
     iterations: int
     converged: bool
-    method: str = "mse"
+    method: str = "equal_weight"
 
 
 @dataclass(frozen=True)
@@ -87,23 +87,13 @@ FACTOR_PREPROCESS: dict[str, Any] = {
     "non_finite_fill_value": 0.0,
 }
 
-SUPPORTED_WEIGHT_METHODS = {"mse", "equal"}
-
-
 def _factor_preprocess(z_clip: float | None = None) -> dict[str, Any]:
-    """日频标准化口径；等权/优化共用，只有显式截尾时多一个 clip 字段。"""
+    """日频标准化口径；只有显式截尾时多一个 clip 字段。"""
     preprocess = dict(FACTOR_PREPROCESS)
     if z_clip is not None:
         preprocess["clip"] = float(z_clip)
         preprocess["clip_scope"] = "zscore"
     return preprocess
-
-
-def _validate_weight_method(weight_method: str) -> str:
-    method = str(weight_method or "mse").strip().lower()
-    if method not in SUPPORTED_WEIGHT_METHODS:
-        raise ValueError(f"unsupported weight_method: {weight_method!r}; expected one of {sorted(SUPPORTED_WEIGHT_METHODS)}")
-    return method
 
 
 def _metric_key(name: str) -> str:
@@ -371,159 +361,20 @@ def _daily_mutual_ic_from_zscores(left: pd.DataFrame, right: pd.DataFrame) -> di
     return {"mutual_ic": mean_ic, "usable_dates": len(daily_values), "daily": daily_values}
 
 
-def _objective(weights: np.ndarray, ic_vector: np.ndarray, mutual_ic_matrix: np.ndarray, l1_alpha: float) -> float:
-    return float(weights.T @ mutual_ic_matrix @ weights - 2.0 * weights.T @ ic_vector + 1.0 + l1_alpha * np.abs(weights).sum())
-
-
-def _initial_alphagen_weights(ic: np.ndarray) -> np.ndarray:
-    weights = np.array([max(float(ic[0]), 0.01)], dtype=float)
-    for _ in range(1, len(ic)):
-        weights = np.append(weights, float(weights.mean()) if len(weights) else 0.01)
-    return weights
-
-
-def optimize_mse_weights(
-    ic_vector: Sequence[float],
-    mutual_ic_matrix: Sequence[Sequence[float]],
-    l1_alpha: float = 5e-3,
-    ridge_alpha: float = 0.0,
-    iterations: int = 10000,
-    learning_rate: float = 5e-4,
-    tolerance: int = 500,
-    initial_weights: Sequence[float] | None = None,
-) -> WeightOptimizationResult:
-    ic = np.asarray(ic_vector, dtype=float)
-    if ic.ndim != 1 or len(ic) == 0:
-        raise ValueError("ic_vector must be a non-empty one-dimensional array")
-    matrix = np.asarray(mutual_ic_matrix, dtype=float)
-    if matrix.shape != (len(ic), len(ic)):
-        raise ValueError("mutual_ic_matrix shape must match ic_vector length")
-    matrix = np.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
-    matrix = (matrix + matrix.T) / 2.0
-    np.fill_diagonal(matrix, 1.0)
-    if ridge_alpha:
-        matrix = matrix + np.eye(len(ic)) * float(ridge_alpha)
-    ic = np.nan_to_num(ic, nan=0.0, posinf=0.0, neginf=0.0)
-    if initial_weights is None:
-        weights = _initial_alphagen_weights(ic)
-    else:
-        weights = np.asarray(initial_weights, dtype=float).copy()
-        if weights.shape != ic.shape:
-            raise ValueError("initial_weights shape must match ic_vector")
-    if math.isclose(float(l1_alpha), 0.0):
-        try:
-            weights = np.linalg.lstsq(matrix, ic, rcond=None)[0]
-            return WeightOptimizationResult(
-                weights=weights,
-                objective=_objective(weights, ic, matrix, float(l1_alpha)),
-                iterations=1,
-                converged=True,
-            )
-        except (np.linalg.LinAlgError, ValueError):
-            return WeightOptimizationResult(
-                weights=weights,
-                objective=_objective(weights, ic, matrix, float(l1_alpha)),
-                iterations=0,
-                converged=False,
-            )
-
-    try:
-        import torch
-    except ImportError:
-        try:
-            solved = np.linalg.solve(matrix + np.eye(len(ic)) * max(float(l1_alpha), 1e-8), ic)
-            weights = np.asarray(solved, dtype=float)
-        except (np.linalg.LinAlgError, ValueError):
-            pass
-        return WeightOptimizationResult(
-            weights=weights,
-            objective=_objective(weights, ic, matrix, float(l1_alpha)),
-            iterations=0,
-            converged=False,
-        )
-
-    ics_ret = torch.tensor(ic, dtype=torch.float64)
-    ics_mut = torch.tensor(matrix, dtype=torch.float64)
-    torch_weights = torch.tensor(weights, dtype=torch.float64, requires_grad=True)
-    optimizer = torch.optim.Adam([torch_weights], lr=float(learning_rate))
-    loss_ic_min = float("inf")
-    best_weights = torch_weights.detach().clone()
-    tolerance_count = 0
-    converged = False
-    iteration = 0
-    max_steps = int(iterations)
-    for step in range(max_steps + 1):
-        ret_ic_sum = (torch_weights * ics_ret).sum()
-        mut_ic_sum = (torch.outer(torch_weights, torch_weights) * ics_mut).sum()
-        loss_ic = mut_ic_sum - 2 * ret_ic_sum + 1.0
-        loss_ic_curr = float(loss_ic.item())
-        loss_l1 = torch.norm(torch_weights, p=1)
-        loss = loss_ic + float(l1_alpha) * loss_l1
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        iteration = step + 1
-
-        if loss_ic_min - loss_ic_curr > 1e-6:
-            tolerance_count = 0
-        else:
-            tolerance_count += 1
-
-        if loss_ic_curr < loss_ic_min:
-            best_weights = torch_weights.detach().clone()
-            loss_ic_min = loss_ic_curr
-
-        if tolerance_count >= int(tolerance):
-            converged = True
-            break
-
-    weights = best_weights.cpu().numpy()
-    return WeightOptimizationResult(
-        weights=weights,
-        objective=_objective(weights, ic, matrix, float(l1_alpha)),
-        iterations=iteration,
-        converged=converged,
-    )
-
-
-def _matrix_for_zalphas(zalphas: Sequence[pd.DataFrame]) -> list[list[float]]:
-    matrix: list[list[float]] = []
-    for left in zalphas:
-        row = []
-        for right in zalphas:
-            if left is right:
-                row.append(1.0)
-            else:
-                value = _daily_mutual_ic_from_zscores(left, right)["mutual_ic"]
-                row.append(float(value) if np.isfinite(value) else 0.0)
-        matrix.append(row)
-    return matrix
-
-
 def _equal_weights(count: int) -> np.ndarray:
     if count < 1:
         return np.array([], dtype=float)
     return np.full(int(count), 1.0 / float(count), dtype=float)
 
 
-def _optimization_for(
-    candidates: Sequence[CompositionCandidate],
-    mutual_ic_matrix: Sequence[Sequence[float]],
-    weight_method: str = "mse",
-) -> WeightOptimizationResult:
-    if weight_method == "equal":
-        weights = _equal_weights(len(candidates))
-        return WeightOptimizationResult(
-            weights=weights,
-            objective=0.0,
-            iterations=0,
-            converged=True,
-            method="equal_weight",
-        )
-    ic_vector = [candidate.metric("ic") if np.isfinite(candidate.metric("ic")) else candidate.metric("score") for candidate in candidates]
-    ic_vector = [0.0 if not np.isfinite(value) else float(value) for value in ic_vector]
-    return optimize_mse_weights(ic_vector, mutual_ic_matrix)
+def _equal_weight_result(count: int) -> WeightOptimizationResult:
+    return WeightOptimizationResult(
+        weights=_equal_weights(count),
+        objective=0.0,
+        iterations=0,
+        converged=True,
+        method="equal_weight",
+    )
 
 
 def _components_from_matrix(
@@ -532,10 +383,9 @@ def _components_from_matrix(
     zalphas: Sequence[pd.DataFrame],
     matrix: Sequence[Sequence[float]],
     admissions: Mapping[str, dict[str, Any]] | None = None,
-    weight_method: str = "mse",
 ) -> tuple[list[SelectedComponent], list[list[float]], WeightOptimizationResult]:
     matrix_list = [list(row) for row in matrix]
-    optimization = _optimization_for(candidates, matrix_list, weight_method=weight_method)
+    optimization = _equal_weight_result(len(candidates))
     admissions = admissions or {}
     components = [
         SelectedComponent(
@@ -563,17 +413,6 @@ def _provisional_components(
     ]
 
 
-def _refresh_components(
-    candidates: Sequence[CompositionCandidate],
-    alphas: Sequence[pd.DataFrame],
-    z_clip: float | None = None,
-    weight_method: str = "mse",
-) -> tuple[list[SelectedComponent], list[list[float]], WeightOptimizationResult]:
-    zalphas = [daily_cross_section_zscore(alpha, clip=z_clip) for alpha in alphas]
-    matrix = _matrix_for_zalphas(zalphas)
-    return _components_from_matrix(candidates, alphas, zalphas, matrix, weight_method=weight_method)
-
-
 def _append_matrix(matrix: Sequence[Sequence[float]], pair_values: Sequence[float]) -> list[list[float]]:
     new_matrix = [list(row) for row in matrix]
     if len(pair_values) != len(new_matrix):
@@ -582,14 +421,6 @@ def _append_matrix(matrix: Sequence[Sequence[float]], pair_values: Sequence[floa
         row.append(float(value) if np.isfinite(value) else 0.0)
     new_matrix.append([float(value) if np.isfinite(value) else 0.0 for value in pair_values] + [1.0])
     return new_matrix
-
-
-def _drop_matrix_index(matrix: Sequence[Sequence[float]], index: int) -> list[list[float]]:
-    return [
-        [value for col, value in enumerate(row) if col != index]
-        for row_idx, row in enumerate(matrix)
-        if row_idx != index
-    ]
 
 
 def _combine_weighted_alphas(components: Sequence[SelectedComponent]) -> pd.DataFrame:
@@ -703,12 +534,10 @@ def select_composition_pool(
     min_marginal_icir_improvement: float | None = None,
     min_marginal_rank_icir_improvement: float | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
-    weight_method: str = "mse",
     z_clip: float | None = None,
 ) -> CompositionSelection:
     if max_factors < 1:
         raise ValueError("max_factors must be positive")
-    weight_method = _validate_weight_method(weight_method)
     if z_clip is not None and (not np.isfinite(z_clip) or float(z_clip) <= 0):
         raise ValueError("z_clip must be a positive finite value")
     thresholds = _marginal_thresholds(
@@ -741,7 +570,7 @@ def select_composition_pool(
                     "factor_id": candidate.factor_id,
                 }
             )
-        if weight_method == "equal" and len(selected_candidates) >= max_factors:
+        if len(selected_candidates) >= max_factors:
             rejections.append(
                 {
                     "factor_id": candidate.factor_id,
@@ -784,9 +613,8 @@ def select_composition_pool(
             info = _daily_mutual_ic_from_zscores(component.zalpha, candidate_zalpha)
             mutual_ic = info["mutual_ic"]
             pair_values.append(float(mutual_ic) if np.isfinite(mutual_ic) else 0.0)
-            # 等权组合没有优化器抵消负相关/反向暴露，重复度按绝对值判断；
-            # MSE 组合保留带符号口径，避免把有意反向对冲的因子误判为重复。
-            gate_value = abs(float(mutual_ic)) if weight_method == "equal" else float(mutual_ic)
+            # 等权组合没有优化器抵消负相关/反向暴露，重复度按绝对值判断。
+            gate_value = abs(float(mutual_ic))
             if np.isfinite(mutual_ic) and gate_value > float(mutual_ic_threshold):
                 duplicate = {
                     "factor_id": candidate.factor_id,
@@ -794,7 +622,7 @@ def select_composition_pool(
                     "with_factor_id": component.factor_id,
                     "mutual_ic": float(mutual_ic),
                     "gate_value": float(gate_value),
-                    "comparison": "abs" if weight_method == "equal" else "signed",
+                    "comparison": "abs",
                     "threshold": float(mutual_ic_threshold),
                 }
                 break
@@ -836,7 +664,6 @@ def select_composition_pool(
                 trial_zalphas,
                 trial_matrix,
                 admissions_by_factor,
-                weight_method=weight_method,
             )
             assert target is not None
             trial_metrics = evaluate_alpha_target_metrics(_combine_weighted_alphas(trial_components), target)
@@ -882,50 +709,9 @@ def select_composition_pool(
         selected_alphas = trial_alphas
         selected_zalphas = trial_zalphas
         matrix = trial_matrix
-        if len(selected_candidates) > max_factors:
-            if progress_callback is not None:
-                progress_callback(
-                    {
-                        "stage": "optimizing_weights",
-                        "candidate_index": index,
-                        "candidate_count": len(candidates),
-                        "accepted_count": len(selected_candidates),
-                        "rejected_count": len(rejections),
-                        "reason": "capacity_pruning",
-                    }
-                )
-            components, matrix, optimization = (
-                (trial_components, matrix, optimization)
-                if trial_components is not None and trial_optimization is not None
-                else _components_from_matrix(
-                    selected_candidates,
-                    selected_alphas,
-                    selected_zalphas,
-                    matrix,
-                    admissions_by_factor,
-                    weight_method=weight_method,
-                )
-            )
-            weakest = int(np.argmin(np.abs(optimization.weights)))
-            removed = selected_candidates.pop(weakest)
-            selected_alphas.pop(weakest)
-            selected_zalphas.pop(weakest)
-            matrix = _drop_matrix_index(matrix, weakest)
-            rejections.append({"factor_id": removed.factor_id, "reason": "capacity_pruned"})
-            components, matrix, optimization = _components_from_matrix(
-                selected_candidates,
-                selected_alphas,
-                selected_zalphas,
-                matrix,
-                admissions_by_factor,
-                weight_method=weight_method,
-            )
-            if marginal_enabled:
-                assert target is not None
-                current_metrics = evaluate_alpha_target_metrics(_combine_weighted_alphas(components), target)
         components = (
             trial_components
-            if marginal_enabled and trial_components is not None and len(selected_candidates) <= max_factors
+            if marginal_enabled and trial_components is not None
             else _provisional_components(selected_candidates, selected_alphas, selected_zalphas, admissions_by_factor)
         )
         if progress_callback is not None:
@@ -956,7 +742,6 @@ def select_composition_pool(
         selected_zalphas,
         matrix,
         admissions_by_factor,
-        weight_method=weight_method,
     )
     if marginal_enabled:
         assert target is not None
@@ -1105,8 +890,6 @@ def compose_factors(
     mutual_ic_threshold: float = 0.99,
     sweep_sizes: Iterable[int] | None = None,
     max_factors: int = 100,
-    objective_type: str = "mse",
-    weight_method: str = "mse",
     factor_ids: Sequence[str] | None = None,
     z_clip: float | None = None,
     target_horizon: int = 20,
@@ -1120,9 +903,6 @@ def compose_factors(
     snapshot_id: str | None = None,
     as_of: str | None = None,
 ) -> dict[str, Any]:
-    weight_method = _validate_weight_method(weight_method)
-    if weight_method == "mse" and objective_type != "mse":
-        raise ValueError("only objective_type='mse' is currently supported")
     if z_clip is not None and (not np.isfinite(z_clip) or float(z_clip) <= 0):
         raise ValueError("z_clip must be a positive finite value")
     requested_factor_ids: list[str] | None = None
@@ -1208,7 +988,6 @@ def compose_factors(
         min_marginal_icir_improvement=min_marginal_icir_improvement,
         min_marginal_rank_icir_improvement=min_marginal_rank_icir_improvement,
         progress_callback=progress_callback,
-        weight_method=weight_method,
         z_clip=z_clip,
     )
     selected_count = len(full_selection.components)
@@ -1227,7 +1006,6 @@ def compose_factors(
         "run_dirs": [str(item) for item in run_dirs],
         "selection_metric": selection_metric,
         "mutual_ic_threshold": mutual_ic_threshold,
-        "weight_method": weight_method,
         "z_clip": z_clip,
         "requested_factor_ids": requested_factor_ids,
         "requested_sizes": requested_sizes,
@@ -1262,7 +1040,6 @@ def compose_factors(
             size_zalphas,
             matrix,
             admission_by_factor,
-            weight_method=weight_method,
         )
         factor_preprocess = _factor_preprocess(z_clip)
         alpha_defs = [
@@ -1312,8 +1089,7 @@ def compose_factors(
             "selected_factor_ids": [component.factor_id for component in components],
             "selection_metric": selection_metric,
             "mutual_ic_threshold": float(mutual_ic_threshold),
-            "objective_type": objective_type,
-            "weight_method": "equal" if weight_method == "equal" else "alphagen_mse_adam",
+            "weight_method": "equal",
             "requested_factor_ids": requested_factor_ids,
             "factor_preprocess": factor_preprocess,
             "z_clip": z_clip,
@@ -1331,11 +1107,8 @@ def compose_factors(
             "components": alpha_components(alpha_defs),
             "optimization": {
                 "method": optimization.method,
-                **(
-                    {"l1_alpha": 5e-3, "learning_rate": 5e-4}
-                    if weight_method != "equal"
-                    else {"factor_count": len(components), "weight_per_factor": 1.0 / len(components) if components else 0.0}
-                ),
+                "factor_count": len(components),
+                "weight_per_factor": 1.0 / len(components) if components else 0.0,
                 "objective": optimization.objective,
                 "iterations": optimization.iterations,
                 "converged": optimization.converged,
@@ -1355,8 +1128,7 @@ def compose_factors(
                 "expression": component.candidate.canonical_expression,
                 "preprocessed_expression": _preprocessed_expression(component.candidate.backtest_expression),
                 "weight": component.weight,
-                "weight_method": weight_method,
-                "raw_optimizer_weight": component.weight if weight_method == "mse" else None,
+                "weight_method": "equal",
                 "applied_to": "preprocessed_alpha",
                 "preprocess": factor_preprocess,
                 "marginal": component.admission,
@@ -1412,8 +1184,7 @@ def compose_factors(
         "source_snapshot_ids": parent_snapshots,
         "source_factor_run_ids": source_factor_run_ids,
         "run_dirs": [str(item) for item in run_dirs],
-        "weight_method": weight_method,
-        "objective_type": objective_type,
+        "weight_method": "equal",
         "selection_metric": selection_metric,
         "mutual_ic_threshold": float(mutual_ic_threshold),
         "z_clip": z_clip,
@@ -1444,7 +1215,7 @@ def compose_factors(
         "source_snapshot_ids": parent_snapshots,
         "pool_id": pool_id,
         "composition_id": composition_id,
-        "weight_method": weight_method,
+        "weight_method": "equal",
         "z_clip": z_clip,
         "candidate_count": len(candidates),
         "selected_count": selected_count,

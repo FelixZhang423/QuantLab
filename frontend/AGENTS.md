@@ -12,7 +12,7 @@ React 19 + Vite + TypeScript + Ant Design 5 + ECharts 6。真实数据经 `/api/
   - `data-browser/`：数据总览 / 字段 / 股票 / 操作符
   - `pools/`、`factor-generation/`、`factor-backtest/`、`manual-backtest/`
   - `results/`：结果详情 / 批次结果 / 结果分析
-  - `composition/`：因子组合（等权 / MSE、多规模回测、最新选股）
+  - `composition/`：因子组合（等权 1/N、多规模回测、最新选股）
   - `system/`：用户/审计（仍是 mock）
 - `src/components/`：`Brand` / `Charts` / `LoadGate` / `FilterChips` 等跨 feature 组件
 - `src/shared/api/base.ts`：fetch 基座、`ApiError`、`useApiData` / `useJobPolling`

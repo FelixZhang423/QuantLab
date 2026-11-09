@@ -22,7 +22,6 @@ from workers.job_dispatcher import create_platform_job
 from workers.job_runner import spawn_platform_job
 
 
-_WEIGHT_METHODS = {"mse", "equal"}
 _REBALANCE_FREQS = {"1D", "1W", "2W", "1M"}
 
 logger = logging.getLogger(__name__)
@@ -83,11 +82,6 @@ def _confirmed_factor_rows(run_dir: Path) -> List[Dict[str, Any]]:
 
 
 def _validate_composition_parameters(request: FactorCompositionRequest) -> Dict[str, Any]:
-    if request.weight_method not in _WEIGHT_METHODS:
-        raise make_error(
-            status_code=422,
-            detail="weight_method 必须是 equal 或 mse",
-        )
     if request.top_k < 1 or request.top_k > 1000:
         raise make_error(status_code=422, detail="top_k 必须在 1 到 1000 之间")
     if not math.isfinite(request.initial_cash) or request.initial_cash <= 0:
@@ -167,7 +161,7 @@ def _resolve_composition_window(
 
 
 def create_factor_composition(request: FactorCompositionRequest) -> Dict[str, Any]:
-    """提交等权/优化因子组合 + TopK 选股回测任务。"""
+    """提交等权因子组合 + TopK 选股回测任务。"""
     validated = _validate_composition_parameters(request)
     run_ids = list(dict.fromkeys(str(item).strip() for item in request.factor_run_ids if str(item).strip()))
     if not run_ids:
@@ -270,7 +264,7 @@ def create_factor_composition(request: FactorCompositionRequest) -> Dict[str, An
             f"单票上限 {request.max_weight_per_stock:.2%}，目标仓位约 "
             f"{min(1.0 / request.top_k, request.max_weight_per_stock) * request.top_k:.0%}"
         )
-    if request.weight_method == "equal" and request.mutual_ic_threshold > 0.9:
+    if request.mutual_ic_threshold > 0.9:
         warnings.append(
             "等权组合建议把 mutual_ic_threshold 设为 0.8 左右；"
             "当前阈值较高，相关性很强的因子可能同时入池"
@@ -315,8 +309,6 @@ def create_factor_composition(request: FactorCompositionRequest) -> Dict[str, An
         "mutual_ic_threshold": request.mutual_ic_threshold,
         "sweep_sizes": validated["sweep_sizes"],
         "max_factors": validated["max_factors"],
-        "objective_type": "mse",
-        "weight_method": request.weight_method,
         "z_clip": request.z_clip,
         "target_horizon": request.target_horizon,
     }
@@ -342,7 +334,6 @@ def create_factor_composition(request: FactorCompositionRequest) -> Dict[str, An
             "operation": "compose_factors",
             "pool_id": request.pool_id,
             "data_source": source,
-            "weight_method": request.weight_method,
             "factor_run_ids": run_ids,
             "factor_ids": requested_factor_ids,
             "candidate_total": len(available_factor_ids),
@@ -352,7 +343,6 @@ def create_factor_composition(request: FactorCompositionRequest) -> Dict[str, An
                 "pool_id": request.pool_id,
                 "factor_run_ids": run_ids,
                 "factor_ids": requested_factor_ids,
-                "weight_method": request.weight_method,
                 "mutual_ic_threshold": request.mutual_ic_threshold,
                 "z_clip": request.z_clip,
                 "sweep_sizes": validated["sweep_sizes"],

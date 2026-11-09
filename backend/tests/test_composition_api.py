@@ -88,7 +88,6 @@ def _request(**overrides) -> FactorCompositionRequest:
         "pool_id": "pool_a",
         "factor_run_ids": ["run_a"],
         "factor_ids": ["f1"],
-        "weight_method": "equal",
         "mutual_ic_threshold": 0.8,
         "z_clip": 3.0,
         "sweep_sizes": [1],
@@ -106,7 +105,6 @@ def test_create_composition_dispatches_equal_weight_payload(composition_env):
 
     assert response["status"] == "queued"
     assert response["operation"] == "compose_factors"
-    assert response["weight_method"] == "equal"
     assert response["selected_total"] == 1
     assert response["candidate_total"] == 2
     assert any("无法满仓" in warning for warning in response["warnings"])
@@ -114,7 +112,7 @@ def test_create_composition_dispatches_equal_weight_payload(composition_env):
     config = json.loads((job_dir / "platform_job.json").read_text(encoding="utf-8"))
     payload = config["payload"]
     assert payload["pool_id"] == "pool_a"
-    assert payload["weight_method"] == "equal"
+    assert "weight_method" not in payload
     assert payload["factor_ids"] == ["f1"]
     assert payload["z_clip"] == 3.0
     assert payload["sweep_sizes"] == [1]
@@ -127,7 +125,6 @@ def test_create_composition_dispatches_equal_weight_payload(composition_env):
 @pytest.mark.parametrize(
     "overrides, expected",
     [
-        ({"weight_method": "ic_weight"}, "weight_method"),
         ({"mutual_ic_threshold": 1.5}, "mutual_ic_threshold"),
         ({"z_clip": 0}, "z_clip"),
         ({"max_factors": 0}, "max_factors"),

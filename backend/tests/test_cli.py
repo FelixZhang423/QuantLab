@@ -51,7 +51,7 @@ class CLITests(unittest.TestCase):
         self.assertAlmostEqual(args.min_marginal_icir_improvement, -0.1)
         self.assertAlmostEqual(args.min_marginal_rank_icir_improvement, -0.2)
 
-    def test_compose_factors_exposes_equal_weight_and_factor_filters(self):
+    def test_compose_factors_exposes_factor_filters(self):
         parser = build_parser()
         args = parser.parse_args(
             [
@@ -62,8 +62,6 @@ class CLITests(unittest.TestCase):
                 "run_a",
                 "--config",
                 "config.yaml",
-                "--weight-method",
-                "equal",
                 "--factor-id",
                 "f1",
                 "--factor-id",
@@ -73,9 +71,9 @@ class CLITests(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(args.weight_method, "equal")
         self.assertEqual(args.factor_id, ["f1", "f2"])
         self.assertAlmostEqual(args.z_clip, 3.0)
+        self.assertFalse(hasattr(args, "weight_method"))
 
 
 if __name__ == "__main__":

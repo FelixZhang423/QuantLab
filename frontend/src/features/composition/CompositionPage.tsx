@@ -14,7 +14,7 @@ import type { PageNav, TaskAdder } from "../../app/navigation";
 import {
   api, useApiData, useJobPolling,
   type AcceptedFactor, type CompositionFactorWeight, type CompositionScreenRow,
-  type CompositionSizeEntry, type CompositionSummary, type CompositionWeightMethod,
+  type CompositionSizeEntry, type CompositionSummary,
   type FactorCompositionRequest, type FactorCompositionResponse, type FactorRunDetail,
   type FactorRunSummary,
 } from "../../api/client";
@@ -84,7 +84,6 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
 
   const [poolId, setPoolId] = useState<string | undefined>();
   const [runIds, setRunIds] = useState<string[]>([]);
-  const [weightMethod, setWeightMethod] = useState<CompositionWeightMethod>("equal");
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("auto");
   const [maxFactors, setMaxFactors] = useState(20);
   const [sizes, setSizes] = useState<number[]>([5, 10, 20]);
@@ -331,7 +330,6 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
       pool_id: poolId,
       factor_run_ids: runIds,
       factor_ids: selectionMode === "manual" ? selectedFactorIds : undefined,
-      weight_method: weightMethod,
       selection_metric: "score",
       mutual_ic_threshold: mutualIc,
       z_clip: zClip,
@@ -368,7 +366,7 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
       composition_id: detail.composition_id,
       pool_id: detail.pool_id,
       size: detail.size,
-      weight_method: detail.manifest.weight_method,
+      weight_method: "equal",
       z_clip: detail.manifest.z_clip,
       mutual_ic_threshold: detail.manifest.mutual_ic_threshold,
       composition_metrics: detail.result.composition_metrics,
@@ -552,7 +550,7 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
   const selectedPool = pools.find((pool) => pool.pool_id === poolId);
   const showResultPanel = active || failed || finished || Boolean(compositionId) || Boolean(submission);
   const detailLoading = detailApi.loading && !detail;
-  const weightMethodTag = detail ? methodLabel(detail.manifest.weight_method) : methodLabel(weightMethod);
+  const weightMethodTag = methodLabel(detail?.manifest.weight_method ?? "equal");
 
   return (
     <Space direction="vertical" size={16} className="page-stack">
@@ -598,14 +596,7 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
           </Space>
           <Space wrap>
             <Text strong>权重方法</Text>
-            <Segmented
-              value={weightMethod}
-              onChange={(value) => setWeightMethod(value as CompositionWeightMethod)}
-              options={[
-                { value: "equal", label: "等权 1/N" },
-                { value: "mse", label: "MSE 优化" },
-              ]}
-            />
+            <Tag color="blue">等权 1/N</Tag>
             <Button
               type="primary" icon={<PlayCircleOutlined />}
               loading={submitting} disabled={active || pools.length === 0 || sizes.length === 0}
