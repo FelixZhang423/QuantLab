@@ -21,6 +21,7 @@ from custom_bt.pools import create_pool_from_company
 SUPPORTED_OPERATIONS = {
     "create_pool",
     "generate_factors",
+    "confirm_factors",
     "backtest_factors",
     "compose_factors",
     "manual_backtest",
@@ -108,6 +109,14 @@ def _run_operation(operation: str, payload: Mapping[str, Any], job_dir: Path | N
         options = dict(payload)
         resolve_data_source(options.pop("data_source", None))
         return create_pool_from_company(**options)
+    if operation == "confirm_factors":
+        from custom_bt.factor_confirmation import confirm_factor_run
+        options = dict(payload)
+        if job_dir is not None:
+            def report(progress):
+                update_job_status(job_dir, "running", "正在确认测试集因子", {"progress": _jsonable(progress)})
+            options["progress_callback"] = report
+        return confirm_factor_run(**options)
     if operation == "generate_factors":
         options = dict(payload)
         if job_dir is not None:
@@ -134,7 +143,7 @@ def _run_operation(operation: str, payload: Mapping[str, Any], job_dir: Path | N
                 last_stage = stage
                 attempts = int(progress.get("attempts") or 0)
                 max_attempts = int(progress.get("max_attempts") or 0)
-                accepted = int(progress.get("accepted_count") or 0)
+                accepted = int(progress.get("candidate_count", progress.get("accepted_count")) or 0)
                 target = int(progress.get("target_count") or 0)
                 if stage == "preparing_runtime":
                     message = f"因子生成准备中：导出股票池 {pool_id} 面板并构建训练缓存"
@@ -145,12 +154,12 @@ def _run_operation(operation: str, payload: Mapping[str, Any], job_dir: Path | N
                 elif stage == "training":
                     message = (
                         f"PPO 因子生成中：已尝试 {attempts:,} / {max_attempts:,} 次，"
-                        f"已接受 {accepted:,} / {target:,} 个因子"
+                        f"候选 {accepted:,} / {target:,} 个因子"
                     )
                 elif stage == "finished":
                     message = (
                         f"PPO 生成完成：共尝试 {attempts:,} 次，"
-                        f"接受 {accepted:,} 个因子，正在写入运行清单"
+                        f"候选 {accepted:,} 个因子，正在写入运行清单"
                     )
                 else:
                     message = f"因子生成任务运行中：{stage}"

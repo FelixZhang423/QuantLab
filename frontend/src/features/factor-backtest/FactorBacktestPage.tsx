@@ -1,3 +1,4 @@
+import { qualificationReason } from "./validity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert, Button, Card, Checkbox, Col, Collapse, DatePicker, Descriptions, Divider, Drawer, Empty, Flex, Form, Input, InputNumber, message, Modal, Popconfirm, Progress, Row, Select, Skeleton, Space, Spin, Statistic, Steps, Switch, Table, Tag, Tooltip, Typography,
@@ -25,66 +26,28 @@ type FactorBacktestFormValues = {
   initialCash: number;
   commission: number;
   stampDuty: number;
-  rebalanceFreq: string;
+  transferFee: number;
+  rebalanceFreq: NonNullable<FactorBacktestRequest["rebalance_freq"]>;
   slippage: number;
   minCost: number;
   maxWeight: number;
-  maxDrawdownControl: number;
 };
 
-const metricNumber = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
-  return null;
-};
+import { compareMetrics, formatMetric, metricNumber, validityRow, isConfirmedRun, confirmedFactors, type FactorValidityRow } from "./validity";
 
 const formatFraction = (value: unknown, digits = 2): string => {
   const number = metricNumber(value);
   return number == null ? "—" : `${(number * 100).toFixed(digits)}%`;
 };
 
-type FactorValidityRow = Omit<AcceptedFactor, "ic" | "rank_ic" | "icir" | "coverage" | "score"> & {
-  ic: number;
-  rank_ic: number;
-  icir: number;
-  coverage: number;
-  score: number;
-  valid_ic: number;
-  valid_icir: number;
-  valid_days: number;
-};
-
-/** 稳定模拟的 8 个有效性指标：真实值优先，缺失项由因子 ID 确定性补齐。 */
-const simulatedValidity = (factor: AcceptedFactor, index: number) => {
-  let seed = 0;
-  for (const char of `${factor.factor_id}|${factor.expression ?? ""}|${index}`) {
-    seed = (seed * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  const unit = (offset: number) => ((seed >>> offset) % 1000) / 1000;
-  const ic = factor.ic ?? 0.02 + unit(0) * 0.05;
-  const rankIc = factor.rank_ic ?? ic * (1.02 + unit(3) * 0.08);
-  const icir = factor.icir ?? 0.4 + unit(6) * 1.0;
-  const coverage = factor.coverage ?? 0.9 + unit(9) * 0.095;
-  const score = factor.score ?? 0.4 + unit(12) * 0.45;
-  return {
-    ic,
-    rank_ic: rankIc,
-    icir,
-    coverage,
-    score,
-    valid_ic: ic * 0.85,
-    valid_icir: icir * 0.85,
-    valid_days: 225 + (seed % 20),
-  };
-};
-
 export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
   const [form] = Form.useForm<FactorBacktestFormValues>();
   const runsApi = useApiData(api.factorRuns);
-  // MySQL 里存在但本机没有运行目录的记录无法回测，选择列表只保留本地可用的运行。
-  const runs = useMemo(
-    () => (runsApi.data?.runs ?? []).filter((run) => run.local_available !== false),
-    [runsApi.data],
+  // 全部运行都展示；MySQL-only 记录保留在列表中但置灰，提示本机缺少运行目录。
+  const runs = useMemo(() => runsApi.data?.runs ?? [], [runsApi.data]);
+  const availableRuns = useMemo(
+    () => runs.filter(isConfirmedRun),
+    [runs],
   );
   const [runId, setRunId] = useState<string | undefined>();
   const [selected, setSelected] = useState<React.Key[]>([]);
@@ -95,21 +58,23 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
   const { job, error: jobError, polling } = useJobPolling(jobId);
 
   useEffect(() => {
-    if (runs.length === 0) {
+    if (availableRuns.length === 0) {
       setRunId(undefined);
       return;
     }
-    if (!runId || !runs.some((run) => run.run_id === runId)) setRunId(runs[0].run_id);
-  }, [runs, runId]);
+    if (!runId || !availableRuns.some((run) => run.run_id === runId)) {
+      setRunId(availableRuns[0].run_id);
+    }
+  }, [availableRuns, runId]);
 
   const runDetailApi = useApiData(
     () => (runId ? api.factorRun(runId) : Promise.resolve(null)),
     [runId],
   );
   const runDetail = runDetailApi.data?.run_id === runId ? runDetailApi.data : null;
-  const factors = useMemo(() => runDetail?.accepted_factors ?? [], [runDetail]);
+  const factors = useMemo(() => confirmedFactors(runDetail), [runDetail]);
   const factorRows: FactorValidityRow[] = useMemo(
-    () => factors.map((factor, index) => ({ ...factor, ...simulatedValidity(factor, index) })),
+    () => factors.map(validityRow),
     [factors],
   );
   useEffect(() => {
@@ -144,13 +109,14 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
       return;
     }
     // 清空输入框时回退到默认值，避免把 undefined 传给后端
-    const commission = values.commission ?? 0.0015;
+    const commission = values.commission ?? 0.0003;
     const stampDuty = values.stampDuty ?? 0.0005;
+    const transferFee = values.transferFee ?? 0.00001;
     const topK = values.topK ?? 50;
     const initialCash = values.initialCash ?? 100000000;
-    const slippage = values.slippage ?? 0.0005;
+    const slippage = values.slippage ?? 0.001;
     const minCost = values.minCost ?? 5;
-    const maxWeight = values.maxWeight ?? 0.02;
+    const maxWeight = values.maxWeight ?? 0.03;
     const payload: FactorBacktestRequest = {
       factor_run_id: runId,
       factor_ids: allSelected ? undefined : selectedIds,
@@ -158,15 +124,13 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
       end_date: range[1].format("YYYY-MM-DD"),
       top_k: topK,
       initial_cash: initialCash,
-      buy_cost: commission,
-      sell_cost: commission + stampDuty,
       slippage,
       min_cost: minCost,
       max_weight_per_stock: maxWeight,
       rebalance_freq: values.rebalanceFreq ?? "1D",
       commission,
       stamp_duty: stampDuty,
-      max_drawdown_control: values.maxDrawdownControl ?? 0,
+      transfer_fee: transferFee,
     };
     setSubmitting(true);
     setWarnings([]);
@@ -202,14 +166,12 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
   const factorColumns: TableColumnsType<FactorValidityRow> = [
     { title: "因子 ID", dataIndex: "factor_id", width: 200, render: (v) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
     { title: "表达式", dataIndex: "expression", ellipsis: true, render: (v) => <Text code>{v}</Text> },
-    { title: "IC", dataIndex: "ic", width: 82, align: "right", sorter: (a, b) => a.ic - b.ic, render: (v) => v.toFixed(4) },
-    { title: "RankIC", dataIndex: "rank_ic", width: 88, align: "right", sorter: (a, b) => a.rank_ic - b.rank_ic, render: (v) => v.toFixed(4) },
-    { title: "ICIR", dataIndex: "icir", width: 82, align: "right", sorter: (a, b) => a.icir - b.icir, render: (v) => v.toFixed(2) },
-    { title: "覆盖率", dataIndex: "coverage", width: 88, align: "right", render: (v) => `${(v * 100).toFixed(1)}%` },
-    { title: "Score", dataIndex: "score", width: 82, align: "right", sorter: (a, b) => a.score - b.score, render: (v) => v.toFixed(2) },
-    { title: "验证 IC", dataIndex: "valid_ic", width: 90, align: "right", sorter: (a, b) => a.valid_ic - b.valid_ic, render: (v) => v.toFixed(4) },
-    { title: "验证 ICIR", dataIndex: "valid_icir", width: 92, align: "right", sorter: (a, b) => a.valid_icir - b.valid_icir, render: (v) => v.toFixed(2) },
-    { title: "有效天数", dataIndex: "valid_days", width: 90, align: "right", sorter: (a, b) => a.valid_days - b.valid_days },
+    { title: "测试 IC", dataIndex: "test_ic", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_ic, b.test_ic), render: (v) => formatMetric(v, 4) },
+    { title: "测试 RankIC", dataIndex: "test_rank_ic", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_rank_ic, b.test_rank_ic), render: (v) => formatMetric(v, 4) },
+    { title: "测试 ICIR", dataIndex: "test_icir", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_icir, b.test_icir), render: (v) => formatMetric(v, 2) },
+    { title: "测试覆盖率", dataIndex: "test_coverage", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_coverage, b.test_coverage), render: (v) => formatFraction(v, 1) },
+    { title: "测试有效天数", dataIndex: "test_days", width: 110, align: "right", sorter: (a, b) => compareMetrics(a.test_days, b.test_days), render: (v) => formatMetric(v, 0) },
+    { title: "合格原因", key: "qualification", width: 430, render: (_, record) => <Text>{qualificationReason(record, (runDetail?.hyperparameters?.quality ?? {}) as Record<string, unknown>)}</Text> },
     {
       title: "类别",
       key: "category",
@@ -248,12 +210,21 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
               loading={runsApi.loading}
               showSearch optionFilterProp="label"
               placeholder={runsApi.error ? "因子运行目录不可读" : "选择已生成的因子运行"}
-              options={runs.map((run) => ({
-                value: run.run_id,
-                label: `${run.run_id} · ${run.pool_id ?? "未知池"} · ${run.accepted_count} 个合格因子`,
-              }))}
+              options={runs.map((run) => {
+                const available = isConfirmedRun(run);
+                return {
+                  value: run.run_id,
+                  disabled: !available,
+                  label: `${run.run_id} · ${run.pool_id ?? "未知池"} · ${run.confirmed_count ?? 0} 个合格因子${available ? "" : " · 尚未完成确认或本机缺少运行目录"}`,
+                };
+              })}
             />
             <Button size="small" icon={<ReloadOutlined />} onClick={runsApi.reload} loading={runsApi.loading}>刷新</Button>
+            {runs.length > 0 && (
+              <Tag color={availableRuns.length > 0 ? "blue" : "orange"}>
+                {availableRuns.length}/{runs.length} 条本机可回测
+              </Tag>
+            )}
             {runDetail && <Tag color="blue">{factors.length} 个合格因子</Tag>}
             {runDetail?.pool_id && <Tag>股票池 {runDetail.pool_id}</Tag>}
             {runDetail?.created_at && <Text type="secondary">生成于 {String(runDetail.created_at).replace("T", " ")}</Text>}
@@ -271,7 +242,13 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
       {!runsApi.loading && !runsApi.error && runs.length === 0 && (
         <Alert
           type="info" showIcon message="还没有可回测的因子运行"
-          description="请先在「因子生成」页生成因子，或用 CLI 生成 factor_runs/<run_id>/accepted_factors.jsonl；本页只回测生成阶段已合格的因子。"
+          description="请先在「因子生成」页生成因子，或用 CLI 生成 factor_runs/<run_id>/confirmed_factors.jsonl；本页只回测测试集确认后的因子。"
+        />
+      )}
+      {!runsApi.loading && !runsApi.error && runs.length > 0 && availableRuns.length === 0 && (
+        <Alert
+          type="warning" showIcon message="没有通过测试集门槛的合格因子运行"
+          description={`当前 ${runs.length} 条运行尚无已完成确认且本机可用的因子。请在因子生成页完成独立的“因子确认”任务；本页只展示 confirmed_factors.jsonl，不会提交时重跑测试集。`}
         />
       )}
 
@@ -291,8 +268,8 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
                 form={form} layout="vertical" onFinish={submit}
                 initialValues={{
                   dates: [dayjs("2021-06-18"), dayjs("2026-06-16")],
-                  topK: 50, initialCash: 100000000, commission: 0.0015, stampDuty: 0.0005,
-                  rebalanceFreq: "1D", slippage: 0.0005, minCost: 5, maxWeight: 0.02, maxDrawdownControl: 0,
+                  topK: 50, initialCash: 100000000, commission: 0.0003, stampDuty: 0.0005, transferFee: 0.00001,
+                  rebalanceFreq: "1D", slippage: 0.001, minCost: 5, maxWeight: 0.03,
                 }}
               >
                 <Form.Item label="回测区间" name="dates" rules={[{ required: true, message: "请选择回测区间" }]}>
@@ -303,24 +280,25 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
                     <Form.Item label="调仓频率" name="rebalanceFreq">
                       <Select options={[
                         { value: "1D", label: "每日" },
-                        { value: "5D", label: "每周（5 个交易日）" },
-                        { value: "10D", label: "每两周（10 个交易日）" },
-                        { value: "20D", label: "每月（20 个交易日）" },
+                        { value: "1W", label: "每周（周期首个交易日）" },
+                        { value: "2W", label: "每两周（固定双周周期）" },
+                        { value: "1M", label: "每月（周期首个交易日）" },
                       ]} />
                     </Form.Item>
                   </Col>
                   <Col span={12}><Form.Item label="持仓数量 TopK" name="topK" rules={[{ type: "number", min: 1, max: 1000, message: "范围 1–1000" }]}><InputNumber className="full-width" min={1} max={1000} /></Form.Item></Col>
                   <Col span={12}><Form.Item label="初始资金" name="initialCash"><InputNumber className="full-width" min={1} addonAfter="元" /></Form.Item></Col>
-                  <Col span={12}><Form.Item label="手续费" name="commission"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="佣金（双向）" name="commission"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
                   <Col span={12}><Form.Item label="印花税（卖出）" name="stampDuty"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
-                  <Col span={12}><Form.Item label="滑点" name="slippage"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
-                  <Col span={12}><Form.Item label="最低手续费" name="minCost"><InputNumber className="full-width" min={0} addonAfter="元" /></Form.Item></Col>
-                  <Col span={12}><Form.Item label="单票权重上限" name="maxWeight"><InputNumber className="full-width" min={0.001} max={1} step={0.01} /></Form.Item></Col>
-                  <Col span={12}><Form.Item label="最大回撤控制（0 = 关闭）" name="maxDrawdownControl"><InputNumber className="full-width" min={0} max={0.9} step={0.01} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="过户费（双向）" name="transferFee"><InputNumber className="full-width" step={0.00001} min={0} max={0.1} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="滑点（基准 0.001 / 压力 0.002）" name="slippage"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="最低佣金" name="minCost"><InputNumber className="full-width" min={0} addonAfter="元" /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="单票权重上限" name="maxWeight"><InputNumber className="full-width" min={0.001} max={1} step={0.005} /></Form.Item></Col>
                 </Row>
+                <Text type="secondary">最低佣金按每笔买卖分别收取；过户费与卖出印花税另计。周／双周／月按日历周期调仓，遇休市顺延至该周期首个交易日。</Text>
                 <Button
                   size="large" block type="primary" htmlType="submit" icon={<PlayCircleOutlined />}
-                  loading={submitting} disabled={!runDetail || factors.length === 0 || selectedIds.length === 0 || polling}
+                  loading={submitting} disabled={!runDetail || !isConfirmedRun(runDetail) || factors.length === 0 || selectedIds.length === 0 || polling}
                 >
                   回测 {selectedIds.length} 个合格因子
                 </Button>
@@ -354,7 +332,7 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
           </Col>
           <Col span={14}>
             <Card
-              title="合格因子清单（生成阶段通过阈值筛选）"
+              title="合格因子清单（测试集门槛通过）"
               extra={<Text type="secondary">已选 {selectedIds.length} / {factors.length}</Text>}
               className="data-card"
             >
@@ -364,10 +342,10 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
                   value={categoryFilter}
                   onChange={(key) => setCategoryFilter(key)}
                 />
-                <Text type="secondary">类别由表达式字段/算子自动识别</Text>
+                <Text type="secondary">表格展示原始表达式在测试集上的真实指标，缺失显示「—」。通过 train／valid 质量门槛的是可接受因子；经独立 test 门槛确认后才是合格因子。回测方向仅由训练 IC 确定，负 IC 因子自动反向；不使用验证集或测试集选方向。</Text>
                 <Table
                   rowKey="factor_id" size="middle" columns={factorColumns} dataSource={filteredFactors}
-                  loading={runDetailApi.loading} pagination={false} scroll={{ x: 1250, y: 420 }}
+                  loading={runDetailApi.loading} pagination={false} scroll={{ x: 1600, y: 420 }}
                   rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys) }}
                   locale={{ emptyText: runDetail && factors.length === 0 ? "该运行没有合格因子" : "请选择因子运行" }}
                 />

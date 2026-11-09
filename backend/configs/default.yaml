@@ -17,10 +17,11 @@ backtest:
   rebalance_freq: "1D"
   price: "next_open"
   initial_cash: 100000000
-  buy_cost: 0.0015
-  sell_cost: 0.0015
-  slippage: 0.0005
+  commission: 0.0003
+  transfer_fee: 0.00001
+  stamp_duty: 0.0005
+  slippage: 0.001
   min_cost: 5
-  max_weight_per_stock: 0.02
+  max_weight_per_stock: 0.03
   exclude_limit_up_buy: true
   exclude_limit_down_sell: true

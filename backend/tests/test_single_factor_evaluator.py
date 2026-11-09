@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from single_factor.data import PanelData
 from single_factor.evaluator import SingleFactorEvaluator
-from single_factor._vendor.alphagen.data.expression import Constant, Div
+from single_factor.expression import NamedFeature
+from single_factor._vendor.alphagen.data.expression import Constant, Div, Mul
 
 
 def make_evaluator() -> SingleFactorEvaluator:
@@ -26,8 +27,22 @@ def make_evaluator() -> SingleFactorEvaluator:
 
 
 class DegenerateExpressionTests(unittest.TestCase):
-    def test_constant_factor_has_zero_score_and_is_rejected(self):
+    def test_raw_field_has_zero_score_and_is_rejected(self):
+        metrics = make_evaluator().evaluate(NamedFeature("close"))
+        self.assertEqual(metrics.score, 0.0)
+        self.assertFalse(metrics.accepted)
+        self.assertIn("no operator", metrics.reason)
+        self.assertTrue(np.isnan(metrics.ic))
+
+    def test_constant_without_operator_has_zero_score_and_is_rejected(self):
         metrics = make_evaluator().evaluate(Constant(1.0))
+        self.assertEqual(metrics.score, 0.0)
+        self.assertFalse(metrics.accepted)
+        self.assertIn("no operator", metrics.reason)
+        self.assertTrue(np.isnan(metrics.ic))
+
+    def test_constant_cross_section_with_operator_is_rejected(self):
+        metrics = make_evaluator().evaluate(Mul(NamedFeature("close"), 0.0))
         self.assertEqual(metrics.score, 0.0)
         self.assertFalse(metrics.accepted)
         self.assertIn("degenerate cross-section", metrics.reason)
@@ -49,13 +64,14 @@ def test_candidate_evaluation_never_reads_holdout():
     from unittest.mock import patch
     from single_factor.evaluator import SegmentMetrics
     evaluator = make_evaluator()
+    evaluator.valid_panel = object()
     evaluator.test_panel = object()
     good = SegmentMetrics(ic=0.5, rank_ic=0.5, icir=1.0, coverage=1.0, valid_days=10)
     def segment(expr, panel):
         assert panel is not evaluator.test_panel
         return good
     with patch.object(evaluator, "_segment_metrics", side_effect=segment):
-        result = evaluator.evaluate(Constant(1.0))
+        result = evaluator.evaluate(Mul(NamedFeature("close"), 0.0))
     assert result.accepted
     assert "test" not in result.segments
     with patch.object(evaluator, "_segment_metrics", return_value=good) as evaluate:

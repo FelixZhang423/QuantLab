@@ -282,80 +282,7 @@ class AIToolExecutor:
         }
 
     def _materialize_candidate_factor_run(self, arguments: Mapping[str, Any]) -> Path:
-        selected = self._selected_candidates(arguments.get("candidate_ids"))
-        if not selected:
-            raise ValueError("no valid candidates available for factor run materialization")
-        pool_id = self._pool_id(arguments)
-        source_signature = self._source_signature(arguments)
-        digest = hashlib.sha256(
-            json.dumps(
-                {
-                    "session": self.session_dir.name,
-                    "pool_id": pool_id,
-                    "source_signature": source_signature,
-                    "candidates": [
-                        {
-                            "candidate_id": item.get("candidate_id"),
-                            "expression": item.get("expression"),
-                        }
-                        for item in selected
-                    ],
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ).encode("utf-8")
-        ).hexdigest()[:10]
-        run_id = str(arguments.get("factor_run_id") or f"ai_{self.session_dir.name}_{digest}")
-        factor_run_dir = self._path("factor_runs_root", "factor_runs") / run_id
-        factor_run_dir.mkdir(parents=True, exist_ok=True)
-        rows = []
-        for item in selected:
-            expression = normalize_expression(str(item.get("expression") or ""))
-            rows.append(
-                {
-                    "candidate_id": item.get("candidate_id"),
-                    "hypothesis_id": item.get("hypothesis_id", ""),
-                    "expression": expression,
-                    "canonical_expression": expression,
-                    "backtest_expression": expression,
-                    "accepted": True,
-                    "reason": "ai_research_candidate",
-                    "pool_id": pool_id,
-                    "source_signature": source_signature,
-                    "runtime_id": "ai_research_session",
-                    "rationale": item.get("rationale", ""),
-                    "expected_direction": item.get("expected_direction", "unknown"),
-                }
-            )
-        with (factor_run_dir / "accepted_factors.jsonl").open("w", encoding="utf-8") as fh:
-            for row in rows:
-                fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
-        manifest = {
-            "data_source": "clickhouse",
-            "run_id": run_id,
-            "factor_run_dir": str(factor_run_dir),
-            "pool_id": pool_id,
-            "source_signature": source_signature,
-            "runtime_id": "ai_research_session",
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "accepted_count": len(rows),
-            "attempts": len(rows),
-            "target_reached": True,
-            "attempts_exhausted": False,
-            "ai_research_session": self.session_dir.name,
-        }
-        (factor_run_dir / "factor_run.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
-        try:
-            from repositories.mysql_store import persist_factor_run
-
-            persist_factor_run(factor_run_dir)
-        except Exception:
-            logger.warning("MySQL persist failed for factor run %s", run_id, exc_info=True)
-        self.store.write_json(self.session_dir / "materialized_factor_run.json", manifest)
-        return factor_run_dir
+        raise ValueError("AI 候选不能绕过训练/验证与测试集确认；请运行 PPO 生成候选后提交因子确认任务")
 
     def _selected_candidates(self, candidate_ids: Any) -> list[dict[str, Any]]:
         requested = [str(item) for item in candidate_ids] if isinstance(candidate_ids, list) else []
@@ -447,11 +374,12 @@ class AIToolExecutor:
             "rebalance_freq": "1D",
             "price": "next_open",
             "initial_cash": 100000000,
-            "buy_cost": 0.0015,
-            "sell_cost": 0.0015,
-            "slippage": 0.0005,
+            "commission": 0.0003,
+            "transfer_fee": 0.00001,
+            "stamp_duty": 0.0005,
+            "slippage": 0.001,
             "min_cost": 5,
-            "max_weight_per_stock": 0.02,
+            "max_weight_per_stock": 0.03,
             "exclude_limit_up_buy": True,
             "exclude_limit_down_sell": True,
         }

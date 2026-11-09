@@ -39,17 +39,20 @@ type GenFormValues = {
   minTrainIc?: number;
   minValidIc?: number;
   minIcir?: number;
+  minTrainRankIc?: number;
+  minValidRankIc?: number;
+  minValidIcir?: number;
 };
 
-type GenFactorRow = AcceptedFactor & { category: FactorCategoryKey };
+type GenFactorRow = AcceptedFactor & { category: FactorCategoryKey; phase: "candidate" | "confirmed" };
 
 /** 后端 ProgressCallback 上报的 stage 顺序（与 custom_bt/factor_generation.py 一致） */
 const GEN_STEPS = [
   { key: "preparing_runtime", title: "准备股票池面板", description: "按 pool_id 导出池内行情并构建训练缓存" },
-  { key: "loading_panels", title: "加载训练数据", description: "加载 train / valid / test 面板" },
+  { key: "loading_panels", title: "加载训练数据", description: "加载 train / valid 面板，test 留给独立确认任务" },
   { key: "initializing", title: "初始化 PPO 环境", description: "构建 AlphaGen 环境与策略网络" },
   { key: "training", title: "PPO 采样与评估", description: "在字段与算子空间内搜索表达式" },
-  { key: "finished", title: "写入运行清单", description: "保存合格因子与 factor_run.json" },
+  { key: "finished", title: "写入运行清单", description: "保存可接受因子与 factor_run.json，等待独立测试确认" },
 ] as const;
 
 const STAGE_LABELS: Record<string, string> = Object.fromEntries(
@@ -104,11 +107,15 @@ const storageLabel = (storage?: string | null): string => {
   return "本地";
 };
 
-/** 运行历史展开行里的合格因子明细；本地运行读 accepted_factors.jsonl，缺失时由后端回退 MySQL factors 表。 */
+/** 可接受因子与确认结果分别展示；测试集只由独立确认任务评估。 */
 function RunFactorPreview({ runId }: { runId: string }) {
   const detailApi = useApiData(() => api.factorRun(runId), [runId]);
-  const factors = detailApi.data?.accepted_factors ?? [];
-  const columns: TableColumnsType<AcceptedFactor> = [
+  const confirmed = detailApi.data?.confirmed_factors ?? [];
+  const confirmedIds = new Set(confirmed.map((factor) => factor.factor_id));
+  const factors = (detailApi.data?.candidate_factors ?? []).map((factor) =>
+    ({ ...factor, ...(confirmed.find((item) => item.factor_id === factor.factor_id) ?? {}), phase: confirmedIds.has(factor.factor_id) ? "confirmed" : "candidate" }));
+  const columns: TableColumnsType<AcceptedFactor & { phase: string }> = [
+    { title: "状态", width: 90, render: (_, record) => <Tag color={record.phase === "confirmed" ? "green" : "blue"}>{record.phase === "confirmed" ? "合格" : "可接受因子"}</Tag> },
     {
       title: "表达式", dataIndex: "expression", width: 300,
       render: (value: string) => <Text code copyable>{value}</Text>,
@@ -131,16 +138,17 @@ function RunFactorPreview({ runId }: { runId: string }) {
     return <Alert type="warning" showIcon message="读取运行因子失败" description={detailApi.error} />;
   }
   if (factors.length === 0) {
-    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本次运行没有合格因子" />;
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本次运行没有可接受因子" />;
   }
   return (
     <Space direction="vertical" size={8} className="full-width">
       <Text type="secondary">
-        已存储合格因子 {factors.length} 个
+        可接受因子 {factors.length} 个 · 合格 {confirmed.length} 个
         {detailApi.data?.local_available === false
           ? "（来自 MySQL factors 表）"
-          : "（本地 accepted_factors.jsonl，已同步 MySQL factors 表）"}
+          : "（candidate / confirmed 两阶段记录）"}
       </Text>
+      <RunConfirmation runId={runId} onComplete={detailApi.reload} />
       <Table
         rowKey="factor_id"
         size="small"
@@ -151,6 +159,37 @@ function RunFactorPreview({ runId }: { runId: string }) {
       />
     </Space>
   );
+}
+
+function RunConfirmation({ runId, onComplete }: { runId: string; onComplete: () => void }) {
+  const detail = useApiData(() => api.factorRun(runId), [runId]);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const { job, error, polling } = useJobPolling(jobId);
+  const finished = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jobId || job?.status !== "finished" || finished.current === jobId) return;
+    finished.current = jobId;
+    detail.reload();
+    onComplete();
+  }, [jobId, job?.status, detail.reload, onComplete]);
+  const submit = async () => {
+    setSubmitting(true);
+    try { const result = await api.confirmFactorRun(runId); setJobId(result.job_id); }
+    catch (err) { message.error(err instanceof Error ? err.message : String(err)); }
+    finally { setSubmitting(false); }
+  };
+  const run = detail.data;
+  return <Space direction="vertical" size={4}>
+    <Text>可接受因子 {run?.candidate_count ?? 0} · 合格 {run?.confirmed_count ?? 0} · {run?.confirmation_status ?? "pending"}</Text>
+    {run?.confirmation_status === "finished" && <Text type="secondary">未通过测试确认 {Math.max(0, (run.candidate_count ?? 0) - (run.confirmed_count ?? 0))} 个；测试结果已保存，不会在回测时重新评估。</Text>}
+    <Button onClick={submit} loading={submitting || polling}
+      disabled={!run || run.local_available === false || (run.candidate_count ?? 0) === 0 || (run.confirmation_status === "finished" || run.confirmation_status === "running") || run.manifest.generation_status !== "finished"}>
+      {run?.confirmation_status === "finished" ? "测试集确认已完成" : "因子确认（一次性测试集评估）"}
+    </Button>
+    {(error || job?.status === "failed") && <Text type="danger">{error ?? job?.message}</Text>}
+    {job && <Text type="secondary">{job.message}</Text>}
+  </Space>;
 }
 
 const fmtNumber = (value: number | null | undefined, digits = 3) =>
@@ -281,7 +320,10 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
       device: defaults.device,
       minCoverage: defaults.quality.min_coverage ?? 0.9,
       minTrainIc: defaults.quality.min_train_ic ?? 0.05,
-      minValidIc: defaults.quality.min_valid_ic ?? 0.04,
+      minValidIc: defaults.quality.min_valid_ic ?? 0.03,
+      minTrainRankIc: defaults.quality.min_train_rank_ic ?? 0.03,
+      minValidRankIc: defaults.quality.min_valid_rank_ic ?? 0.03,
+      minValidIcir: defaults.quality.min_valid_icir ?? 0.3,
       minIcir: defaults.quality.min_icir ?? 0.5,
     });
   }, [defaultsApi.data, form]);
@@ -348,7 +390,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
     return () => window.clearInterval(timer);
   }, [jobId, runStartedAt, job]);
 
-  // finished 后用 run_id 读取真实因子运行详情（accepted_factors.jsonl）。
+  // PPO 完成后读取可接受因子；测试确认由独立任务执行。
   useEffect(() => {
     if (!job) return;
     if (job.status === "failed" || job.status === "missing") {
@@ -451,6 +493,13 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
           min_train_ic: values.minTrainIc,
           min_valid_ic: values.minValidIc,
           min_icir: values.minIcir,
+          min_train_rank_ic: values.minTrainRankIc,
+          min_valid_rank_ic: values.minValidRankIc,
+          min_valid_icir: values.minValidIcir,
+          min_test_coverage: 0.9,
+          min_test_ic: 0.03,
+          min_test_rank_ic: 0.03,
+          min_test_icir: 0.3,
         },
       });
       setSubmission(response);
@@ -493,7 +542,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
   const progressData = job?.progress ?? {};
   const stage = String(progressData.stage ?? (job?.status === "queued" ? "queued" : ""));
   const attempts = asNumber(progressData.attempts);
-  const accepted = asNumber(progressData.accepted_count);
+  const accepted = asNumber(progressData.candidate_count ?? progressData.accepted_count);
   const targetCount = asNumber(
     progressData.target_count ?? submission?.request_summary?.target_factor_count,
     defaultsApi.data?.target_factor_count ?? 0,
@@ -516,13 +565,17 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
 
   const resultRows: GenFactorRow[] = useMemo(
     () =>
-      (runDetail?.accepted_factors ?? [])
-        .map((factor) => ({ ...factor, category: classifyFactor(String(factor.expression ?? "")) }))
+      (runDetail?.candidate_factors ?? [])
+        .map((factor) => {
+          const confirmed = runDetail?.confirmed_factors.find((item) => item.factor_id === factor.factor_id);
+          return { ...factor, ...confirmed, category: classifyFactor(String(factor.expression ?? "")), phase: confirmed ? "confirmed" as const : "candidate" as const };
+        })
         .sort((a, b) => asNumber(b.score) - asNumber(a.score)),
     [runDetail],
   );
 
   const resultColumns: TableColumnsType<GenFactorRow> = [
+    { title: "状态", width: 90, render: (_, record) => <Tag color={record.phase === "confirmed" ? "green" : "blue"}>{record.phase === "confirmed" ? "合格" : "可接受因子"}</Tag> },
     { title: "表达式", dataIndex: "expression", width: 320, fixed: "left", render: (value: string) => <Text code copyable>{value}</Text> },
     {
       title: "类别",
@@ -592,9 +645,10 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
       sorter: (a, b) => asNumber(a.attempts) - asNumber(b.attempts),
       render: (value: number | null) => fmtInteger(value),
     },
+    { title: "合格", dataIndex: "confirmed_count", width: 80, align: "right", render: (value) => value ?? 0 },
     {
-      title: "合格", dataIndex: "accepted_count", width: 80, align: "right",
-      sorter: (a, b) => asNumber(a.accepted_count) - asNumber(b.accepted_count),
+      title: "可接受因子", dataIndex: "candidate_count", width: 80, align: "right",
+      sorter: (a, b) => asNumber(a.candidate_count) - asNumber(b.candidate_count),
       render: (value: number | null) => fmtInteger(value),
     },
     {
@@ -626,7 +680,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
   const summarySplits = summary.splits as Record<string, { cache_start?: string; cache_end?: string }> | undefined;
   const finishedManifest = runDetail?.manifest ?? {};
   const finishedAttempts = asNumber(finishedManifest.attempts, attempts);
-  const finishedAccepted = asNumber(finishedManifest.accepted_count, accepted);
+  const finishedAccepted = asNumber(runDetail?.candidate_count ?? finishedManifest.candidate_count, accepted);
   const splitWindow = defaultsApi.data?.pool_window ?? null;
   const splitWindowStart = splitWindow ? dayjs(splitWindow.start) : null;
   const splitWindowEnd = splitWindow ? dayjs(splitWindow.end) : null;
@@ -748,6 +802,8 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                   description={defaultsApi.data.warnings.join("；")}
                 />
               ) : null}
+              <Alert type="info" showIcon message="train / valid / test 不重叠，边界至少隔离 target_horizon 个交易日，历史预热不计入指标区间。" style={{ marginBottom: 12 }} />
+              <Alert type="info" showIcon message="验证和测试的 IC、RankIC、ICIR 符号均须与训练 IC 相同。测试确认门槛固定：coverage ≥ 0.9，|IC| / |RankIC| ≥ 0.03，|ICIR| ≥ 0.3；确认后不可据测试结果反复调参。" style={{ marginBottom: 12 }} />
               <Form.Item label="训练段 train" name="train" rules={[{ required: true, message: "请选择训练段" }]}><DatePicker.RangePicker className="full-width" disabledDate={disabledSplitDate} /></Form.Item>
               <Form.Item label="验证段 valid" name="valid" rules={[{ required: true, message: "请选择验证段" }]}><DatePicker.RangePicker className="full-width" disabledDate={disabledSplitDate} /></Form.Item>
               <Form.Item label="测试段 test" name="test" rules={[{ required: true, message: "请选择测试段" }]}><DatePicker.RangePicker className="full-width" disabledDate={disabledSplitDate} /></Form.Item>
@@ -759,10 +815,13 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
               </Row>
               <Divider orientation="left" plain>质量阈值</Divider>
               <Row gutter={12}>
-                <Col span={12}><Form.Item label="最低覆盖率" name="minCoverage" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.05} /></Form.Item></Col>
-                <Col span={12}><Form.Item label="最低训练 IC" name="minTrainIc" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.01} /></Form.Item></Col>
-                <Col span={12}><Form.Item label="最低验证 IC" name="minValidIc" rules={[{ type: "number", min: 0, max: 1 }]}><InputNumber className="full-width" min={0} max={1} step={0.01} /></Form.Item></Col>
-                <Col span={12}><Form.Item label="最低 ICIR" name="minIcir" rules={[{ type: "number", min: 0, max: 3 }]}><InputNumber className="full-width" min={0} max={3} step={0.1} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="训练／验证最低覆盖率" name="minCoverage" rules={[{ type: "number", min: 0.9, max: 1 }]}><InputNumber className="full-width" min={0.9} max={1} step={0.05} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低训练 |IC|" name="minTrainIc" rules={[{ type: "number", min: 0.05, max: 1 }]}><InputNumber className="full-width" min={0.05} max={1} step={0.01} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低验证 |IC|" name="minValidIc" rules={[{ type: "number", min: 0.03, max: 1 }]}><InputNumber className="full-width" min={0.03} max={1} step={0.01} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低训练 |RankIC|" name="minTrainRankIc"><InputNumber className="full-width" min={0.03} max={1} step={0.01} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低验证 |RankIC|" name="minValidRankIc"><InputNumber className="full-width" min={0.03} max={1} step={0.01} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低验证 |ICIR|" name="minValidIcir"><InputNumber className="full-width" min={0.3} step={0.1} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低训练 |ICIR|" name="minIcir" rules={[{ type: "number", min: 0.5, max: 3 }]}><InputNumber className="full-width" min={0.5} max={3} step={0.1} /></Form.Item></Col>
               </Row>
               <Button
                 size="large" block type="primary" htmlType="submit"
@@ -796,7 +855,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                 <Divider />
                 <Row gutter={16}>
                   <Col span={8}><Statistic title="已尝试" value={attempts} /></Col>
-                  <Col span={8}><Statistic title="已接受" value={accepted} suffix={targetCount ? `/ ${targetCount}` : undefined} /></Col>
+                  <Col span={8}><Statistic title="可接受因子通过" value={accepted} suffix={targetCount ? `/ ${targetCount}` : undefined} /></Col>
                   <Col span={8}><Statistic title="训练步数" value={timesteps} /></Col>
                 </Row>
                 <Divider />
@@ -839,7 +898,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
 
             {finished && (
               <Card
-                title={<Space><RobotOutlined />生成结果（{resultRows.length} 个合格因子）</Space>}
+                title={<Space><RobotOutlined />生成结果（{resultRows.length} 个因子，区分可接受与合格）</Space>}
                 className="data-card"
                 extra={<Space>
                   {runId && <Text type="secondary" copyable={{ text: runId, icon: <CopyOutlined /> }}>run_id: {runId}</Text>}
@@ -852,11 +911,11 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                 {runError ? (
                   <Alert type="error" showIcon message="读取因子运行结果失败" description={runError} />
                 ) : runLoading ? (
-                  <Flex justify="center"><Spin tip="读取 accepted_factors.jsonl…"><div style={{ width: 240 }} /></Spin></Flex>
+                  <Flex justify="center"><Spin tip="读取可接受因子与确认记录…"><div style={{ width: 240 }} /></Spin></Flex>
                 ) : runDetail ? (
                   <>
                     <Row gutter={16} className="note-action">
-                      <Col span={6}><Statistic title="合格因子" value={finishedAccepted} suffix={targetCount ? `/ ${targetCount}` : undefined} /></Col>
+                      <Col span={6}><Statistic title="可接受因子" value={finishedAccepted} suffix={targetCount ? `/ ${targetCount}` : undefined} /></Col>
                       <Col span={6}><Statistic title="尝试次数" value={finishedAttempts} /></Col>
                       <Col span={6}><Statistic title="股票池" value={String(runDetail.manifest.pool_id ?? selectedPool ?? "—")} /></Col>
                       <Col span={6}><Statistic title="数据源" value={String(runDetail.manifest.data_source ?? submission?.data_source ?? "—")} /></Col>
@@ -887,10 +946,10 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                       { key: "created", label: "完成时间", children: String(runDetail.manifest.created_at ?? runDetail.created_at ?? "—") },
                     ]} />
                     {resultRows.length === 0 ? (
-                      <Empty description="本次运行没有合格因子">
+                      <Empty description="本次运行没有可接受因子">
                         <Text type="secondary">
                           {runDetail.manifest.attempts_exhausted
-                            ? "尝试次数用完仍未达到质量阈值；可降低最低 IC / ICIR / 覆盖率，或提高最大尝试次数。"
+                            ? "尝试次数用完仍未达到质量阈值；可检查字段和切分区间；测试集结果不能用于反复调整门槛、算子或 PPO。"
                             : "没有因子同时满足训练段、验证段的质量阈值；可检查字段组合与切分区间。"}
                         </Text>
                       </Empty>
@@ -906,9 +965,10 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                     )}
                     <Flex justify="space-between" gap={12} wrap className="note-action">
                       <Text type="secondary">
-                        IC / RankIC / ICIR / 覆盖率均来自运行评估器的分段指标（train / valid / test）；只有全部通过的因子才写入 accepted_factors.jsonl。
+                        PPO 仅使用 train / valid 产生 candidate；生成结束后独立确认任务评估 test 并保存 confirmed，回测不重复评估 test。
                       </Text>
-                      <Button type="link" onClick={() => navigate("factor_backtest")}>去因子回测</Button>
+                      <RunConfirmation runId={runDetail.run_id} onComplete={() => { api.factorRun(runDetail.run_id).then(setRunDetail); historyApi.reload(); }} />
+                      <Button type="link" onClick={() => navigate("factor_backtest")}>查看合格因子回测</Button>
                     </Flex>
                   </>
                 ) : (

@@ -13,7 +13,9 @@ import pandas as pd
 
 from custom_bt.alpha import alpha_components, canonical_alpha_expression
 from custom_bt.canonical_expression import normalize_expression
+from custom_bt.factor_direction import orient_expression
 from repositories import company_source
+from repositories.factor_run_store import confirmed_records
 from repositories.panel_store import load_panel_for_pool, expression_fields, expression_lookback
 from custom_bt.engine import BacktestConfig, run_backtest
 from adapters.expressions import evaluate_expression
@@ -130,6 +132,7 @@ def _candidate_from_record(index: int, record: Mapping[str, Any], default_pool_i
     canonical_expression = normalize_expression(canonical_expression)
     backtest_expression = str(_first_present(record, ["backtest_expression", "canonical_expression", "expression"]) or canonical_expression).strip()
     backtest_expression = normalize_expression(backtest_expression)
+    backtest_expression, orientation = orient_expression(backtest_expression, record)
     metrics: dict[str, float] = {}
     for key in [
         "score",
@@ -144,6 +147,13 @@ def _candidate_from_record(index: int, record: Mapping[str, Any], default_pool_i
         value = _first_present(record, [key, f"generation_{key}"])
         if value is not None:
             metrics[key] = _as_float(value)
+    training_metrics = (record.get("segments") or {}).get("train") or {}
+    for signed_metric in ("ic", "rank_ic", "icir"):
+        training_value = _as_float(training_metrics.get(signed_metric))
+        if np.isfinite(training_value):
+            metrics[signed_metric] = training_value
+        if signed_metric in metrics:
+            metrics[signed_metric] *= orientation["direction"]
     factor_id = str(record.get("factor_id") or _fallback_factor_id(index, canonical_expression))
     return CompositionCandidate(
         factor_id=factor_id,
@@ -153,7 +163,7 @@ def _candidate_from_record(index: int, record: Mapping[str, Any], default_pool_i
         pool_id=str(record.get("pool_id") or default_pool_id) if (record.get("pool_id") or default_pool_id) else None,
         source_signature=str(record.get("source_signature")) if record.get("source_signature") else None,
         metrics=metrics,
-        raw=dict(record),
+        raw={**record, **orientation},
     )
 
 
@@ -910,7 +920,7 @@ def _load_records_from_factor_run(
         raise ValueError(f"factor run pool_id {manifest.get('pool_id')!r} does not match requested pool_id {expected_pool_id!r}")
     if expected_source_signature and manifest.get("source_signature") not in (None, expected_source_signature):
         raise ValueError("factor run source signature does not match company source")
-    records = _read_jsonl(path / "accepted_factors.jsonl")
+    records = confirmed_records(path)
     summary_path = _find_factor_backtest_summary(path, manifest, expected_pool_id, saved_results_root)
     if summary_path is not None:
         summary = pd.read_csv(summary_path)
@@ -1104,7 +1114,7 @@ def compose_factors(
             {
                 "factor_id": component.factor_id,
                 "name": component.factor_id,
-                "expr": _preprocessed_expression(component.candidate.canonical_expression),
+                "expr": _preprocessed_expression(component.candidate.backtest_expression),
                 "source_expr": component.candidate.canonical_expression,
                 "preprocess": FACTOR_PREPROCESS,
                 "weight": component.weight,
@@ -1165,13 +1175,17 @@ def compose_factors(
             {
                 "factor_id": component.factor_id,
                 "expression": component.candidate.canonical_expression,
-                "preprocessed_expression": _preprocessed_expression(component.candidate.canonical_expression),
+                "preprocessed_expression": _preprocessed_expression(component.candidate.backtest_expression),
                 "weight": component.weight,
                 "raw_optimizer_weight": component.weight,
                 "applied_to": "preprocessed_alpha",
                 "preprocess": FACTOR_PREPROCESS,
                 "marginal": component.admission,
                 "metrics": component.candidate.metrics,
+                "direction": component.candidate.raw.get("direction", 1),
+                "training_ic": component.candidate.raw.get("training_ic"),
+                "direction_source": component.candidate.raw.get("direction_source"),
+                "effective_expression": component.candidate.backtest_expression,
             }
             for component in components
         ]

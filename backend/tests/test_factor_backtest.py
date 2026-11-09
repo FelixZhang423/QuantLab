@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer
+from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer, publish_confirmed
 from unittest.mock import patch
 from custom_bt.factor_backtest import backtest_accepted_factors, factor_id
 
@@ -15,6 +15,52 @@ class FactorBacktestTests(unittest.TestCase):
         writer = patch("repositories.company_source.write_pool_panel", side_effect=fake_panel_writer)
         writer.start()
         self.addCleanup(writer.stop)
+
+    def test_negative_training_ic_buys_low_original_alpha_and_records_direction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, run_dir, config = _prepare_factor_case(root)
+            accepted = run_dir / "confirmed_factors.jsonl"
+            record = json.loads(accepted.read_text().strip())
+            record.update({"ic": 0.5, "segments": {"train": {"ic": -0.1}, "valid": {"ic": 0.9}}})
+            accepted.write_text(json.dumps(record) + "\n")
+            publish_confirmed(run_dir)
+            result = backtest_accepted_factors(snapshot_root=root / "snapshots", pools_root=root / "pools",
+                        factor_run_dir=run_dir, outputs_root=root / "outputs", backtest_config=config)
+            self.assertEqual(result["completed"], 1)
+            output = Path(result["output_dir"])
+            trades = pd.read_csv(next(output.glob("factor_*/trades.csv")), dtype={"code": str})
+            self.assertEqual(trades[trades.side == "buy"].iloc[0].code, "000002")
+            metadata = json.loads(next(output.glob("factor_*/manifest.json")).read_text())
+            self.assertEqual(metadata["direction"], -1)
+            self.assertEqual(metadata["training_ic"], -0.1)
+            self.assertEqual(metadata["effective_expression"], "-(close)")
+            self.assertEqual(json.loads(accepted.read_text())["expression"], "$close")
+
+    def test_candidates_and_old_accepted_cannot_bypass_confirmation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, run_dir, config = _prepare_factor_case(root)
+            contents = (run_dir / "confirmed_factors.jsonl").read_text(encoding="utf-8")
+            (run_dir / "candidate_factors.jsonl").write_text(contents, encoding="utf-8")
+            (run_dir / "accepted_factors.jsonl").write_text(contents, encoding="utf-8")
+            (run_dir / "confirmed_factors.jsonl").unlink()
+            (run_dir / "confirmation_manifest.json").unlink()
+            with self.assertRaisesRegex(ValueError, "确认|confirm"):
+                backtest_accepted_factors(snapshot_root=root / "snapshots", pools_root=root / "pools",
+                    factor_run_dir=run_dir, outputs_root=root / "outputs", backtest_config=config)
+
+    def test_confirmed_subset_preserves_original_candidate_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, run_dir, config = _prepare_factor_case(root, expressions=("$close", "$open"))
+            records = [json.loads(line) for line in (run_dir / "confirmed_factors.jsonl").read_text().splitlines()]
+            original_id = records[1]["factor_id"]
+            publish_confirmed(run_dir, records[1:])
+            result = backtest_accepted_factors(snapshot_root=root / "snapshots", pools_root=root / "pools",
+                factor_run_dir=run_dir, outputs_root=root / "outputs", backtest_config=config)
+            summary = pd.read_csv(Path(result["output_dir"]) / "factor_backtest_summary.csv")
+            self.assertEqual(summary.iloc[0]["factor_id"], original_id)
 
     def test_backtest_rejects_cli_pool_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -215,7 +261,8 @@ def _prepare_factor_case(root: Path, expressions=("$close",)):
         "pool_id": pool["pool_id"],
         "data_source": "clickhouse", "snapshot_id": pool["snapshot_id"], "source_signature": pool["source_signature"],
     }
-    (run_dir / "accepted_factors.jsonl").write_text("\n".join(accepted_lines) + "\n", encoding="utf-8")
+    (run_dir / "confirmed_factors.jsonl").write_text("\n".join(accepted_lines) + "\n", encoding="utf-8")
+    publish_confirmed(run_dir)
     (run_dir / "rejected_candidates.jsonl").write_text(json.dumps(rejected) + "\n", encoding="utf-8")
     config = {
         "start_date": "2024-01-01",

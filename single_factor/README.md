@@ -19,8 +19,8 @@ python -m single_factor.cli run --config single_factor/runtime.json
 
 `runtime.json` is a template: replace `REPLACE_WITH_SNAPSHOT_ID` with the snapshot ID produced by the backend. It does not contain bundled market data. `pool_codes` can restrict the snapshot universe; null keeps all codes. Cache windows must include rolling lookback and forward-target periods. Memmaps contain per-field `.npy`, `dates.npy`, `codes.json`, `feature_index.json` and `manifest.json`.
 
-The runner saves accepted/rejected records and checkpoints. Restarting with the same compatible runtime reuses them. `run_server.ps1` launches only training on prepared memmaps and adds the backend to `PYTHONPATH`; it never queries raw CSV. For production supervision, provide the generated runtime configuration and output directory explicitly.
+The runner saves candidate/rejected records and checkpoints. Restarting with the same compatible runtime reuses them. `run_server.ps1` launches only training on prepared memmaps and adds the backend to `PYTHONPATH`; it never queries raw CSV. For production supervision, provide the generated runtime configuration and output directory explicitly.
 
 ## Holdout evaluation
 
-Candidate evaluation and PPO use train/valid only. The legacy `min_test_ic` quality field is retained for configuration compatibility and does not affect admission. After freezing an expression, call `SingleFactorEvaluator.evaluate_holdout(expr)` for separate test metrics. Test data never changes admission or PPO reward.
+PPO uses train/valid only and writes `candidate_factors.jsonl`. After the generation finishes and freezes, run backend `confirm-factors` (or the Web confirmation task) to evaluate test once. All outcomes are journaled; only confirmed candidates enter `confirmed_factors.jsonl`, which is the sole source for platform factor backtests and composition. Test metrics never enter PPO reward. See backend/docs/factor_confirmation.md for thresholds, same-sign checks, actual-session split isolation and recovery rules.

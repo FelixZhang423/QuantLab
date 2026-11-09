@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer
+from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer, publish_confirmed
 from unittest.mock import patch
 from custom_bt.factor_backtest import backtest_accepted_factors
 from custom_bt.factor_generation import prepare_factor_runtime
@@ -21,7 +21,7 @@ class PlatformSmokeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             rows = []
-            for date in pd.date_range("2024-01-01", periods=8, freq="D"):
+            for date in pd.date_range("2024-01-01", periods=40, freq="D"):
                 for code, amount in [("000001", 1000.0), ("000002", 2000.0), ("000003", 3000.0)]:
                     price = 10.0 + int(code[-1]) + date.day * 0.1
                     rows.append(
@@ -51,7 +51,7 @@ class PlatformSmokeTests(unittest.TestCase):
                 fields=["close", "volume", "amount"],
                 splits={
                     "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-06"},
-                    "valid": {"cache_start": "2024-01-02", "cache_end": "2024-01-08"},
+                    "valid": {"cache_start": "2024-01-09", "cache_end": "2024-01-15"},
                 },
                 snapshot_root=snapshots,
                 max_backtrack_days=1,
@@ -70,7 +70,8 @@ class PlatformSmokeTests(unittest.TestCase):
                 "pool_id": pool["pool_id"],
                 "data_source": "clickhouse", "snapshot_id": pool["snapshot_id"], "source_signature": pool["source_signature"],
             }
-            (factor_run / "accepted_factors.jsonl").write_text(json.dumps(factor) + "\n", encoding="utf-8")
+            (factor_run / "confirmed_factors.jsonl").write_text(json.dumps(factor) + "\n", encoding="utf-8")
+            publish_confirmed(factor_run)
 
             result = backtest_accepted_factors(
                 root / "pools",

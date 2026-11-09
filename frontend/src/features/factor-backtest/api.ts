@@ -7,6 +7,9 @@ export type FactorRunSummary = {
   runtime_id: string | null;
   created_at: string | null;
   accepted_count: number;
+  candidate_count?: number;
+  confirmed_count?: number;
+  confirmation_status?: "pending" | "running" | "finished" | "failed";
   attempts: number | null;
   target_reached: boolean | null;
   attempts_exhausted: boolean | null;
@@ -64,6 +67,8 @@ export type AcceptedFactor = {
 export type FactorRunDetail = FactorRunSummary & {
   manifest: Record<string, unknown>;
   accepted_factors: AcceptedFactor[];
+  candidate_factors: AcceptedFactor[];
+  confirmed_factors: AcceptedFactor[];
 };
 
 export type FactorBacktestRequest = {
@@ -79,11 +84,10 @@ export type FactorBacktestRequest = {
   slippage?: number;
   min_cost?: number;
   max_weight_per_stock?: number;
-  /** 以下参数后端暂未消费，先随请求透传 */
-  rebalance_freq?: string;
+  rebalance_freq?: "1D" | "1W" | "2W" | "1M";
   commission?: number;
   stamp_duty?: number;
-  max_drawdown_control?: number;
+  transfer_fee?: number;
 };
 
 export type FactorBacktestResponse = {
@@ -140,6 +144,8 @@ export type FactorBacktestBatchDetail = {
 };
 
 export const factorApi = {
+  confirmFactorRun: (runId: string) =>
+    apiPost<{job_id: string; status: string; operation: "confirm_factors"; run_id: string}>(`/api/factor-runs/${encodeURIComponent(runId)}/confirm`, {}),
   factorRuns: (poolId?: string) =>
     apiGet<{ total: number; runs: FactorRunSummary[]; source?: string; mysql_error?: string | null }>(
       withQuery("/api/factor-runs", { pool_id: poolId }),

@@ -58,6 +58,8 @@ class SingleFactorEnvCore(gym.Env):
         if isinstance(action, SequenceIndicatorToken) and action.indicator == SequenceIndicatorType.SEP:
             if not self._builder.is_valid():
                 return self._tokens, -1.0, True, False, {"reason": "invalid expression"}
+            if not self._builder.has_operator():
+                return self._tokens, -1.0, True, False, {"reason": "expression has no operator"}
             expression = self._builder.get_tree()
             if self.print_expr:
                 print(expression)
@@ -70,6 +72,8 @@ class SingleFactorEnvCore(gym.Env):
         if len(self._tokens) >= MAX_EXPR_LENGTH:
             if not self._builder.is_valid():
                 return self._tokens, -1.0, True, False, {"reason": "expression too long"}
+            if not self._builder.has_operator():
+                return self._tokens, -1.0, True, False, {"reason": "expression has no operator"}
             expression = self._builder.get_tree()
             metrics = self.evaluator.evaluate(expression)
             self.last_metrics = metrics
@@ -100,7 +104,7 @@ class SingleFactorEnvCore(gym.Env):
                 self._builder.validate_featured_expr(),
                 self._builder.validate_const(),
                 self._builder.validate_dt(),
-                self._builder.is_valid(),
+                self._builder.is_valid() and self._builder.has_operator(),
             ],
             "op": {
                 UnaryOperator: valid_op_unary,

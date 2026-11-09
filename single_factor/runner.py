@@ -41,6 +41,10 @@ class FactorRunner:
         self._save_state()
 
     @property
+    def candidate_count(self) -> int:
+        return self.accepted_count
+
+    @property
     def target_reached(self) -> bool:
         return self.accepted_count >= self.target_count
 
@@ -55,6 +59,7 @@ class FactorRunner:
         self.storage.save_state({
             "attempts": self.attempts,
             "accepted_count": self.accepted_count,
+            "candidate_count": self.candidate_count,
             "target_count": self.target_count,
             "max_attempts": self.max_attempts,
             "dataset_signature": self.dataset_signature,

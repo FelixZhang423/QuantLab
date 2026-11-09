@@ -16,6 +16,7 @@ python -m api
 ```powershell
 python -m cli create-pool --config configs/pools/liquid_500.yaml
 python -m cli generate-factors --pool <pool_id> --config configs/factor_generation.yaml
+python -m cli confirm-factors --factor-run <run_id> --config configs/factor_generation.yaml
 python -m cli backtest-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
 python -m cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
 ```
@@ -188,3 +189,9 @@ python -m api
 兼容手动 `config.backtest` 与因子扁平 `config`）；因子生成/组合的提交端点仍在后续步骤。
 
 已接入的真实数据清单（各端点的实测值）与前后端技术栈详见 [docs/web_api.md](docs/web_api.md)。
+
+
+调仓频率、因子方向、拆分费用和页面真实指标口径见 [因子回测说明](docs/factor_backtest.md)。
+
+
+两阶段门槛、测试确认与切分隔离见 [因子确认说明](docs/factor_confirmation.md)。

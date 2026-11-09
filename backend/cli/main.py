@@ -95,6 +95,17 @@ def generate_factors_cmd(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
+def confirm_factors_cmd(args: argparse.Namespace) -> None:
+    from custom_bt.factor_confirmation import confirm_factor_run
+    cfg = _load_config(args.config) if args.config else {}
+    run_dir = Path(args.factor_run).expanduser()
+    if not run_dir.is_absolute():
+        run_dir = (_resolve_path(cfg.get("factor_runs_root", str(FACTOR_RUNS_ROOT)), args.config)
+                   if args.config else FACTOR_RUNS_ROOT) / run_dir
+    root = _resolve_path(cfg.get("snapshot_root", str(SNAPSHOT_ROOT)), args.config) if args.config else SNAPSHOT_ROOT
+    print(json.dumps(confirm_factor_run(run_dir, snapshot_root=root), ensure_ascii=False, indent=2))
+
+
 def backtest_factors_cmd(args: argparse.Namespace) -> None:
     cfg = _load_config(args.config)
     factor_run = Path(args.factor_run).expanduser()
@@ -272,6 +283,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_generate.add_argument("--pool", required=True)
     p_generate.add_argument("--config", required=True)
     p_generate.set_defaults(func=generate_factors_cmd)
+    p_confirm = sub.add_parser("confirm-factors")
+    p_confirm.add_argument("--factor-run", required=True)
+    p_confirm.add_argument("--config", default=None)
+    p_confirm.set_defaults(func=confirm_factors_cmd)
     p_factor_backtest = sub.add_parser("backtest-factors")
     p_factor_backtest.add_argument("--pool", required=True)
     p_factor_backtest.add_argument("--factor-run", required=True)

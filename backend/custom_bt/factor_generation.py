@@ -5,6 +5,7 @@ import json
 import logging
 import sys
 from datetime import datetime
+from dataclasses import asdict
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Mapping, Optional, Tuple, Type
 from uuid import uuid4
@@ -17,6 +18,7 @@ from repositories import company_source
 from repositories.local_store import normalize_code
 from repositories import snapshot_store
 from repositories.job_store import atomic_write_json
+from custom_bt.generation_splits import validate_splits
 from repositories.panel_store import resolve_panel_snapshot
 from custom_bt.engine import BacktestConfig
 from adapters.operator_registry import (
@@ -214,6 +216,9 @@ def prepare_factor_runtime(
     # Verify bytes even when a completed runtime exists; a pinned corrupt snapshot is an error.
     snapshot_store._verify(snapshot_id, snapshot_root)
     panel_result = {**panel_result, "panel_path": str(snapshot_store.snapshot_path(snapshot_id, snapshot_root=snapshot_root))}
+    calendar = pd.read_parquet(snapshot_store.snapshot_path(snapshot_id, snapshot_root=snapshot_root), columns=["date"])["date"]
+    isolation = validate_splits(splits, calendar, int(target_horizon))
+    runtime_key["split_isolation_version"] = 2
     runtime_key["snapshot_id"] = snapshot_id
     runtime_key["preprocess_version"] = hashlib.sha256((_single_factor_root() / "single_factor" / "preprocess.py").read_bytes()).hexdigest()
     runtime_id = hashlib.sha256(json.dumps(runtime_key, sort_keys=True).encode("utf-8")).hexdigest()[:20]
@@ -254,6 +259,7 @@ def prepare_factor_runtime(
             }
         result = {
             "runtime_id": runtime_id,
+            "split_isolation": isolation,
             "snapshot_id": snapshot_id,
             "runtime_dir": str(runtime_dir),
             "processed_dir": str(processed_dir),
@@ -297,6 +303,8 @@ def run_factor_generation(
 ) -> dict:
     """Prepare a pool runtime and run the existing PPO factor generator."""
     started_at = datetime.now()
+    if set(splits) != {"train", "valid", "test"}:
+        raise ValueError("因子生成必须包含 train、valid、test 三个数据切分")
     config = dict(generation_config or {})
     selected_fields = list(dict.fromkeys(str(field) for field in fields))
     if not selected_fields:
@@ -389,7 +397,8 @@ def run_factor_generation(
     test_cache = runtime["splits"].get("test")
     train_panel = PanelData.from_memmap(train_cache["cache_dir"], **panel_kwargs)
     valid_panel = PanelData.from_memmap(valid_cache["cache_dir"], **panel_kwargs) if valid_cache else None
-    test_panel = PanelData.from_memmap(test_cache["cache_dir"], **panel_kwargs) if test_cache else None
+    # The holdout is only opened by the separate confirmation task.
+    test_panel = None
     quality = QualityConfig(**dict(config.get("quality", {})))
     evaluator = SingleFactorEvaluator(
         train_panel=train_panel,
@@ -403,6 +412,15 @@ def run_factor_generation(
     explicit_run_id = str(config.get("run_id") or "").strip()
     run_id = explicit_run_id or new_factor_run_id(pool_id, runtime_id)
     factor_run_dir = Path(factor_runs_root).expanduser().resolve() / run_id
+    if (factor_run_dir / "confirmation_request.json").exists():
+        raise ValueError("确认已开始，候选集合被冻结，不能继续 PPO 或修改同一运行")
+    if (factor_run_dir / "factor_run.json").exists():
+        previous = json.loads((factor_run_dir / "factor_run.json").read_text(encoding="utf-8"))
+        if previous.get("generation_status") == "finished":
+            raise ValueError("该轮 PPO 已完成并冻结，请创建新的运行")
+    factor_run_dir.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(factor_run_dir / "factor_run.json", {"run_id": run_id, "generation_status": "running",
+                      "policy_version": 2, "snapshot_id": runtime["snapshot_id"], "pool_id": pool_id})
     runner_function = ppo_runner or run_with_ppo
     device = resolve_generation_device(config.get("device"))
     logger.info(
@@ -460,20 +478,18 @@ def run_factor_generation(
         "max_backtrack_days": effective_backtrack,
         "requested_max_backtrack_days": int(max_backtrack_days),
         "max_future_days": int(max_future_days),
-        "quality": {
-            "min_coverage": quality.min_coverage,
-            "min_train_ic": quality.min_train_ic,
-            "min_valid_ic": quality.min_valid_ic,
-            "min_test_ic": quality.min_test_ic,
-            "min_icir": quality.min_icir,
-            "score_ic_weight": quality.score_ic_weight,
-            "score_rank_ic_weight": quality.score_rank_ic_weight,
-            "score_icir_weight": quality.score_icir_weight,
-        },
+        "quality": asdict(quality),
         "operator_mode": operator_mode,
         "operators": operator_names,
     }
+    candidate_path = factor_run_dir / "candidate_factors.jsonl"
+    candidate_path.touch(exist_ok=True)
+    from repositories.factor_run_store import read_jsonl
+    candidate_count = len(read_jsonl(candidate_path))
     result = {
+        "generation_status": "finished", "policy_version": 2,
+        "candidate_count": candidate_count, "confirmed_count": 0, "confirmation_status": "pending",
+        "candidate_sha256": snapshot_store._file_hash(candidate_path),
         "run_id": run_id,
         "run_name": str(config.get("run_name") or ""),
         "job_id": str(config.get("job_id") or ""),
@@ -503,17 +519,22 @@ def run_factor_generation(
         "max_future_days": int(max_future_days),
         "split_days": split_days,
         "created_at": finished_at.isoformat(timespec="seconds"),
-        "accepted_count": int(getattr(runner, "accepted_count", 0)),
+        "accepted_count": 0,
         "attempts": int(getattr(runner, "attempts", 0)),
         "target_reached": bool(getattr(runner, "target_reached", False)),
         "attempts_exhausted": bool(getattr(runner, "attempts_exhausted", False)),
         "runtime_manifest": str(Path(runtime["runtime_dir"]) / "runtime_manifest.json"),
     }
     factor_run_dir.mkdir(parents=True, exist_ok=True)
-    (factor_run_dir / "factor_run.json").write_text(
-        json.dumps(result, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    freeze = {key: result[key] for key in ("candidate_sha256", "snapshot_id", "fields", "max_backtrack_days", "max_future_days")}
+    freeze["operators"] = result["operators"]
+    freeze["hyperparameters"] = result["hyperparameters"]
+    freeze["quality"] = asdict(quality)
+    freeze["target_horizon"] = int(target_horizon)
+    freeze["runtime_sha256"] = snapshot_store._file_hash(Path(result["runtime_manifest"]))
+    atomic_write_json(factor_run_dir / "generation_freeze.json", freeze)
+    result["generation_freeze_sha256"] = snapshot_store._file_hash(factor_run_dir / "generation_freeze.json")
+    atomic_write_json(factor_run_dir / "factor_run.json", result)
     try:
         from repositories.mysql_store import persist_factor_run
 

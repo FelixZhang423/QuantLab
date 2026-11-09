@@ -771,22 +771,9 @@ def test_ai_tool_executor_materializes_candidates_and_creates_backtest_job(tmp_p
     )
 
     assert result["tool_call_count"] == 1
-    assert result["results"][0]["status"] == "created"
-    assert created["operation"] == "backtest_factors"
-    assert created["payload"]["expected_pool_id"] == "pool_a"
-    factor_run_dir = Path(created["payload"]["factor_run_dir"])
-    assert factor_run_dir.exists()
-    manifest = json.loads((factor_run_dir / "factor_run.json").read_text(encoding="utf-8"))
-    assert manifest["pool_id"] == "pool_a"
-    assert manifest["source_signature"] == "sig_a"
-    assert manifest["accepted_count"] == 1
-    rows = [
-        json.loads(line)
-        for line in (factor_run_dir / "accepted_factors.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
-    assert rows[0]["candidate_id"] == "cand_001"
-    assert rows[0]["backtest_expression"] == "rank(ts_mean(volume,2))"
-    assert (session_dir / "tool_results.jsonl").exists()
+    assert result["results"][0]["status"] == "failed"
+    assert not created
+    assert not list((tmp_path / "factor_runs").glob("*/confirmed_factors.jsonl"))
 
 
 def test_ai_tool_executor_can_run_created_job_when_enabled(tmp_path, monkeypatch):
@@ -849,9 +836,8 @@ def test_ai_tool_executor_can_run_created_job_when_enabled(tmp_path, monkeypatch
         }
     )
 
-    assert result["results"][0]["status"] == "finished"
-    assert calls["ran"].endswith("job_002")
-    assert result["results"][0]["run_result"] == {"completed": 1, "failed": 0}
+    assert result["results"][0]["status"] == "failed"
+    assert not calls
 
 
 def test_ai_tool_executor_loads_saved_results(tmp_path):

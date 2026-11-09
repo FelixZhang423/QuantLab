@@ -1004,7 +1004,7 @@ def delete_pool(
 def _factor_expressions(record: Mapping[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """补全 canonical / backtest 表达式。
 
-    ``accepted_factors.jsonl`` 只保存生成器输出的 expression，规范表达式是在回测阶段
+    ``confirmed_factors.jsonl`` 保留原始生成器输出的 expression，规范表达式是在回测阶段
     用 ``normalize_expression``（内部优先 ``canonicalize_alphagen``）现算的；
     落库时同样补算，避免 MySQL 两列全为 NULL。
     """
@@ -1125,11 +1125,17 @@ def _first_value(*values: Any) -> Any:
 
 def _persist_factor_run_conn(conn, run_dir: Path) -> None:
     manifest = _read_json(run_dir / "factor_run.json")
-    accepted = _read_jsonl(run_dir / "accepted_factors.jsonl")
+    from repositories.factor_run_store import confirmed_records
+    confirmation = _read_json(run_dir / "confirmation_manifest.json") or {}
+    accepted = confirmed_records(run_dir) if confirmation.get("status") == "finished" else []
+    candidates = _read_jsonl(run_dir / "candidate_factors.jsonl")
     rejected = _read_jsonl(run_dir / "rejected_candidates.jsonl")
     if not isinstance(manifest, dict) and not accepted and not rejected:
         raise ValueError(f"factor run manifest missing: {run_dir / 'factor_run.json'}")
     manifest = manifest if isinstance(manifest, dict) else {}
+    manifest = {**manifest, "candidate_count": len(candidates), "confirmed_count": len(accepted),
+                "confirmation_status": confirmation.get("status", "pending"),
+                "candidate_factors": candidates, "confirmed_factors": accepted}
     run_id = str(manifest.get("run_id") or run_dir.name)
     created_at = _to_datetime(manifest.get("created_at"), run_dir / "factor_run.json") or datetime.now()
     pool_id = manifest.get("pool_id")
@@ -1208,7 +1214,7 @@ def _persist_factor_run_conn(conn, run_dir: Path) -> None:
         "operators": _json_text(manifest.get("operators")),
         "quality": _json_text(hyperparameters.get("quality")),
         "created_at": created_at,
-        "accepted_count": _to_int(manifest.get("accepted_count")) or len(accepted),
+        "accepted_count": len(accepted),
         "attempts": _to_int(manifest.get("attempts")),
         "target_reached": _to_bool(manifest.get("target_reached")),
         "attempts_exhausted": _to_bool(manifest.get("attempts_exhausted")),
@@ -1255,6 +1261,12 @@ def _json_value(value: Any) -> Any:
 
 def _factor_run_db_row(row: Mapping[str, Any], *, include_raw: bool = False) -> Dict[str, Any]:
     item = dict(row)
+    raw = _json_value(item.get("raw")) or {}
+    if isinstance(raw, dict):
+        item["candidate_count"] = raw.get("candidate_count", 0)
+        item["confirmed_count"] = raw.get("confirmed_count", 0)
+        item["confirmation_status"] = raw.get("confirmation_status", "pending")
+        item["accepted_count"] = item["confirmed_count"]
     for key in ("split_days", "hyperparameters", "fields", "operators", "quality"):
         item[key] = _json_value(item.get(key))
     if include_raw:

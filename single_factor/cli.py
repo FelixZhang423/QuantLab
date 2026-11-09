@@ -51,6 +51,11 @@ def command_materialize_splits(config: Dict[str, Any]) -> None:
     if not isinstance(splits, dict) or not splits:
         raise ValueError("cache_splits must be a non-empty object")
 
+    import pandas as pd
+    from custom_bt.generation_splits import validate_splits
+    calendar = pd.read_parquet(_path(config["processed_dir"], config) / "panel.parquet", columns=["date"])["date"]
+    validate_splits(splits, calendar, int(config.get("target_horizon", 20)), require_all=True)
+
     codes = config.get("pool_codes")
     codes_file = _path(config.get("pool_codes_file"), config)
     if codes_file is not None:
@@ -76,6 +81,10 @@ def command_materialize_splits(config: Dict[str, Any]) -> None:
 
 
 def command_run(config: Dict[str, Any]) -> None:
+    import pandas as pd
+    from custom_bt.generation_splits import validate_splits
+    calendar = pd.read_parquet(_path(config["processed_dir"], config) / "panel.parquet", columns=["date"])["date"]
+    validate_splits(config.get("cache_splits", {}), calendar, int(config.get("target_horizon", 20)), require_all=True)
     cache_dir = _path(config["cache_dir"], config)
     manifest = json.loads((cache_dir / "manifest.json").read_text(encoding="utf-8"))
     horizon = int(config.get("target_horizon", 20))
@@ -85,15 +94,14 @@ def command_run(config: Dict[str, Any]) -> None:
     }
     train_panel = PanelData.from_memmap(cache_dir, **panel_kwargs)
     valid_dir = _path(config.get("valid_cache_dir"), config)
-    test_dir = _path(config.get("test_cache_dir"), config)
+    if valid_dir is None:
+        raise ValueError("valid_cache_dir is required for candidate admission")
     valid_panel = PanelData.from_memmap(valid_dir, **panel_kwargs) if valid_dir else None
-    test_panel = PanelData.from_memmap(test_dir, **panel_kwargs) if test_dir else None
 
     quality = QualityConfig(**config.get("quality", {}))
     evaluator = SingleFactorEvaluator(
         train_panel=train_panel,
         valid_panel=valid_panel,
-        test_panel=test_panel,
         target_horizon=horizon,
         quality=quality,
     )
@@ -118,7 +126,7 @@ def command_run(config: Dict[str, Any]) -> None:
         device=config.get("device", "cpu"),
     )
     print(json.dumps({
-        "accepted_count": runner.accepted_count,
+        "candidate_count": runner.candidate_count,
         "attempts": runner.attempts,
         "target_reached": runner.target_reached,
         "attempts_exhausted": runner.attempts_exhausted,

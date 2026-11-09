@@ -76,7 +76,7 @@ class FactorGenerationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             rows = []
-            for date in pd.date_range("2024-01-01", periods=5, freq="D"):
+            for date in pd.date_range("2024-01-01", periods=100, freq="D"):
                 for code, amount in [("000001", 1000.0), ("000002", 2000.0)]:
                     rows.append(
                         {
@@ -100,7 +100,7 @@ class FactorGenerationTests(unittest.TestCase):
                 root / "pools",
                 "all",
                 "2024-01-01",
-                "2024-01-05",
+                "2024-04-09",
                 top_n=2,
                 min_coverage=1.0,
             )
@@ -112,8 +112,9 @@ class FactorGenerationTests(unittest.TestCase):
                 runtime_root=root / "factor_runtime",
                 fields=["volume", "amount"],
                 splits={
-                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-04"},
-                    "valid": {"cache_start": "2024-01-02", "cache_end": "2024-01-05"},
+                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-09"},
+                    "valid": {"cache_start": "2024-02-15", "cache_end": "2024-02-23"},
+                    "test": {"cache_start": "2024-04-01", "cache_end": "2024-04-09"},
                 },
             )
 
@@ -129,7 +130,7 @@ class FactorGenerationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             rows = []
-            for date in pd.date_range("2024-01-01", periods=5, freq="D"):
+            for date in pd.date_range("2024-01-01", periods=100, freq="D"):
                 for code, amount in [("000001", 1000.0), ("000002", 2000.0)]:
                     rows.append(
                         {
@@ -153,7 +154,7 @@ class FactorGenerationTests(unittest.TestCase):
                 root / "pools",
                 "all",
                 "2024-01-01",
-                "2024-01-05",
+                "2024-04-09",
                 top_n=2,
                 min_coverage=1.0,
             )
@@ -168,8 +169,9 @@ class FactorGenerationTests(unittest.TestCase):
                 runtime_root=root / "factor_runtime",
                 fields=["volume", "amount"],
                 splits={
-                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-04"},
-                    "valid": {"cache_start": "2024-01-02", "cache_end": "2024-01-05"},
+                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-09"},
+                    "valid": {"cache_start": "2024-02-15", "cache_end": "2024-02-23"},
+                    "test": {"cache_start": "2024-04-01", "cache_end": "2024-04-09"},
                 },
                 pool_manifest=pool,
                 pool_codes=codes,
@@ -183,7 +185,7 @@ class FactorGenerationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             rows = []
-            for date in pd.date_range("2024-01-01", periods=6, freq="D"):
+            for date in pd.date_range("2024-01-01", periods=100, freq="D"):
                 for code, amount in [("000001", 1000.0), ("000002", 2000.0)]:
                     rows.append(
                         {
@@ -207,7 +209,7 @@ class FactorGenerationTests(unittest.TestCase):
                 root / "pools",
                 "all",
                 "2024-01-01",
-                "2024-01-06",
+                "2024-04-09",
                 top_n=2,
                 min_coverage=1.0,
             )
@@ -232,8 +234,9 @@ class FactorGenerationTests(unittest.TestCase):
                 factor_runs_root=root / "factor_runs",
                 fields=["close", "volume", "amount"],
                 splits={
-                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-05"},
-                    "valid": {"cache_start": "2024-01-02", "cache_end": "2024-01-06"},
+                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-09"},
+                    "valid": {"cache_start": "2024-02-15", "cache_end": "2024-02-23"},
+                    "test": {"cache_start": "2024-04-01", "cache_end": "2024-04-09"},
                 },
                 max_backtrack_days=1,
                 target_horizon=1,
@@ -264,7 +267,7 @@ class FactorGenerationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             rows = []
-            for date in pd.date_range("2024-01-01", periods=12, freq="D"):
+            for date in pd.date_range("2024-01-01", periods=100, freq="D"):
                 for code, amount in [("000001", 1000.0), ("000002", 2000.0)]:
                     rows.append(
                         {
@@ -288,7 +291,7 @@ class FactorGenerationTests(unittest.TestCase):
                 root / "pools",
                 "all",
                 "2024-01-01",
-                "2024-01-12",
+                "2024-04-09",
                 top_n=2,
                 min_coverage=1.0,
             )
@@ -307,8 +310,9 @@ class FactorGenerationTests(unittest.TestCase):
                 factor_runs_root=root / "factor_runs",
                 fields=["close", "volume", "amount"],
                 splits={
-                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-10"},
-                    "valid": {"cache_start": "2024-01-04", "cache_end": "2024-01-12"},
+                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-09"},
+                    "valid": {"cache_start": "2024-02-15", "cache_end": "2024-02-23"},
+                    "test": {"cache_start": "2024-04-01", "cache_end": "2024-04-09"},
                 },
                 max_backtrack_days=100,
                 target_horizon=1,
@@ -325,7 +329,7 @@ class FactorGenerationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             rows = []
-            for date in pd.date_range("2024-01-01", periods=6, freq="D"):
+            for date in pd.date_range("2024-01-01", periods=100, freq="D"):
                 for code, amount in [("000001", 1000.0), ("000002", 2000.0)]:
                     rows.append(
                         {
@@ -349,7 +353,7 @@ class FactorGenerationTests(unittest.TestCase):
                 root / "pools",
                 "all",
                 "2024-01-01",
-                "2024-01-06",
+                "2024-04-09",
                 top_n=2,
                 min_coverage=1.0,
             )
@@ -371,8 +375,9 @@ class FactorGenerationTests(unittest.TestCase):
                 "factor_runs_root": root / "factor_runs",
                 "fields": ["close", "volume", "amount"],
                 "splits": {
-                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-05"},
-                    "valid": {"cache_start": "2024-01-02", "cache_end": "2024-01-06"},
+                    "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-09"},
+                    "valid": {"cache_start": "2024-02-15", "cache_end": "2024-02-23"},
+                    "test": {"cache_start": "2024-04-01", "cache_end": "2024-04-09"},
                 },
                 "max_backtrack_days": 1,
                 "target_horizon": 1,

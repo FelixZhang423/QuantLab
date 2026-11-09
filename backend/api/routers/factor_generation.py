@@ -17,3 +17,9 @@ def get_factor_generation_defaults(pool_id: Optional[str]=None) -> Dict[str, Any
 @router.post('/api/factor-generations', status_code=202)
 def create_factor_generation(request: FactorGenerationRequest) -> Dict[str, Any]:
     return generation_service.create_factor_generation(request)
+
+
+@router.post('/api/factor-runs/{run_id}/confirm', status_code=202)
+def create_factor_confirmation(run_id: str) -> Dict[str, Any]:
+    from services.factor_backtest_service import create_factor_confirmation as submit
+    return submit(run_id)

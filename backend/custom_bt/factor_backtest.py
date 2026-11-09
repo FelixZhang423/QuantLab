@@ -12,6 +12,7 @@ import pandas as pd
 
 from repositories import company_source
 from custom_bt.canonical_expression import canonicalize_alphagen
+from custom_bt.factor_direction import orient_expression
 from repositories.panel_store import load_panel_for_pool, expression_fields, expression_lookback
 from custom_bt.engine import BacktestConfig, run_backtest
 from custom_bt.factor_adapter import validate_backtest_expression, ExpressionAdapterError
@@ -24,6 +25,7 @@ ProgressCallback = Callable[[Dict[str, Any]], None]
 
 from repositories.factor_run_store import (  # noqa: E402
     read_jsonl as _read_jsonl,
+    confirmed_records,
     saved_results_root as _saved_results_root,
     validate_backtest_id as _validate_backtest_id,
 )
@@ -92,7 +94,7 @@ def backtest_accepted_factors(
 
     codes = load_pool_codes(pools_root, pool_id)
     run_fields = [str(field) for field in (run_manifest.get("fields") or [])]
-    accepted = _read_jsonl(factor_path / "accepted_factors.jsonl")
+    accepted = confirmed_records(factor_path)
     canonical = []
     for record in accepted:
         if not record.get("expression"):
@@ -120,11 +122,11 @@ def backtest_accepted_factors(
     if backtest_id:
         run_key_prefix = f"{run_key_prefix}/{backtest_id}"
 
-    accepted = _read_jsonl(factor_path / "accepted_factors.jsonl")
+    accepted = confirmed_records(factor_path)
     indexed: List[Dict[str, Any]] = []
     for index, record in enumerate(accepted, start=1):
         expression = str(record.get("expression", "")).strip()
-        current_id = _factor_id(index, expression) if expression else f"factor_{index:04d}"
+        current_id = str(record.get("factor_id") or (_factor_id(index, expression) if expression else f"factor_{index:04d}"))
         indexed.append(
             {"index": index, "record": record, "expression": expression, "factor_id": current_id}
         )
@@ -176,6 +178,7 @@ def backtest_accepted_factors(
                     record.get("canonical_expression") or canonicalize_alphagen(expression)
                 )
                 translated = str(record.get("backtest_expression") or canonical_expression)
+                translated, orientation = orient_expression(translated, record)
                 validate_backtest_expression(canonical_expression, panel)
                 alpha = __import__("adapters.expressions", fromlist=["evaluate_expression"]).evaluate_expression(
                     translated,
@@ -193,6 +196,7 @@ def backtest_accepted_factors(
                         "result_type": "factor",
                         "run_key": run_key,
                         "canonical_expression": canonical_expression,
+                        **orientation,
                         "pool_id": pool_id,
                         "data_source": source,
         "snapshot_id": snapshot_id,
@@ -209,6 +213,7 @@ def backtest_accepted_factors(
                     "expression": expression,
                     "canonical_expression": canonical_expression,
                     "backtest_expression": translated,
+                    **orientation,
                     "pool_id": pool_id,
                     "accepted": True,
                     "run_key": run_key,

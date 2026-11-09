@@ -273,3 +273,16 @@ def test_pool_job_defaults_to_company_and_rejects_local(tmp_path):
     job = create_platform_job(tmp_path / "jobs", "create_pool", payload)
     with pytest.raises(ValueError):
         run_platform_job(job)
+
+
+def test_confirmation_operation_dispatches_without_changing_thresholds(tmp_path, monkeypatch):
+    calls = []
+    def confirm_factor_run(**options):
+        calls.append(options)
+        options["progress_callback"]({"processed": 1})
+        return {"status": "finished", "confirmed_count": 1}
+    monkeypatch.setattr("custom_bt.factor_confirmation.confirm_factor_run", confirm_factor_run)
+    job = create_platform_job(tmp_path, "confirm_factors", {"factor_run_dir": "frozen_run"})
+    result = run_platform_job(job)
+    assert result["confirmed_count"] == 1
+    assert calls[0]["factor_run_dir"] == "frozen_run"

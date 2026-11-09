@@ -8,6 +8,7 @@ from ._vendor.alphagen.data.expression import (
     Expression,
     Greater,
     Less,
+    Operator,
     Operators,
     PairRollingOperator,
     RollingOperator,
@@ -62,6 +63,9 @@ class SingleFactorParser(ExpressionParser):
         operators: Optional[List[Type]] = None,
         ignore_case: bool = True,
     ) -> None:
+        # Stored candidates use canonical quantops names (rank/ts_mean), not class names.
+        from adapters.operator_registry import load_alphagen_operator_map
+        canonical_operators = load_alphagen_operator_map()
         super().__init__(
             operators or Operators,
             ignore_case=ignore_case,
@@ -69,6 +73,7 @@ class SingleFactorParser(ExpressionParser):
             additional_operator_mapping={
                 "Max": [Greater],
                 "Min": [Less],
+                **{name: [operator] for name, operator in canonical_operators.items()},
             },
         )
         self._named_features = {name.lower(): name for name in feature_names}
@@ -132,6 +137,14 @@ class SingleFactorExpressionBuilder:
 
     def is_valid(self) -> bool:
         return len(self.stack) == 1 and self.stack[0].is_featured
+
+    def has_operator(self) -> bool:
+        """最终表达式是否至少使用了一个算子。
+
+        裸字段（如 ``$close``）或裸常数虽然也是合法表达式，但不构成因子，
+        不应作为 PPO 的终止状态或合格因子。
+        """
+        return len(self.stack) == 1 and isinstance(self.stack[0], Operator)
 
     def validate(self, token: Token) -> bool:
         if isinstance(token, OperatorToken):

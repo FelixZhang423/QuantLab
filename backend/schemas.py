@@ -59,11 +59,16 @@ class FactorBacktestRequest(BaseModel):
     end_date: Optional[str] = None
     top_k: int = 50
     initial_cash: float = 100_000_000.0
-    buy_cost: float = 0.0015
-    sell_cost: float = 0.0015
-    slippage: float = 0.0005
+    rebalance_freq: str = "1D"
+    commission: float = 0.0003
+    transfer_fee: float = 0.00001
+    stamp_duty: float = 0.0005
+    # Explicit historic all-in fees override the components for that side.
+    buy_cost: Optional[float] = None
+    sell_cost: Optional[float] = None
+    slippage: float = 0.001
     min_cost: float = 5.0
-    max_weight_per_stock: float = 0.02
+    max_weight_per_stock: float = 0.03
 
 
 class ManualBacktestRequest(BaseModel):
@@ -76,11 +81,16 @@ class ManualBacktestRequest(BaseModel):
     end_date: Optional[str] = None
     top_k: int = 50
     initial_cash: float = 100_000_000.0
-    buy_cost: float = 0.0015
-    sell_cost: float = 0.0015
-    slippage: float = 0.0005
+    rebalance_freq: str = "1D"
+    commission: float = 0.0003
+    transfer_fee: float = 0.00001
+    stamp_duty: float = 0.0005
+    # Explicit historic all-in fees override the components for that side.
+    buy_cost: Optional[float] = None
+    sell_cost: Optional[float] = None
+    slippage: float = 0.001
     min_cost: float = 5.0
-    max_weight_per_stock: float = 0.02
+    max_weight_per_stock: float = 0.03
 
 
 # ---------- 响应模型（稳定端点） ----------

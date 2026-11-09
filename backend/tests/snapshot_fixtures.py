@@ -51,3 +51,25 @@ def fixture_pool(snapshot_root, pools_root, name, selection_start, selection_end
                         pool_id=pool["pool_id"],snapshot_root=snapshot_root)
     pool["snapshot_id"] = snapshot["snapshot_id"]
     return pool
+
+
+def publish_confirmed(run_dir, rows=None):
+    """Publish an already-confirmed test fixture through the real checksum contract."""
+    import hashlib
+    import json
+    from custom_bt.factor_backtest import factor_id
+    root = Path(run_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "confirmed_factors.jsonl"
+    if rows is None:
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    records = []
+    for index, row in enumerate(rows, 1):
+        record = {**row, "status": "confirmed", "confirmed": True}
+        record.setdefault("factor_id", factor_id(index, record["expression"]))
+        records.append(record)
+    path.write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8")
+    (root / "confirmation_manifest.json").write_text(json.dumps({
+        "status": "finished", "confirmed_count": len(records),
+        "confirmed_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}), encoding="utf-8")
+    return records

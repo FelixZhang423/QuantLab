@@ -33,7 +33,7 @@ class FactorStorageMetadataTests(unittest.TestCase):
             )
 
             storage.record(metrics)
-            row = json.loads((Path(tmp) / "accepted_factors.jsonl").read_text(encoding="utf-8"))
+            row = json.loads((Path(tmp) / "candidate_factors.jsonl").read_text(encoding="utf-8"))
 
             self.assertEqual(row["pool_id"], "pool_a")
             self.assertEqual(row["source_signature"], "sig_a")

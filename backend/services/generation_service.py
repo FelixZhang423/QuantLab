@@ -101,6 +101,12 @@ _DEFAULT_GENERATION_SPLIT_RATIOS = {"train": 0.6, "valid": 0.2, "test": 0.2}
 _GENERATION_QUALITY_KEYS = {
     "min_coverage",
     "min_train_ic",
+    "min_train_rank_ic",
+    "min_valid_rank_ic",
+    "min_valid_icir",
+    "min_test_rank_ic",
+    "min_test_icir",
+    "min_test_coverage",
     "min_valid_ic",
     "min_test_ic",
     "min_icir",
@@ -204,15 +210,18 @@ def _generation_pool_source(
     return dict(manifest), codes, "mysql"
 
 def _generation_splits_for_window(
-    start: date, end: date, ratios: Dict[str, float]
+    start: date, end: date, ratios: Dict[str, float], target_horizon: int = 20
 ) -> Dict[str, Dict[str, str]]:
     """把股票池时间跨度按比例切成连续的 train / valid / test。"""
-    total_days = (end - start).days + 1
+    # Preview uses a conservative calendar margin; the worker verifies actual sessions.
+    gap_days = 3 * target_horizon + 14
+    span_days = (end - start).days + 1
+    total_days = span_days - 2 * gap_days
     if total_days < len(_GENERATION_SPLIT_NAMES):
         raise make_error(
             status_code=422,
             detail=(
-                f"股票池真实时间跨度只有 {total_days} 天"
+                f"股票池真实时间跨度只有 {span_days} 天，预留两段隔离后剩余 {max(total_days, 0)} 天"
                 f"（{start.isoformat()} ~ {end.isoformat()}），不足以切分 train/valid/test"
             ),
         )
@@ -235,7 +244,7 @@ def _generation_splits_for_window(
             "cache_start": cursor.isoformat(),
             "cache_end": split_end.isoformat(),
         }
-        cursor = split_end + timedelta(days=1)
+        cursor = split_end + timedelta(days=gap_days + 1)
     return splits
 
 def _generation_field_aliases() -> Dict[str, str]:
@@ -325,44 +334,22 @@ def _normalize_generation_operators(values: Optional[List[str]]) -> List[str]:
 def _normalize_generation_quality(
     defaults: Dict[str, Any], overrides: Optional[Dict[str, Optional[float]]]
 ) -> Dict[str, Any]:
+    from custom_bt.factor_generation import _single_factor_root
+    _single_factor_root()
+    from single_factor.config import QualityConfig
+    from dataclasses import asdict
     base = defaults if isinstance(defaults, dict) else {}
-    merged: Dict[str, Any] = {
-        key: base[key] for key in _GENERATION_QUALITY_KEYS if key in base
-    }
     provided = dict(overrides or {})
     unknown = sorted(set(provided) - _GENERATION_QUALITY_KEYS)
     if unknown:
-        raise make_error(
-            status_code=422, detail=f"未知的质量阈值字段：{'、'.join(unknown)}"
-        )
-    merged.update(provided)
-    merged.setdefault("min_coverage", 0.9)
-    for key in ("min_train_ic", "min_valid_ic", "min_test_ic", "min_icir"):
-        merged.setdefault(key, None)
-    for key in ("score_ic_weight", "score_rank_ic_weight", "score_icir_weight"):
-        merged.setdefault(key, {"score_ic_weight": 0.5, "score_rank_ic_weight": 0.3, "score_icir_weight": 0.2}[key])
+        raise make_error(status_code=422, detail=f"未知的质量阈值字段：{'、'.join(unknown)}")
+    try:
+        values = {key: float(value) for key, value in {**base, **provided}.items()
+                  if key in _GENERATION_QUALITY_KEYS}
+        return asdict(QualityConfig(**values))
+    except (TypeError, ValueError) as exc:
+        raise make_error(status_code=422, detail=f"质量门槛无效：{exc}") from None
 
-    def number(key: str) -> Optional[float]:
-        value = merged.get(key)
-        return None if value is None else float(value)
-
-    coverage = number("min_coverage")
-    if coverage is None or not 0.0 <= coverage <= 1.0:
-        raise make_error(status_code=422, detail="min_coverage 必须在 0 到 1 之间")
-    for key in ("min_train_ic", "min_valid_ic", "min_test_ic", "min_icir"):
-        value = number(key)
-        if value is not None and value < 0:
-            raise make_error(status_code=422, detail=f"{key} 不能为负数")
-    weights = {}
-    for key in ("score_ic_weight", "score_rank_ic_weight", "score_icir_weight"):
-        value = number(key)
-        if value is None or value < 0:
-            raise make_error(status_code=422, detail=f"{key} 必须是非负数")
-        weights[key] = value
-    if sum(weights.values()) <= 0:
-        raise make_error(status_code=422, detail="Score 权重不能全部为 0")
-    merged.update(weights)
-    return merged
 
 def _normalize_generation_splits(
     defaults: Dict[str, Any],
@@ -371,6 +358,7 @@ def _normalize_generation_splits(
     source_end: Optional[date],
     max_backtrack_days: int,
     max_future_days: int,
+    target_horizon: Optional[int] = None,
 ) -> tuple[Dict[str, Dict[str, str]], List[str]]:
     if requested is None:
         raw = dict(defaults.get("splits") or {})
@@ -380,14 +368,14 @@ def _normalize_generation_splits(
             for name, value in requested.items()
         }
     if not raw:
-        raise make_error(status_code=422, detail="请至少提供 train 数据切分")
+        raise make_error(status_code=422, detail="因子生成必须包含 train、valid、test 三个数据切分")
     unknown = sorted(set(raw) - set(_GENERATION_SPLIT_NAMES))
     if unknown:
         raise make_error(
             status_code=422, detail=f"未知的数据切分：{'、'.join(unknown)}"
         )
-    if "train" not in raw:
-        raise make_error(status_code=422, detail="因子生成必须包含 train 数据切分")
+    if set(raw) != set(_GENERATION_SPLIT_NAMES):
+        raise make_error(status_code=422, detail="因子生成必须包含 train、valid、test 三个数据切分")
     splits: Dict[str, Dict[str, str]] = {}
     warnings: List[str] = []
     minimum_days = max_backtrack_days + max_future_days + 1
@@ -429,6 +417,14 @@ def _normalize_generation_splits(
                 f"{name} 切分终点晚于数据源 {source_end.isoformat()}，将按数据源可用区间计算"
             )
         splits[name] = {"cache_start": start.isoformat(), "cache_end": end.isoformat()}
+    horizon = target_horizon if target_horizon is not None else max_future_days
+    for left, right in (("train", "valid"), ("valid", "test")):
+        end = date.fromisoformat(splits[left]["cache_end"])
+        start = date.fromisoformat(splits[right]["cache_start"])
+        if end >= start:
+            raise make_error(status_code=422, detail=f"{left}/{right} 切分重叠或顺序错误")
+        if (start - end).days - 1 < horizon:
+            raise make_error(status_code=422, detail=f"{left}/{right} 隔离不足，至少保留 target_horizon={horizon} 个交易日；运行时还会校验实际交易日")
     return splits, warnings
 
 def get_factor_generation_defaults(pool_id: Optional[str] = None) -> Dict[str, Any]:
@@ -451,7 +447,7 @@ def get_factor_generation_defaults(pool_id: Optional[str] = None) -> Dict[str, A
                 "数据切分回退到 configs/factor_generation.yaml"
             )
         else:
-            splits = _generation_splits_for_window(window[0], window[1], ratios)
+            splits = _generation_splits_for_window(window[0], window[1], ratios, int(config.get("target_horizon", 20)))
             split_source = "pool"
             pool_window = {
                 "start": window[0].isoformat(),
@@ -525,7 +521,8 @@ def create_factor_generation(request: FactorGenerationRequest) -> Dict[str, Any]
     split_warnings: List[str] = []
     if request.splits is None and pool_window is not None:
         generation_defaults["splits"] = _generation_splits_for_window(
-            pool_window[0], pool_window[1], _generation_split_ratios(defaults)
+            pool_window[0], pool_window[1], _generation_split_ratios(defaults),
+            int(request.target_horizon if request.target_horizon is not None else defaults.get("target_horizon", 20))
         )
         split_source = "pool"
     elif request.splits is None:
@@ -605,6 +602,7 @@ def create_factor_generation(request: FactorGenerationRequest) -> Dict[str, Any]
         source_end,
         max_backtrack_days,
         max_future_days,
+        target_horizon,
     )
     if request.splits is not None and pool_window is not None:
         for name, value in splits.items():

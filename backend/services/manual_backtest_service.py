@@ -113,17 +113,22 @@ def create_manual_backtest(request: ManualBacktestRequest) -> Dict[str, Any]:
     """按股票池 + Alpha 表达式提交一次手动回测（后台任务）。"""
     if request.top_k < 1 or request.top_k > 1000:
         raise make_error(status_code=422, detail="top_k 必须在 1 到 1000 之间")
-    if request.initial_cash <= 0:
+    if not math.isfinite(request.initial_cash) or request.initial_cash <= 0:
         raise make_error(status_code=422, detail="initial_cash 必须大于 0")
     for name, value in (
         ("buy_cost", request.buy_cost),
         ("sell_cost", request.sell_cost),
         ("slippage", request.slippage),
+        ("commission", request.commission),
+        ("transfer_fee", request.transfer_fee),
+        ("stamp_duty", request.stamp_duty),
     ):
-        if not 0.0 <= value <= 0.1:
+        if value is not None and not 0.0 <= value <= 0.1:
             raise make_error(status_code=422, detail=f"{name} 必须在 0 到 0.1 之间")
-    if request.min_cost < 0:
+    if not math.isfinite(request.min_cost) or request.min_cost < 0:
         raise make_error(status_code=422, detail="min_cost 不能为负数")
+    if request.rebalance_freq not in {"1D", "1W", "2W", "1M"}:
+        raise make_error(status_code=422, detail="rebalance_freq 必须是 1D、1W、2W 或 1M")
     if not 0.0 < request.max_weight_per_stock <= 1.0:
         raise make_error(status_code=422, detail="max_weight_per_stock 必须在 0 到 1 之间")
 
@@ -186,8 +191,12 @@ def create_manual_backtest(request: ManualBacktestRequest) -> Dict[str, Any]:
         "end_date": end.isoformat(),
         "top_k": request.top_k,
         "initial_cash": request.initial_cash,
-        "buy_cost": request.buy_cost,
-        "sell_cost": request.sell_cost,
+        "rebalance_freq": request.rebalance_freq,
+        "commission": request.commission,
+        "transfer_fee": request.transfer_fee,
+        "stamp_duty": request.stamp_duty,
+        **({"buy_cost": request.buy_cost} if request.buy_cost is not None else {}),
+        **({"sell_cost": request.sell_cost} if request.sell_cost is not None else {}),
         "slippage": request.slippage,
         "min_cost": request.min_cost,
         "max_weight_per_stock": request.max_weight_per_stock,

@@ -1,4 +1,6 @@
 import json
+import hashlib
+import tempfile
 import os
 import time
 from dataclasses import asdict, is_dataclass
@@ -19,7 +21,9 @@ class FactorStorage:
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.metadata = dict(metadata or {})
-        self.accepted_path = self.root / "accepted_factors.jsonl"
+        self.candidate_path = self.root / "candidate_factors.jsonl"
+        self.accepted_path = self.candidate_path
+        self._ensure_unfrozen()
         self.rejected_path = self.root / "rejected_candidates.jsonl"
         self.index_path = self.root / "expression_index.json"
         self.state_path = self.root / "run_state.json"
@@ -29,41 +33,51 @@ class FactorStorage:
             return {}
         return json.loads(self.index_path.read_text(encoding="utf-8"))
 
+    def _ensure_unfrozen(self) -> None:
+        run_path = self.root / "factor_run.json"
+        finished = run_path.exists() and json.loads(run_path.read_text(encoding="utf-8")).get("generation_status") == "finished"
+        if finished or (self.root / "confirmation_request.json").exists():
+            raise ValueError("Candidate set is frozen for confirmation; start a new PPO run")
+
     def _atomic_write_json(self, path: Path, value: Any) -> None:
-        temporary = path.with_suffix(path.suffix + ".tmp")
         payload = json.dumps(value, ensure_ascii=False, indent=2, default=_json_default)
-        last_error: PermissionError | None = None
-        for attempt in range(10):
-            temporary.write_text(payload, encoding="utf-8")
-            try:
-                os.replace(temporary, path)
-                return
-            except PermissionError as exc:
-                last_error = exc
-                time.sleep(min(0.1 * (attempt + 1), 1.0))
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=path.name, suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(payload)
         try:
-            path.write_text(payload, encoding="utf-8")
-            return
-        except PermissionError:
-            return
+            for attempt in range(10):
+                try:
+                    os.replace(temporary, path)
+                    return
+                except PermissionError:
+                    if attempt == 9:
+                        raise
+                    time.sleep(min(0.1 * (attempt + 1), 1.0))
         finally:
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass
+            temporary.unlink(missing_ok=True)
 
     def record(self, metrics: SingleFactorMetrics) -> bool:
+        self._ensure_unfrozen()
         index = self._load_index()
         if metrics.expression in index:
             return False
         target = self.accepted_path if metrics.accepted else self.rejected_path
         payload = asdict(metrics)
         payload.update(self.metadata)
+        if metrics.accepted:
+            sequence = sum(value == 1 for value in index.values()) + 1
+            digest = hashlib.sha256(metrics.expression.encode("utf-8")).hexdigest()[:10]
+            payload.update(factor_id=f"factor_{sequence:04d}_{digest}", status="candidate")
         with target.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         index[metrics.expression] = 1 if metrics.accepted else 0
         self._atomic_write_json(self.index_path, index)
         return True
+
+    @property
+    def candidate_count(self) -> int:
+        return self.accepted_count
 
     @property
     def accepted_count(self) -> int:

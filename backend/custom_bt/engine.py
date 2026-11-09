@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List
+import math
 
 import pandas as pd
 
@@ -16,11 +17,14 @@ class BacktestConfig:
     rebalance_freq: str = "1D"
     price: str = "next_open"
     initial_cash: float = 100_000_000.0
-    buy_cost: float = 0.0015
-    sell_cost: float = 0.0015
-    slippage: float = 0.0005
+    buy_cost: float | None = None
+    sell_cost: float | None = None
+    commission: float = 0.0003
+    transfer_fee: float = 0.00001
+    stamp_duty: float = 0.0005
+    slippage: float = 0.001
     min_cost: float = 5.0
-    max_weight_per_stock: float = 0.02
+    max_weight_per_stock: float = 0.03
     exclude_limit_up_buy: bool = True
     exclude_limit_down_sell: bool = True
 
@@ -40,13 +44,60 @@ def _cost(amount: float, rate: float, min_cost: float) -> float:
     return max(abs(amount) * rate, min_cost)
 
 
+def _trade_fees(amount: float, side: str, config: BacktestConfig) -> dict:
+    legacy = config.buy_cost if side == "buy" else config.sell_cost
+    if legacy is not None:
+        fee = _cost(amount, legacy, config.min_cost)
+        return {"commission": fee, "transfer_fee": 0.0, "stamp_duty": 0.0,
+                "cost": fee, "fee_model": "legacy_all_in"}
+    commission = _cost(amount, config.commission, config.min_cost)
+    transfer = amount * config.transfer_fee
+    stamp = amount * config.stamp_duty if side == "sell" else 0.0
+    return {"commission": commission, "transfer_fee": transfer, "stamp_duty": stamp,
+            "cost": commission + transfer + stamp, "fee_model": "components"}
+
+
+def _buy_budget(cash: float, config: BacktestConfig) -> float:
+    rate = config.buy_cost if config.buy_cost is not None else config.commission
+    transfer = 0.0 if config.buy_cost is not None else config.transfer_fee
+    return max(0.0, min(cash / (1 + rate + transfer), (cash - config.min_cost) / (1 + transfer)))
+
+
+def _rebalance_dates(dates, frequency: str) -> set:
+    """Initial execution on day two; subsequent periods use the first observed trading day.
+
+    Fortnights are anchored to Monday 1970-01-05, independent of the run start.
+    """
+    executable = [pd.Timestamp(date) for date in dates[1:]]
+    if frequency == "1D":
+        return set(executable)
+    result = set()
+    previous = None
+    for date in executable:
+        if frequency == "1M":
+            key = date.year * 12 + date.month
+        else:
+            days = (date.normalize() - pd.Timestamp("1970-01-05")).days
+            key = days // (14 if frequency == "2W" else 7)
+        if key != previous:
+            result.add(date)
+        previous = key
+    return result
+
+
 def _tradable(row: pd.Series) -> bool:
     return bool(row.get("Ifsuspend", 0) == 0 and pd.notna(row.get("open")) and row.get("open", 0) > 0)
 
 
 def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfig) -> BacktestResult:
-    if config.rebalance_freq != "1D" or config.price != "next_open":
-        raise ValueError("Only rebalance_freq='1D' and price='next_open' are supported")
+    if config.rebalance_freq not in {"1D", "1W", "2W", "1M"} or config.price != "next_open":
+        raise ValueError("Supported rebalance_freq: 1D/1W/2W/1M; price must be next_open")
+    for name in ("commission", "transfer_fee", "stamp_duty", "buy_cost", "sell_cost", "slippage", "min_cost"):
+        value = getattr(config, name)
+        if value is not None and (not math.isfinite(value) or value < 0):
+            raise ValueError(f"{name} must be finite and nonnegative")
+    if not math.isfinite(config.initial_cash) or config.initial_cash <= 0 or config.slippage >= 1:
+        raise ValueError("initial_cash must be positive and slippage must be below 1")
     if config.top_k < 1 or not 0 < config.max_weight_per_stock <= 1:
         raise ValueError("top_k must be positive and max_weight_per_stock must be in (0, 1]")
     data = panel.copy()
@@ -64,6 +115,7 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
     data = data.sort_values(["date", "code"]).reset_index(drop=True)
     scores = scores.sort_values(["date", "code"]).reset_index(drop=True)
     dates = sorted(data["date"].unique())
+    rebalance_dates = _rebalance_dates(dates, config.rebalance_freq)
     by_date = {pd.Timestamp(k): v.set_index("code") for k, v in data.groupby("date")}
     alpha_by_date = {pd.Timestamp(k): v.set_index("code")["alpha"] for k, v in scores.groupby("date")}
     cash = float(config.initial_cash)
@@ -82,7 +134,7 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
         trade_amount = 0.0
         trade_count = 0
 
-        if signal_date is not None and signal_date in alpha_by_date:
+        if date in rebalance_dates and signal_date is not None and signal_date in alpha_by_date:
             next_panel = today
             raw_scores = alpha_by_date[signal_date].dropna().sort_values(ascending=False)
             candidates = []
@@ -124,7 +176,8 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
                 if shares <= 0:
                     continue
                 amount = shares * price
-                fee = _cost(amount, config.sell_cost, config.min_cost)
+                fees = _trade_fees(amount, "sell", config)
+                fee = fees["cost"]
                 cash += amount - fee
                 trade_cost += fee
                 trade_amount += amount
@@ -132,7 +185,7 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
                 holdings[code] -= shares
                 if holdings[code] <= 1e-10:
                     holdings.pop(code)
-                trade_rows.append({"date": date, "code": code, "side": "sell", "price": price, "shares": shares, "amount": amount, "cost": fee, "reason": "rebalance"})
+                trade_rows.append({"date": date, "code": code, "side": "sell", "price": price, "shares": shares, "amount": amount, "cost": fee, "reason": "rebalance", **fees})
 
             for code, target in target_value.items():
                 row = next_panel.loc[code]
@@ -144,13 +197,15 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
                 diff_value = target - current_value
                 if diff_value <= 0:
                     continue
-                shares = diff_value / price
-                amount = shares * price
-                fee = _cost(amount, config.buy_cost, config.min_cost)
-                if amount + fee > cash:
-                    shares = max((cash - config.min_cost) / (price * (1.0 + config.buy_cost)), 0.0)
-                    amount = shares * price
-                    fee = _cost(amount, config.buy_cost, config.min_cost)
+                amount = min(diff_value, _buy_budget(cash, config))
+                if amount <= 0:
+                    continue
+                fees = _trade_fees(amount, "buy", config)
+                if amount + fees["cost"] > cash:
+                    amount = math.nextafter(amount, 0.0)
+                    fees = _trade_fees(amount, "buy", config)
+                shares = amount / price
+                fee = fees["cost"]
                 if shares <= 0 or amount + fee > cash:
                     continue
                 last_prices.setdefault(code, float(row["open"]))
@@ -159,7 +214,7 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
                 trade_cost += fee
                 trade_amount += amount
                 trade_count += 1
-                trade_rows.append({"date": date, "code": code, "side": "buy", "price": price, "shares": shares, "amount": amount, "cost": fee, "reason": "rebalance"})
+                trade_rows.append({"date": date, "code": code, "side": "buy", "price": price, "shares": shares, "amount": amount, "cost": fee, "reason": "rebalance", **fees})
 
         for code, row in today.iterrows():
             if pd.notna(row["close"]):
@@ -178,7 +233,7 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
         position_rows.extend(day_positions)
         daily_ret = account / prev_account - 1.0 if prev_account else 0.0
         turnover = trade_amount / prev_account if prev_account else 0.0
-        daily_rows.append({"date": date, "account": account, "return": daily_ret, "cost": trade_cost / prev_account if prev_account else 0.0, "turnover": turnover, "cash": cash, "stock_value": stock_value, "pnl": account - config.initial_cash, "drawdown": 0.0, "trade_count": trade_count, "holding_count": len(holdings)})
+        daily_rows.append({"date": date, "account": account, "return": daily_ret, "cost": trade_cost / prev_account if prev_account else 0.0, "turnover": turnover, "cash": cash, "stock_value": stock_value, "pnl": account - config.initial_cash, "drawdown": 0.0, "trade_count": trade_count, "holding_count": len(holdings), "rebalance_scheduled": date in rebalance_dates})
         prev_account = account
 
     daily_report = pd.DataFrame(daily_rows)

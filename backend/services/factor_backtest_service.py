@@ -121,10 +121,9 @@ def _manifest_or_404(run_dir: Path, file_name: str, label: str) -> Dict[str, Any
 
 def _factor_run_summary(run_dir: Path) -> Dict[str, Any]:
     manifest = _manifest_or_404(run_dir, "factor_run.json", "factor run")
-    accepted_path = run_dir / "accepted_factors.jsonl"
-    accepted_count = manifest.get("accepted_count")
-    if accepted_path.is_file():
-        accepted_count = sum(1 for line in accepted_path.read_text(encoding="utf-8").splitlines() if line.strip())
+    confirmation_path = run_dir / "confirmation_manifest.json"
+    confirmation_status = _read_json(confirmation_path).get("status", "pending") if confirmation_path.is_file() else "pending"
+    accepted_count = len(_confirmed_records(run_dir)) if confirmation_status == "finished" else 0
     created_at = manifest.get("created_at")
     if not created_at:
         created_at = datetime.fromtimestamp(
@@ -142,11 +141,14 @@ def _factor_run_summary(run_dir: Path) -> Dict[str, Any]:
         "runtime_id": manifest.get("runtime_id"),
         "created_at": created_at,
         "accepted_count": int(accepted_count or 0),
+        "confirmed_count": int(accepted_count or 0),
+        "candidate_count": len(_read_jsonl(run_dir / "candidate_factors.jsonl")),
+        "confirmation_status": confirmation_status,
         "attempts": manifest.get("attempts"),
         "target_reached": manifest.get("target_reached"),
         "attempts_exhausted": manifest.get("attempts_exhausted"),
         "factor_run_dir": str(run_dir),
-        "has_accepted": (run_dir / "accepted_factors.jsonl").is_file(),
+        "has_accepted": confirmation_status == "finished" and accepted_count > 0,
         "run_name": manifest.get("run_name"),
         "job_id": manifest.get("job_id"),
         "device": manifest.get("device"),
@@ -183,6 +185,9 @@ def _factor_run_db_summary(row: Dict[str, Any]) -> Dict[str, Any]:
         "runtime_id",
         "created_at",
         "accepted_count",
+        "candidate_count",
+        "confirmed_count",
+        "confirmation_status",
         "attempts",
         "target_reached",
         "attempts_exhausted",
@@ -246,9 +251,21 @@ def _factor_run_dir(run_id: str) -> Path:
         raise make_error(status_code=404, detail=f"factor run not found: {run_id}")
     return run_dir
 
-def _accepted_factor_rows(run_dir: Path) -> List[Dict[str, Any]]:
+def _confirmed_records(run_dir: Path) -> List[Dict[str, Any]]:
+    from repositories.factor_run_store import confirmed_records
+    path = run_dir / "confirmation_manifest.json"
+    if not path.is_file() or _read_json(path).get("status") != "finished":
+        return []
+    try:
+        return confirmed_records(run_dir)
+    except ValueError as exc:
+        raise make_error(status_code=422, detail=str(exc)) from None
+
+
+def _accepted_factor_rows(run_dir: Path, file_name: str = "confirmed_factors.jsonl") -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
-    for index, record in enumerate(_read_jsonl(run_dir / "accepted_factors.jsonl"), start=1):
+    records = _confirmed_records(run_dir) if file_name == "confirmed_factors.jsonl" else _read_jsonl(run_dir / file_name)
+    for index, record in enumerate(records, start=1):
         expression = str(record.get("expression") or "").strip()
         canonical = record.get("canonical_expression")
         if not canonical and expression:
@@ -259,7 +276,7 @@ def _accepted_factor_rows(run_dir: Path) -> List[Dict[str, Any]]:
         backtest = record.get("backtest_expression") or canonical
         rows.append(
             {
-                "factor_id": factor_id_for(index, expression) if expression else f"factor_{index:04d}",
+                "factor_id": record.get("factor_id") or (factor_id_for(index, expression) if expression else f"factor_{index:04d}"),
                 "expression": expression,
                 "canonical_expression": canonical,
                 "backtest_expression": backtest,
@@ -416,6 +433,7 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
     if (run_dir / "factor_run.json").is_file():
         summary = _factor_run_summary(run_dir)
         accepted = _accepted_factor_rows(run_dir)
+        candidates = _accepted_factor_rows(run_dir, "candidate_factors.jsonl")
         manifest = _manifest_or_404(run_dir, "factor_run.json", "factor run")
         db_row = None
         try:
@@ -425,6 +443,8 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
         if db_row:
             merged = _merge_factor_run_rows([summary], [db_row])[0]
             merged["manifest"] = manifest
+            merged["candidate_factors"] = candidates
+            merged["confirmed_factors"] = accepted
             merged["accepted_factors"] = accepted
             merged["accepted_count"] = len(accepted)
             return _sanitize(merged)
@@ -434,6 +454,8 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
                 "accepted_count": len(accepted),
                 "manifest": manifest,
                 "accepted_factors": accepted,
+                "confirmed_factors": accepted,
+                "candidate_factors": candidates,
             }
         )
 
@@ -446,15 +468,17 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
     if not db_row:
         raise make_error(status_code=404, detail=f"factor run not found: {run_id}")
     summary = _factor_run_db_summary(db_row)
-    records = mysql_store.fetch_factor_run_factors(run_id, accepted_only=True)
-    accepted = _accepted_factor_rows_from_db(records)
     manifest = db_row.get("raw") if isinstance(db_row.get("raw"), dict) else {}
+    records = manifest.get("confirmed_factors") or []
+    accepted = _accepted_factor_rows_from_db(records)
     return _sanitize(
         {
             **summary,
             "accepted_count": len(accepted),
             "manifest": manifest,
             "accepted_factors": accepted,
+            "confirmed_factors": accepted,
+            "candidate_factors": manifest.get("candidate_factors") or [],
         }
     )
 
@@ -462,17 +486,22 @@ def create_factor_backtest(request: FactorBacktestRequest) -> Dict[str, Any]:
     """把某个因子运行的全部/选定合格因子提交为后台批量回测任务。"""
     if request.top_k < 1 or request.top_k > 1000:
         raise make_error(status_code=422, detail="top_k 必须在 1 到 1000 之间")
-    if request.initial_cash <= 0:
+    if not math.isfinite(request.initial_cash) or request.initial_cash <= 0:
         raise make_error(status_code=422, detail="initial_cash 必须大于 0")
     for name, value in (
         ("buy_cost", request.buy_cost),
         ("sell_cost", request.sell_cost),
         ("slippage", request.slippage),
+        ("commission", request.commission),
+        ("transfer_fee", request.transfer_fee),
+        ("stamp_duty", request.stamp_duty),
     ):
-        if not 0.0 <= value <= 0.1:
+        if value is not None and not 0.0 <= value <= 0.1:
             raise make_error(status_code=422, detail=f"{name} 必须在 0 到 0.1 之间")
-    if request.min_cost < 0:
+    if not math.isfinite(request.min_cost) or request.min_cost < 0:
         raise make_error(status_code=422, detail="min_cost 不能为负数")
+    if request.rebalance_freq not in {"1D", "1W", "2W", "1M"}:
+        raise make_error(status_code=422, detail="rebalance_freq 必须是 1D、1W、2W 或 1M")
     if not 0.0 < request.max_weight_per_stock <= 1.0:
         raise make_error(status_code=422, detail="max_weight_per_stock 必须在 0 到 1 之间")
 
@@ -510,11 +539,14 @@ def create_factor_backtest(request: FactorBacktestRequest) -> Dict[str, Any]:
             detail="因子运行与数据源签名不一致，请重新生成因子后再回测",
         )
 
+    confirmation_path = run_dir / "confirmation_manifest.json"
+    if not confirmation_path.is_file() or _read_json(confirmation_path).get("status", "finished") != "finished":
+        raise make_error(status_code=422, detail="请先完成因子确认任务，再回测 confirmed 因子")
     accepted = _accepted_factor_rows(run_dir)
     if not accepted:
         raise make_error(
             status_code=422,
-            detail="该因子运行没有合格因子（accepted_factors.jsonl 为空），请先生成因子",
+            detail="该因子运行没有合格因子（confirmed_factors.jsonl 为空），请先生成因子",
         )
     available_ids = [row["factor_id"] for row in accepted]
     selected_ids: Optional[List[str]] = None
@@ -563,8 +595,12 @@ def create_factor_backtest(request: FactorBacktestRequest) -> Dict[str, Any]:
         "end_date": end.isoformat(),
         "top_k": request.top_k,
         "initial_cash": request.initial_cash,
-        "buy_cost": request.buy_cost,
-        "sell_cost": request.sell_cost,
+        "rebalance_freq": request.rebalance_freq,
+        "commission": request.commission,
+        "transfer_fee": request.transfer_fee,
+        "stamp_duty": request.stamp_duty,
+        **({"buy_cost": request.buy_cost} if request.buy_cost is not None else {}),
+        **({"sell_cost": request.sell_cost} if request.sell_cost is not None else {}),
         "slippage": request.slippage,
         "min_cost": request.min_cost,
         "max_weight_per_stock": request.max_weight_per_stock,
@@ -611,15 +647,7 @@ def create_factor_backtest(request: FactorBacktestRequest) -> Dict[str, Any]:
                 "factor_run_id": request.factor_run_id,
                 "pool_id": pool_id,
                 "factor_ids": selected_ids,
-                "start_date": start.isoformat(),
-                "end_date": end.isoformat(),
-                "top_k": request.top_k,
-                "initial_cash": request.initial_cash,
-                "buy_cost": request.buy_cost,
-                "sell_cost": request.sell_cost,
-                "slippage": request.slippage,
-                "min_cost": request.min_cost,
-                "max_weight_per_stock": request.max_weight_per_stock,
+                **backtest_config,
             },
         }
     )
@@ -689,3 +717,24 @@ def download_factor_backtest_file(
     if not file_path.is_file():
         raise make_error(status_code=404, detail=f"file not found: {file_name}")
     return file_path
+
+
+def create_factor_confirmation(run_id: str) -> Dict[str, Any]:
+    """Submit the frozen candidate set for a single resumable holdout pass."""
+    run_dir = _factor_run_dir(run_id)
+    manifest = _manifest_or_404(run_dir, "factor_run.json", "factor run")
+    if manifest.get("generation_status") != "finished":
+        raise make_error(status_code=422, detail="PPO 生成尚未完成或为旧运行，请先生成并冻结候选集合")
+    if not (run_dir / "candidate_factors.jsonl").is_file():
+        raise make_error(status_code=422, detail="缺少 candidate_factors.jsonl，无法确认")
+    payload = {"factor_run_dir": str(run_dir), "snapshot_root": str(common.SNAPSHOT_ROOT)}
+    try:
+        job_dir = create_platform_job(common.JOBS_ROOT, "confirm_factors", payload)
+    except Exception as exc:
+        raise make_error(status_code=500, detail=f"创建因子确认任务失败：{exc}") from None
+    try:
+        spawn_platform_job(job_dir)
+    except Exception as exc:
+        update_job_status(job_dir, "failed", f"因子确认任务启动失败：{exc}")
+        raise make_error(status_code=500, detail=f"因子确认任务启动失败：{exc}") from None
+    return {"job_id": job_dir.name, "status": "queued", "operation": "confirm_factors", "run_id": run_id}

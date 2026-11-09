@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer
+from snapshot_fixtures import write_company_fixture, fixture_pool, fake_panel_writer, publish_confirmed
 from unittest.mock import patch
 from custom_bt.factor_composition import (
     CompositionCandidate,
@@ -392,10 +392,11 @@ class FactorCompositionTests(unittest.TestCase):
                 {"factor_id": "f2", "accepted": True, "expression": "ma5", "score": 0.8, "ic": 0.04, "coverage": 1.0},
                 {"factor_id": "f3", "accepted": True, "expression": "ChangePCT", "score": 0.6, "ic": 0.02, "coverage": 1.0},
             ]
-            (run_dir / "accepted_factors.jsonl").write_text(
+            (run_dir / "confirmed_factors.jsonl").write_text(
                 "\n".join(json.dumps(row) for row in accepted),
                 encoding="utf-8",
             )
+            publish_confirmed(run_dir)
 
             result = compose_factors(
                 snapshot_root=root / "snapshots",
@@ -468,7 +469,7 @@ class FactorCompositionTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (run_dir / "accepted_factors.jsonl").write_text(
+            (run_dir / "confirmed_factors.jsonl").write_text(
                 "\n".join(
                     json.dumps(row)
                     for row in [
@@ -478,6 +479,7 @@ class FactorCompositionTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            publish_confirmed(run_dir)
             factor_result_dir = root / "outputs" / "saved_backtests" / "factor" / pool_manifest["pool_id"] / "run_a"
             factor_result_dir.mkdir(parents=True)
             pd.DataFrame(
@@ -537,7 +539,7 @@ class FactorCompositionTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (run_dir / "accepted_factors.jsonl").write_text(
+            (run_dir / "confirmed_factors.jsonl").write_text(
                 "\n".join(
                     json.dumps(row)
                     for row in [
@@ -547,6 +549,7 @@ class FactorCompositionTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            publish_confirmed(run_dir)
 
             result = compose_factors(
                 snapshot_root=root / "snapshots",

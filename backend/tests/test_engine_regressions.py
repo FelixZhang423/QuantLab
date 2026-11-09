@@ -38,7 +38,7 @@ def test_retained_overweight_name_is_trimmed():
     assert r.positions.iloc[-1].weight == pytest.approx(0.5)
 
 
-@pytest.mark.parametrize("options", [{"price": "close"}, {"rebalance_freq": "1W"}])
+@pytest.mark.parametrize("options", [{"price": "close"}, {"rebalance_freq": "3W"}])
 def test_unsupported_execution_config_is_rejected(options):
     with pytest.raises(ValueError):
         run([("2024-01-01", "1", 10, 10, 1, 0)], **options)

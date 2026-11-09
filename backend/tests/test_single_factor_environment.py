@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from single_factor._vendor.alphagen.data.expression import Add, Corr, Div, Mean
+from single_factor._vendor.alphagen.data.expression import Abs, Add, Corr, Div, Mean
 from single_factor.environment import SingleFactorEnv
 
 
@@ -70,6 +70,21 @@ class SingleFactorEnvironmentMaskTests(unittest.TestCase):
         mask = env.action_masks()
         self.assertTrue(mask[0])
         self.assertEqual(int(mask.sum()), 1)
+
+    def test_raw_feature_cannot_terminate_without_operator(self):
+        env = self._env([Abs])
+        env.reset()
+        sep_index = env.size_action - 1
+
+        env.step(env.size_op)  # 只选了一个 feature：$close
+        self.assertFalse(env.action_masks()[sep_index])
+
+        env.step(0)  # 套上 Abs，表达式才完整
+        self.assertTrue(env.action_masks()[sep_index])
+
+        _, reward, done, _, _ = env.step(sep_index)
+        self.assertTrue(done)
+        self.assertEqual(reward, 0.0)
 
     def test_random_masked_actions_never_dead_end(self):
         rng = random.Random(7)

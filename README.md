@@ -5,8 +5,8 @@ QuantLab 是股票因子生成、回测与组合研究平台，不依赖 Qlib。
 ## 数据流程
 
 ```text
-ClickHouse → 股票池筛选 → 不可变 Parquet 快照 → train/valid/test memmap → PPO 因子生成
-                                  └────────────→ 手动/单因子回测 → 因子组合 → 结果中心
+ClickHouse → 股票池筛选 → 不可变 Parquet 快照 → train/valid/test memmap
+                                      └→ PPO → candidate → 测试确认 → confirmed → 回测／组合 → 结果中心
 ```
 
 数据预览、股票维度查询、字段目录和建池直接查询 ClickHouse，使用服务端 TTL 缓存。研究任务按股票集合、字段、日期范围、as_of 和查询版本创建或复用快照，训练步骤不访问数据库。行情按交易日对齐；财务和衍生字段按披露日期 as-of 合并，估值按交易日合并。
@@ -53,6 +53,7 @@ pnpm dev
 ```powershell
 python -m cli create-pool --config configs/pools/liquid_500.yaml
 python -m cli generate-factors --pool <pool_id> --config configs/factor_generation.yaml
+python -m cli confirm-factors --factor-run <run_id> --config configs/factor_generation.yaml
 python -m cli backtest-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml
 python -m cli compose-factors --pool <pool_id> --factor-run <run_id> --config configs/default.yaml --sweep-sizes 10,20,30
 ```
@@ -105,3 +106,6 @@ pnpm build
 ```
 
 详细端点见 [后端 API 文档](backend/docs/web_api.md)，AI 工具流程见 [研究代理说明](backend/docs/ai_research_flow.md)。
+
+
+两阶段门槛、测试确认与切分隔离见 [因子确认说明](backend/docs/factor_confirmation.md)。

@@ -1,6 +1,8 @@
 """api/main.py 的股票池候选 / 建池 / 任务状态路由测试（无网络、无 TestClient）。"""
 from __future__ import annotations
 
+import pandas as pd
+
 import json
 import subprocess
 import sys
@@ -27,6 +29,18 @@ from services import (
     result_service,
 )
 from repositories import mysql_store
+
+
+def _seal_confirmed(run_dir):
+    import hashlib
+    path = run_dir / "confirmed_factors.jsonl"
+    if not path.exists():
+        return
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    for record in records:
+        record.update(status="confirmed", confirmed=True)
+    path.write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8")
+    (run_dir / "confirmation_manifest.json").write_text(json.dumps({"status": "finished", "confirmed_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}), encoding="utf-8")
 
 
 def _patch_job_deps(monkeypatch, attr, value):
@@ -609,7 +623,8 @@ def _factor_case(master, tmp_path, monkeypatch, expressions=("$close",), signatu
             "target_reached": True,
         },
     )
-    (run_dir / "accepted_factors.jsonl").write_text(
+    _write_json(run_dir / "confirmation_manifest.json", {"status": "finished"})
+    (run_dir / "confirmed_factors.jsonl").write_text(
         "\n".join(
             json.dumps(
                 {
@@ -630,6 +645,7 @@ def _factor_case(master, tmp_path, monkeypatch, expressions=("$close",), signatu
     )
     monkeypatch.setattr(common, "FACTOR_RUNS_ROOT", factor_root)
     monkeypatch.setattr(common, "RESULTS_ROOT", tmp_path / "results")
+    _seal_confirmed(run_dir)
     return pool_id, run_dir, factor_root
 
 
@@ -723,7 +739,7 @@ def test_factor_run_detail_falls_back_to_mysql(master, tmp_path, monkeypatch):
         "created_at": "2026-10-24T09:00:00",
         "accepted_count": 1,
         "device": "cuda",
-        "raw": {"pool_id": "pool_a", "run_name": "mysql_only"},
+        "raw": {"pool_id": "pool_a", "run_name": "mysql_only", "confirmed_factors": [{"factor_id": factor_id(1,"$close"), "expression": "$close", "confirmed": True, "status": "confirmed"}]},
     })
     monkeypatch.setattr(
         mysql_store,
@@ -793,6 +809,10 @@ def test_create_factor_backtest_builds_payload_and_spawns_job(master, tmp_path, 
         "initial_cash": 50_000_000.0,
         "buy_cost": 0.001,
         "sell_cost": 0.002,
+        "rebalance_freq": "1D",
+        "commission": 0.0003,
+        "transfer_fee": 0.00001,
+        "stamp_duty": 0.0005,
         "slippage": 0.0003,
         "min_cost": 2.0,
         "max_weight_per_stock": 0.05,
@@ -869,7 +889,9 @@ def test_create_factor_backtest_rejects_data_or_signature_mismatch(master, tmp_p
     assert excinfo.value.status_code == 422
     assert "因子运行" in excinfo.value.detail
 
-    (run_dir / "accepted_factors.jsonl").write_text("", encoding="utf-8")
+    _write_json(run_dir / "confirmation_manifest.json", {"status": "finished"})
+    (run_dir / "confirmed_factors.jsonl").write_text("", encoding="utf-8")
+    _seal_confirmed(run_dir)
     _write_json(run_dir / "factor_run.json", {"pool_id": pool_id, "data_source": "clickhouse", "source_signature": "sig"})
     with pytest.raises(DomainError) as excinfo:
         factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="run_a"))
@@ -1435,6 +1457,10 @@ def test_create_manual_backtest_builds_company_payload(master, tmp_path, monkeyp
         "initial_cash": 50_000_000.0,
         "buy_cost": 0.001,
         "sell_cost": 0.002,
+        "rebalance_freq": "1D",
+        "commission": 0.0003,
+        "transfer_fee": 0.00001,
+        "stamp_duty": 0.0005,
         "slippage": 0.0003,
         "min_cost": 2.0,
         "max_weight_per_stock": 0.05,
@@ -1603,10 +1629,11 @@ def test_create_manual_backtest_marks_job_failed_when_spawn_fails(master, monkey
 
 
 def _generation_splits(start="2024-01-01", end="2024-12-31"):
-    return {
-        name: FactorGenerationSplit(cache_start=start, cache_end=end)
-        for name in ("train", "valid", "test")
-    }
+    span = (pd.Timestamp(end) - pd.Timestamp(start)).days
+    dates = [(0, int(span*.35)), (int(span*.55), int(span*.68)), (int(span*.88), span)]
+    return {name: FactorGenerationSplit(cache_start=str((pd.Timestamp(start)+pd.Timedelta(days=a)).date()),
+                                         cache_end=str((pd.Timestamp(start)+pd.Timedelta(days=b)).date()))
+            for name, (a,b) in zip(("train", "valid", "test"), dates)}
 
 
 def _generation_request(**overrides):
@@ -1650,7 +1677,7 @@ def test_create_factor_generation_builds_payload_and_returns_run_id(master, monk
             rollout_timesteps=64,
             seed=7,
             device="cpu",
-            quality={"min_coverage": 0.8},
+            quality={"min_coverage": 0.9},
         )
     )
 
@@ -1660,10 +1687,7 @@ def test_create_factor_generation_builds_payload_and_returns_run_id(master, monk
     assert payload["pool_id"] == "pool_company"
     assert payload["fields"] == ["close", "open", "fund_OperatingReenue"]
     assert payload["operators"] == ["add", "div"]
-    assert payload["splits"] == {
-        name: {"cache_start": "2024-01-01", "cache_end": "2024-12-31"}
-        for name in ("train", "valid", "test")
-    }
+    assert payload["splits"] == {name: value.model_dump() for name, value in _generation_splits().items()}
     assert payload["max_backtrack_days"] == 100
     assert payload["target_horizon"] == 20
     assert payload["max_future_days"] == 20
@@ -1675,7 +1699,7 @@ def test_create_factor_generation_builds_payload_and_returns_run_id(master, monk
     assert config["rollout_timesteps"] == 64
     assert config["seed"] == 7
     assert config["device"] == "cpu"
-    assert config["quality"]["min_coverage"] == 0.8
+    assert config["quality"]["min_coverage"] == 0.9
     assert config["quality"]["min_train_ic"] == 0.05
 
     created = json.loads(
@@ -1688,7 +1712,9 @@ def test_create_factor_generation_builds_payload_and_returns_run_id(master, monk
     assert response["operation"] == "generate_factors"
     assert response["run_id"] == run_id
     assert response["run_name"] == "ppo_demo"
-    assert response["warnings"] == []
+    assert len(response["warnings"]) == 2
+    assert any("valid" in warning for warning in response["warnings"])
+    assert any("test" in warning for warning in response["warnings"])
     summary = response["request_summary"]
     assert summary["pool_id"] == "pool_company"
     assert summary["n_stocks"] == 2
@@ -1701,18 +1727,18 @@ def test_factor_generation_defaults_follow_pool_time_span(master):
     _write_manual_pool(
         common.POOLS_ROOT,
         selection_start="2024-01-01",
-        selection_end="2024-01-10",
+        selection_end="2024-12-31",
     )
 
     defaults = generation_service.get_factor_generation_defaults(pool_id="pool_company")
 
     assert defaults["split_source"] == "pool"
-    assert defaults["pool_window"] == {"start": "2024-01-01", "end": "2024-01-10"}
-    assert defaults["splits"] == {
-        "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-06"},
-        "valid": {"cache_start": "2024-01-07", "cache_end": "2024-01-08"},
-        "test": {"cache_start": "2024-01-09", "cache_end": "2024-01-10"},
-    }
+    assert defaults["pool_window"] == {"start": "2024-01-01", "end": "2024-12-31"}
+    splits = defaults["splits"]
+    assert splits["train"]["cache_start"] == "2024-01-01"
+    assert splits["train"]["cache_end"] < splits["valid"]["cache_start"]
+    assert splits["valid"]["cache_end"] < splits["test"]["cache_start"]
+    assert splits["test"]["cache_end"] == "2024-12-31"
     assert defaults["warnings"] == []
 
 
@@ -1736,7 +1762,7 @@ def test_factor_generation_defaults_read_mysql_only_pool(master, monkeypatch):
                 "data_source": "clickhouse",
                 "source_signature": company_source.SOURCE_SIGNATURE,
                 "selection_start": "2024-01-01",
-                "selection_end": "2024-01-10",
+                "selection_end": "2024-12-31",
             },
             "codes": ["000001", "600000"],
             "created_at": "2026-10-29 14:18",
@@ -1746,11 +1772,9 @@ def test_factor_generation_defaults_read_mysql_only_pool(master, monkeypatch):
     defaults = generation_service.get_factor_generation_defaults(pool_id="mysql_pool")
 
     assert defaults["split_source"] == "pool"
-    assert defaults["pool_window"] == {"start": "2024-01-01", "end": "2024-01-10"}
-    assert defaults["splits"]["train"] == {
-        "cache_start": "2024-01-01",
-        "cache_end": "2024-01-06",
-    }
+    assert defaults["pool_window"] == {"start": "2024-01-01", "end": "2024-12-31"}
+    assert defaults["splits"]["train"]["cache_start"] == "2024-01-01"
+    assert defaults["splits"]["train"]["cache_end"] < defaults["splits"]["valid"]["cache_start"]
     assert defaults["warnings"] == []
 
 
@@ -1825,7 +1849,7 @@ def test_create_factor_generation_defaults_splits_to_pool_window(master, monkeyp
     _write_manual_pool(
         common.POOLS_ROOT,
         selection_start="2024-01-01",
-        selection_end="2024-01-10",
+        selection_end="2024-12-31",
     )
     _stub_company_meta(monkeypatch)
     captured = {}
@@ -1848,15 +1872,13 @@ def test_create_factor_generation_defaults_splits_to_pool_window(master, monkeyp
         )
     )
 
-    assert captured["payload"]["splits"] == {
-        "train": {"cache_start": "2024-01-01", "cache_end": "2024-01-06"},
-        "valid": {"cache_start": "2024-01-07", "cache_end": "2024-01-08"},
-        "test": {"cache_start": "2024-01-09", "cache_end": "2024-01-10"},
-    }
+    splits = captured["payload"]["splits"]
+    assert splits["train"]["cache_end"] < splits["valid"]["cache_start"]
+    assert splits["valid"]["cache_end"] < splits["test"]["cache_start"]
     assert response["request_summary"]["split_source"] == "pool"
     assert response["request_summary"]["pool_window"] == {
         "start": "2024-01-01",
-        "end": "2024-01-10",
+        "end": "2024-12-31",
     }
 
 
@@ -1896,22 +1918,14 @@ def test_create_factor_generation_validates_fields_operators_and_bounds(master, 
     expect(
         422,
         "不能晚于",
-        splits={
-            "train": FactorGenerationSplit(
-                cache_start="2024-06-01", cache_end="2024-01-01"
-            )
-        },
+        splits={**_generation_splits(), "train": FactorGenerationSplit(cache_start="2024-06-01",cache_end="2024-01-01")},
     )
     expect(
         422,
         "没有交集",
-        splits={
-            "train": FactorGenerationSplit(
-                cache_start="2030-01-01", cache_end="2030-06-01"
-            )
-        },
+        splits=_generation_splits("2030-01-01", "2030-12-31"),
     )
-    expect(422, "请至少提供 train", splits={})
+    expect(422, "train、valid、test", splits={})
 
     with pytest.raises(DomainError) as excinfo:
         generation_service.create_factor_generation(_generation_request(pool_id="missing"))
@@ -1960,7 +1974,8 @@ def test_create_factor_generation_marks_job_failed_when_spawn_fails(master, monk
 def test_accepted_factor_rows_exposes_train_valid_test_segments(tmp_path):
     run_dir = tmp_path / "run_segments"
     run_dir.mkdir()
-    (run_dir / "accepted_factors.jsonl").write_text(
+    _write_json(run_dir / "confirmation_manifest.json", {"status": "finished"})
+    (run_dir / "confirmed_factors.jsonl").write_text(
         json.dumps(
             {
                 "expression": "$close",
@@ -1983,7 +1998,77 @@ def test_accepted_factor_rows_exposes_train_valid_test_segments(tmp_path):
         encoding="utf-8",
     )
 
+    _seal_confirmed(run_dir)
     rows = factor_backtest_service._accepted_factor_rows(run_dir)
 
     assert rows[0]["segments"]["train"]["ic"] == 0.1
     assert rows[0]["segments"]["valid"]["valid_days"] == 60
+
+
+@pytest.mark.parametrize("frequency", ["1D", "1W", "2W", "1M"])
+def test_factor_backtest_passes_frequency_and_component_fees(master, tmp_path, monkeypatch, frequency):
+    _factor_case(master, tmp_path, monkeypatch)
+    captured = {}
+    def create(jobs_root, operation, payload):
+        captured.update(payload)
+        return _make_job_dir(jobs_root)
+    _patch_job_deps(monkeypatch, "create_platform_job", create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda _: None)
+    response = factor_backtest_service.create_factor_backtest(
+        FactorBacktestRequest(factor_run_id="run_a", rebalance_freq=frequency))
+    config = captured["backtest_config"]
+    assert config["rebalance_freq"] == frequency
+    assert config["commission"] == 0.0003
+    assert config["transfer_fee"] == 0.00001
+    assert config["stamp_duty"] == 0.0005
+    assert config["slippage"] == 0.001
+    assert config["max_weight_per_stock"] == 0.03
+    assert "buy_cost" not in config and "sell_cost" not in config
+    assert all(response["request_summary"][key] == value for key, value in config.items())
+
+
+@pytest.mark.parametrize("options", [
+    {"commission": -1}, {"transfer_fee": float("nan")}, {"stamp_duty": float("inf")},
+    {"rebalance_freq": "5D"}, {"initial_cash": float("nan")}, {"min_cost": float("inf")},
+])
+def test_backtest_rejects_invalid_new_parameters_before_loading_data(options):
+    with pytest.raises(DomainError) as error:
+        factor_backtest_service.create_factor_backtest(FactorBacktestRequest(factor_run_id="missing", **options))
+    assert error.value.status_code == 422
+    with pytest.raises(DomainError) as error:
+        manual_backtest_service.create_manual_backtest(
+            ManualBacktestRequest(expression="close", pool_id="missing", run_name="x", **options))
+    assert error.value.status_code == 422
+
+
+def test_confirmation_submission_and_spawn_failure_are_persisted(master, tmp_path, monkeypatch):
+    _, run_dir, _ = _factor_case(master, tmp_path, monkeypatch)
+    assert run_dir.is_relative_to(tmp_path)
+    manifest = json.loads((run_dir / "factor_run.json").read_text())
+    _write_json(run_dir / "factor_run.json", {**manifest, "generation_status": "finished"})
+    (run_dir / "candidate_factors.jsonl").write_text("", encoding="utf-8")
+    captured = {}
+    def create(root, operation, payload):
+        captured.update(operation=operation, payload=payload)
+        return _make_job_dir(root)
+    _patch_job_deps(monkeypatch, "create_platform_job", create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda directory: None)
+    result = factor_backtest_service.create_factor_confirmation("run_a")
+    assert result["operation"] == "confirm_factors"
+    assert captured["operation"] == "confirm_factors"
+    assert captured["payload"]["factor_run_dir"] == str(run_dir)
+    def failed(directory):
+        raise OSError("spawn failed")
+    marked = {}
+    _patch_job_deps(monkeypatch, "spawn_platform_job", failed)
+    _patch_job_deps(monkeypatch, "update_job_status", lambda directory, status, message: marked.update(status=status))
+    with pytest.raises(DomainError):
+        factor_backtest_service.create_factor_confirmation("run_a")
+    assert marked["status"] == "failed"
+
+
+def test_pending_confirmation_does_not_expose_partial_confirmed_file(master, tmp_path, monkeypatch):
+    _, run_dir, _ = _factor_case(master, tmp_path, monkeypatch)
+    _write_json(run_dir / "confirmation_manifest.json", {"status": "running"})
+    assert factor_backtest_service._factor_run_summary(run_dir)["confirmed_count"] == 0
+    assert factor_backtest_service._accepted_factor_rows(run_dir) == []

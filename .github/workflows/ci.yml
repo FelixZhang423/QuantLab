@@ -24,7 +24,11 @@ jobs:
       - name: Layering + API smoke tests
         run: python -m pytest -q tests/test_layering.py tests/test_api_routes.py tests/test_canonical_expression.py tests/test_expressions.py tests/test_operator_registry.py tests/test_pools.py
       - name: Immutable snapshot and backtest regressions
-        run: python -m pytest -q tests/test_snapshots.py tests/test_panel_snapshots.py tests/test_engine_small.py tests/test_engine_regressions.py tests/test_job_store_regressions.py tests/test_metrics.py
+        run: python -m pytest -q tests/test_snapshots.py tests/test_panel_snapshots.py tests/test_engine_small.py tests/test_engine_regressions.py tests/test_engine_schedule_fees.py tests/test_factor_direction.py tests/test_generation_isolation.py tests/test_job_store_regressions.py tests/test_metrics.py
+      - name: Install CPU tensor runtime for confirmation tests
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Candidate admission and frozen holdout confirmation
+        run: python -m pytest -q tests/test_candidate_quality.py tests/test_factor_confirmation.py tests/test_factor_storage_metadata.py
 
   frontend:
     runs-on: ubuntu-latest
@@ -45,5 +49,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Type check
         run: pnpm exec tsc --noEmit
+      - name: Real factor metric regressions
+        run: node --experimental-strip-types --test src/features/factor-backtest/validity.test.mjs
       - name: Build
         run: pnpm build

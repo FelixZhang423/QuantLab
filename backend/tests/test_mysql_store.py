@@ -60,6 +60,18 @@ class SingleCursorConnection(FakeConnection):
         return self._cursor
 
 
+def _seal_confirmed(run_dir):
+    import hashlib
+    path = run_dir / "confirmed_factors.jsonl"
+    if not path.exists():
+        return
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    for record in records:
+        record.update(status="confirmed", confirmed=True)
+    path.write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8")
+    (run_dir / "confirmation_manifest.json").write_text(json.dumps({"status": "finished", "confirmed_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}), encoding="utf-8")
+
+
 def test_parse_env_file_ignores_comments_and_quotes(tmp_path: Path):
     path = tmp_path / "mysql.local.env"
     path.write_text(
@@ -493,6 +505,7 @@ def test_persist_factor_run_writes_training_metadata(tmp_path: Path, monkeypatch
     (run_dir / "factor_run.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     conn = FakeConnection()
+    _seal_confirmed(run_dir)
     mysql_store._persist_factor_run_conn(conn, run_dir)
     row = _factor_run_insert_row(conn)
 
@@ -552,7 +565,7 @@ def test_persist_factor_run_writes_canonical_expressions(tmp_path: Path, monkeyp
     (run_dir / "factor_run.json").write_text(json.dumps(manifest), encoding="utf-8")
     accepted = [{"expression": "CSRank(Delta(close, 5))", "ic": 0.03}]
     rejected = [{"expression": "Div(close, open)"}]
-    (run_dir / "accepted_factors.jsonl").write_text(
+    (run_dir / "confirmed_factors.jsonl").write_text(
         "\n".join(json.dumps(record) for record in accepted) + "\n", encoding="utf-8"
     )
     (run_dir / "rejected_candidates.jsonl").write_text(
@@ -560,6 +573,7 @@ def test_persist_factor_run_writes_canonical_expressions(tmp_path: Path, monkeyp
     )
 
     conn = FakeConnection()
+    _seal_confirmed(run_dir)
     mysql_store._persist_factor_run_conn(conn, run_dir)
 
     inserts = [
@@ -618,6 +632,7 @@ def test_persist_factor_run_backfills_job_metadata(tmp_path: Path, monkeypatch: 
     (run_dir / "factor_run.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     conn = FakeConnection()
+    _seal_confirmed(run_dir)
     mysql_store._persist_factor_run_conn(conn, run_dir)
     row = _factor_run_insert_row(conn)
 

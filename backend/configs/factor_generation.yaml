@@ -378,12 +378,12 @@ fields:
 splits:
   train:
     cache_start: "2024-01-01"
-    cache_end: "2025-06-30"
+    cache_end: "2024-12-31"
   valid:
-    cache_start: "2025-01-25"
-    cache_end: "2026-01-28"
+    cache_start: "2025-04-01"
+    cache_end: "2025-09-30"
   test:
-    cache_start: "2025-07-27"
+    cache_start: "2026-01-05"
     cache_end: "2026-06-12"
 # 未显式指定 splits 时，按股票池真实时间跨度（selection_start ~ selection_end）
 # 连续切分 train / valid / test；这里的 splits 只在没有股票池窗口时兜底。
@@ -403,7 +403,14 @@ device: auto
 quality:
   min_coverage: 0.9
   min_train_ic: 0.05
-  min_valid_ic: 0.04
+  min_valid_ic: 0.03
+  min_train_rank_ic: 0.03
+  min_valid_rank_ic: 0.03
+  min_valid_icir: 0.3
+  min_test_coverage: 0.9
+  min_test_ic: 0.03
+  min_test_rank_ic: 0.03
+  min_test_icir: 0.3
   min_icir: 0.5
   score_ic_weight: 0.5
   score_rank_ic_weight: 0.3
