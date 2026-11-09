@@ -21,8 +21,10 @@ type ManualFormValues = {
   dates: [Dayjs, Dayjs];
   topK: number;
   initialCash: number;
-  buyCost: number;
-  sellCost: number;
+  commission: number;
+  transferFee: number;
+  stampDuty: number;
+  rebalanceFreq: NonNullable<ManualBacktestRequest["rebalance_freq"]>;
   slippage: number;
   minCost: number;
   maxWeight: number;
@@ -213,8 +215,10 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
       end_date: values.dates[1].format("YYYY-MM-DD"),
       top_k: values.topK,
       initial_cash: values.initialCash,
-      buy_cost: values.buyCost,
-      sell_cost: values.sellCost,
+      commission: values.commission,
+      transfer_fee: values.transferFee,
+      stamp_duty: values.stampDuty,
+      rebalance_freq: values.rebalanceFreq,
       slippage: values.slippage,
       min_cost: values.minCost,
       max_weight_per_stock: values.maxWeight,
@@ -270,8 +274,8 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
               initialValues={{
                 expression: EXAMPLES[0],
                 dates: [dayjs().subtract(1, "year"), dayjs()],
-                topK: 50, initialCash: 100000000, buyCost: 0.0015, sellCost: 0.0015,
-                slippage: 0.0005, minCost: 5, maxWeight: 0.02, runName: "manual_run",
+                topK: 50, initialCash: 100000000, commission: 0.0003, stampDuty: 0.0005, transferFee: 0.00001,
+                rebalanceFreq: "1D", slippage: 0.001, minCost: 5, maxWeight: 0.03, runName: "manual_run",
               }}
             >
               <Form.Item label="Alpha 表达式" name="expression" rules={[{ required: true, message: "请输入 Alpha 表达式" }]}>
@@ -314,15 +318,27 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
                 />
               )}
               <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item label="调仓频率" name="rebalanceFreq">
+                    <Select options={[
+                      { value: "1D", label: "每日" },
+                      { value: "1W", label: "每周（周期首个交易日）" },
+                      { value: "2W", label: "每两周（固定双周周期）" },
+                      { value: "1M", label: "每月（周期首个交易日）" },
+                    ]} />
+                  </Form.Item>
+                </Col>
                 <Col span={12}><Form.Item label="持仓数量 TopK" name="topK" rules={[{ type: "number", min: 1, max: 1000, message: "范围 1–1000" }]}><InputNumber className="full-width" min={1} max={1000} /></Form.Item></Col>
                 <Col span={12}><Form.Item label="初始资金" name="initialCash"><InputNumber className="full-width" min={1} addonAfter="元" /></Form.Item></Col>
-                <Col span={12}><Form.Item label="买入费率" name="buyCost"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
-                <Col span={12}><Form.Item label="卖出费率" name="sellCost"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
-                <Col span={12}><Form.Item label="滑点" name="slippage"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
-                <Col span={12}><Form.Item label="最低手续费" name="minCost"><InputNumber className="full-width" min={0} addonAfter="元" /></Form.Item></Col>
-                <Col span={12}><Form.Item label="单票权重上限" name="maxWeight"><InputNumber className="full-width" min={0.001} max={1} step={0.01} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="佣金（双向）" name="commission"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="印花税（卖出）" name="stampDuty"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="过户费（双向）" name="transferFee"><InputNumber className="full-width" step={0.00001} min={0} max={0.1} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="滑点（基准 0.001 / 压力 0.002）" name="slippage"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="最低佣金" name="minCost"><InputNumber className="full-width" min={0} addonAfter="元" /></Form.Item></Col>
+                <Col span={12}><Form.Item label="单票权重上限" name="maxWeight"><InputNumber className="full-width" min={0.001} max={1} step={0.005} /></Form.Item></Col>
                 <Col span={12}><Form.Item label="运行名称" name="runName" rules={[{ required: true, message: "请输入运行名称" }, { max: 64, message: "不超过 64 个字符" }]}><Input /></Form.Item></Col>
               </Row>
+              <Text type="secondary">最低佣金按每笔买卖分别收取；过户费与卖出印花税另计。周／双周／月按日历周期调仓，遇休市顺延至该周期首个交易日。</Text>
               <Button size="large" block type="primary" htmlType="submit" loading={submitting} disabled={!canSubmit} icon={<PlayCircleOutlined />}>
                 提交回测
               </Button>

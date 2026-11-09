@@ -9,6 +9,10 @@ export type ManualBacktestRequest = {
   end_date?: string;
   top_k?: number;
   initial_cash?: number;
+  rebalance_freq?: "1D" | "1W" | "2W" | "1M";
+  commission?: number;
+  transfer_fee?: number;
+  stamp_duty?: number;
   buy_cost?: number;
   sell_cost?: number;
   slippage?: number;

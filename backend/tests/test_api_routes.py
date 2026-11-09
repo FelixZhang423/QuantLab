@@ -250,6 +250,7 @@ def test_field_catalog_file_has_expected_categories():
 
 
 def _stub_universe(monkeypatch, items=None):
+    monkeypatch.setattr(live_db, "target_label", lambda: "http://clickhouse.test:8123/test")
     monkeypatch.setattr(
         live_db, "live_stock_rows", lambda *args, **kwargs: _live(items or _items())
     )
@@ -353,6 +354,9 @@ def test_universe_codes_returns_all_matched_codes(master, monkeypatch):
 
 def test_create_pool_builds_company_payload_and_spawns_job(master, monkeypatch):
     _stub_universe(monkeypatch)
+    def no_local_settings(*args, **kwargs):
+        raise AssertionError("pool unit tests must not read real ClickHouse credentials")
+    monkeypatch.setattr(live_db, "resolve_settings", no_local_settings)
     captured = {}
 
     def fake_create(jobs_root, operation, payload):
@@ -391,6 +395,7 @@ def test_create_pool_builds_company_payload_and_spawns_job(master, monkeypatch):
     assert payload["provenance"]["source"] == "clickhouse"
     assert payload["provenance"]["daily_table"] == live_db.DAILY_TABLE
     assert payload["provenance"]["dim_table"] == live_db.DIM_TABLE
+    assert payload["provenance"]["endpoint"] == "http://clickhouse.test:8123/test"
     assert payload["provenance"]["matched_total"] == 2
     assert payload["provenance"]["selection_mode"] == "all"
     assert payload["provenance"]["selected_total"] == 2
@@ -2050,6 +2055,26 @@ def test_accepted_factor_rows_exposes_train_valid_test_segments(tmp_path):
 
     assert rows[0]["segments"]["train"]["ic"] == 0.1
     assert rows[0]["segments"]["valid"]["valid_days"] == 60
+
+
+@pytest.mark.parametrize("frequency", ["1D", "1W", "2W", "1M"])
+def test_manual_backtest_matches_batch_parameters(master, tmp_path, monkeypatch, frequency):
+    _write_manual_pool(common.POOLS_ROOT)
+    _stub_company_meta(monkeypatch)
+    captured = {}
+    def create(jobs_root, operation, payload):
+        captured.update(payload)
+        return _make_job_dir(jobs_root)
+    _patch_job_deps(monkeypatch, "create_platform_job", create)
+    _patch_job_deps(monkeypatch, "spawn_platform_job", lambda _: None)
+    manual_backtest_service.create_manual_backtest(ManualBacktestRequest(
+        pool_id="pool_company", expression="close", run_name="fees", rebalance_freq=frequency))
+    config = captured["backtest_config"]
+    defaults = FactorBacktestRequest(factor_run_id="run_a", rebalance_freq=frequency)
+    for key in ("top_k", "initial_cash", "commission", "transfer_fee", "stamp_duty",
+                "slippage", "min_cost", "max_weight_per_stock", "rebalance_freq"):
+        assert config[key] == getattr(defaults, key)
+    assert "buy_cost" not in config and "sell_cost" not in config
 
 
 @pytest.mark.parametrize("frequency", ["1D", "1W", "2W", "1M"])

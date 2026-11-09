@@ -43,6 +43,7 @@ const formatFraction = (value: unknown, digits = 2): string => {
 export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
   const [form] = Form.useForm<FactorBacktestFormValues>();
   const runsApi = useApiData(api.factorRuns);
+  const poolsApi = useApiData(api.pools);
   // 全部运行都展示；MySQL-only 记录保留在列表中但置灰，提示本机缺少运行目录。
   const runs = useMemo(() => runsApi.data?.runs ?? [], [runsApi.data]);
   const availableRuns = useMemo(
@@ -72,6 +73,14 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
     [runId],
   );
   const runDetail = runDetailApi.data?.run_id === runId ? runDetailApi.data : null;
+  const poolId = runDetail?.pool_id ?? runs.find((run) => run.run_id === runId)?.pool_id;
+  const pool = poolsApi.data?.pools.find((item) => item.pool_id === poolId);
+  const selectionStart = pool?.selection_start;
+  const selectionEnd = pool?.selection_end;
+  useEffect(() => {
+    form.setFieldValue("dates", selectionStart && selectionEnd
+      ? [dayjs(selectionStart), dayjs(selectionEnd)] : undefined);
+  }, [form, runId, poolId, selectionStart, selectionEnd]);
   const factors = useMemo(() => confirmedFactors(runDetail), [runDetail]);
   const factorRows: FactorValidityRow[] = useMemo(
     () => factors.map(validityRow),
@@ -267,12 +276,14 @@ export function FactorBacktestPage({ navigate }: { navigate: PageNav }) {
               <Form
                 form={form} layout="vertical" onFinish={submit}
                 initialValues={{
-                  dates: [dayjs("2021-06-18"), dayjs("2026-06-16")],
                   topK: 50, initialCash: 100000000, commission: 0.0003, stampDuty: 0.0005, transferFee: 0.00001,
                   rebalanceFreq: "1D", slippage: 0.001, minCost: 5, maxWeight: 0.03,
                 }}
               >
-                <Form.Item label="回测区间" name="dates" rules={[{ required: true, message: "请选择回测区间" }]}>
+                <Form.Item label="回测区间" name="dates" extra={selectionStart && selectionEnd
+                  ? `默认使用股票池筛选范围：${selectionStart} ~ ${selectionEnd}，可手动调整。`
+                  : poolsApi.loading ? "正在读取股票池筛选范围…" : "未取得股票池筛选范围，请手动选择回测区间。"}
+                  rules={[{ required: true, message: "请选择回测区间" }]}>
                   <DatePicker.RangePicker className="full-width" />
                 </Form.Item>
                 <Row gutter={12}>

@@ -422,7 +422,7 @@ export function PoolsPage({ addTask, navigate }: { addTask: TaskAdder; navigate:
             />
           )}
           <Form form={form} layout="vertical" onFinish={submit} initialValues={{
-            name: "liquid_300", selection: [dayjs("2021-06-18"), dayjs("2024-07-26")], topN: 300,
+            name: "liquid_300", selection: [dayjs().subtract(1, "year"), dayjs()], topN: 300,
             minListedDays: 250, minCoverage: 0.9, excludeSuspended: true, overwrite: false, q: "",
           }}>
             <Form.Item label="股票池名称" name="name" rules={[{ required: true, message: "请输入股票池名称" }]}>
