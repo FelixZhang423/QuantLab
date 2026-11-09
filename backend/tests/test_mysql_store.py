@@ -506,10 +506,13 @@ def test_persist_factor_run_writes_training_metadata(tmp_path: Path, monkeypatch
 
     conn = FakeConnection()
     _seal_confirmed(run_dir)
+    evaluation = {"factor_id": "failed", "confirmed": False, "test": {"ic": 0.01}, "reason": "low IC"}
+    (run_dir / "test_evaluations.jsonl").write_text(json.dumps(evaluation) + "\n", encoding="utf-8")
     mysql_store._persist_factor_run_conn(conn, run_dir)
     row = _factor_run_insert_row(conn)
 
     assert row["run_id"] == "run_meta"
+    assert json.loads(row["raw"])["test_evaluations"] == [evaluation]
     assert row["device"] == "cuda"
     assert row["run_name"] == "demo"
     assert row["job_id"] == "20260101_120000_abcd"

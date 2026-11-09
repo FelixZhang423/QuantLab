@@ -783,6 +783,22 @@ def test_old_mysql_factors_are_visible_without_becoming_confirmed(master, tmp_pa
     assert detail["accepted_factors"] == []
 
 
+def test_factor_run_exposes_saved_failed_test_evaluations(master, tmp_path, monkeypatch):
+    _, run_dir, _ = _factor_case(master, tmp_path, monkeypatch)
+    evaluation = {"factor_id": "failed", "test": {"ic": 0.01}, "confirmed": False,
+                  "reason": "test: ic below threshold"}
+    (run_dir / "test_evaluations.jsonl").write_text(json.dumps(evaluation) + "\n", encoding="utf-8")
+    monkeypatch.setattr(mysql_store, "fetch_factor_run", lambda run_id: None)
+    detail = factor_backtest_service.get_factor_run("run_a")
+    assert detail["test_evaluations"] == [evaluation]
+    monkeypatch.setattr(mysql_store, "fetch_factor_run", lambda run_id: {
+        "run_id": run_id, "raw": {"candidate_factors": [], "test_evaluations": [evaluation]},
+    })
+    detail = factor_backtest_service.get_factor_run("mysql_evaluated")
+    assert detail["test_evaluations"] == [evaluation]
+    assert detail["confirmed_factors"] == []
+
+
 def test_current_mysql_empty_candidates_do_not_load_old_factors(master, tmp_path, monkeypatch):
     _factor_case(master, tmp_path, monkeypatch)
     monkeypatch.setattr(mysql_store, "fetch_factor_run", lambda run_id: {

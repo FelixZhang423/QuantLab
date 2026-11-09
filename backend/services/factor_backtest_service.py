@@ -434,6 +434,7 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
         summary = _factor_run_summary(run_dir)
         accepted = _accepted_factor_rows(run_dir)
         candidates = _accepted_factor_rows(run_dir, "candidate_factors.jsonl")
+        evaluations = _read_jsonl(run_dir / "test_evaluations.jsonl")
         manifest = _manifest_or_404(run_dir, "factor_run.json", "factor run")
         db_row = None
         try:
@@ -444,6 +445,7 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
             merged = _merge_factor_run_rows([summary], [db_row])[0]
             merged["manifest"] = manifest
             merged["candidate_factors"] = candidates
+            merged["test_evaluations"] = evaluations
             merged["confirmed_factors"] = accepted
             merged["accepted_factors"] = accepted
             merged["accepted_count"] = len(accepted)
@@ -456,6 +458,7 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
                 "accepted_factors": accepted,
                 "confirmed_factors": accepted,
                 "candidate_factors": candidates,
+                "test_evaluations": evaluations,
             }
         )
 
@@ -483,6 +486,7 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
             "confirmed_factors": accepted,
             "candidate_factors": manifest.get("candidate_factors") or [],
             "historical_factors": historical,
+            "test_evaluations": manifest.get("test_evaluations") or [],
         }
     )
 

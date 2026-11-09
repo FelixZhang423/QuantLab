@@ -70,6 +70,7 @@ export type FactorRunDetail = FactorRunSummary & {
   candidate_factors: AcceptedFactor[];
   confirmed_factors: AcceptedFactor[];
   historical_factors?: AcceptedFactor[];
+  test_evaluations?: { factor_id: string; test: SegmentMetrics | null; confirmed: boolean; reason: string | null }[];
 };
 
 export type FactorBacktestRequest = {

@@ -8,6 +8,7 @@ import type { TableColumnsType } from "antd";
 import { CopyOutlined, HistoryOutlined, LoadingOutlined, PlusOutlined, PlayCircleOutlined, ReloadOutlined, RobotOutlined } from "@ant-design/icons";
 const { Text } = Typography;
 import dayjs, { type Dayjs } from "dayjs";
+import { confirmationRow } from "./confirmation";
 import { CATEGORY_META, FACTOR_CATEGORIES, classifyFactor, type FactorCategoryKey } from "../../shared/domain/factorCategories";
 import { fieldCategory } from "../../shared/domain/fieldCategories";
 import { FilterChips } from "../../components/FilterChips";
@@ -44,7 +45,7 @@ type GenFormValues = {
   minValidIcir?: number;
 };
 
-type GenFactorRow = AcceptedFactor & { category: FactorCategoryKey; phase: "candidate" | "confirmed" };
+type GenFactorRow = AcceptedFactor & { category: FactorCategoryKey; phase: "candidate" | "confirmed"; confirmationText: string };
 
 /** 后端 ProgressCallback 上报的 stage 顺序（与 custom_bt/factor_generation.py 一致） */
 const GEN_STEPS = [
@@ -111,14 +112,13 @@ const storageLabel = (storage?: string | null): string => {
 function RunFactorPreview({ runId }: { runId: string }) {
   const detailApi = useApiData(() => api.factorRun(runId), [runId]);
   const confirmed = detailApi.data?.confirmed_factors ?? [];
-  const confirmedIds = new Set(confirmed.map((factor) => factor.factor_id));
   const historical = detailApi.data?.historical_factors ?? [];
   const factors = [
     ...(detailApi.data?.candidate_factors ?? []).map((factor) =>
-      ({ ...factor, ...(confirmed.find((item) => item.factor_id === factor.factor_id) ?? {}), phase: confirmedIds.has(factor.factor_id) ? "confirmed" : "candidate" })),
-    ...historical.map((factor) => ({ ...factor, phase: "historical" })),
+      confirmationRow(factor, detailApi.data)),
+    ...historical.map((factor) => ({ ...factor, phase: "historical", confirmationText: "旧规则接受，未按当前门槛确认" })),
   ];
-  const columns: TableColumnsType<AcceptedFactor & { phase: string }> = [
+  const columns: TableColumnsType<AcceptedFactor & { phase: string; confirmationText: string }> = [
     { title: "状态", width: 110, render: (_, record) => <Tag color={record.phase === "confirmed" ? "green" : record.phase === "historical" ? "default" : "blue"}>{record.phase === "confirmed" ? "合格" : record.phase === "historical" ? "旧规则接受" : "可接受因子"}</Tag> },
     {
       title: "表达式", dataIndex: "expression", width: 300,
@@ -132,6 +132,11 @@ function RunFactorPreview({ runId }: { runId: string }) {
     { title: "训练 IC", width: 85, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "train")?.ic) },
     { title: "验证 IC", width: 85, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "valid")?.ic) },
     { title: "测试 IC", width: 85, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "test")?.ic) },
+    { title: "测试 RankIC", width: 100, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "test")?.rank_ic) },
+    { title: "测试 ICIR", width: 100, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "test")?.icir) },
+    { title: "测试覆盖率", width: 100, align: "right", render: (_, record) => fmtPercent(segmentOf(record, "test")?.coverage) },
+    { title: "测试有效天数", width: 110, align: "right", render: (_, record) => fmtInteger(segmentOf(record, "test")?.valid_days) },
+    { title: "确认结果", dataIndex: "confirmationText", width: 260 },
     { title: "训练 ICIR", width: 100, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "train")?.icir, 2) },
     { title: "覆盖率", width: 90, align: "right", render: (_, record) => fmtPercent(segmentOf(record, "train")?.coverage) },
   ];
@@ -160,7 +165,7 @@ function RunFactorPreview({ runId }: { runId: string }) {
         columns={columns}
         dataSource={factors}
         pagination={{ pageSize: 5, showSizeChanger: false }}
-        scroll={{ x: 900 }}
+        scroll={{ x: 1750 }}
       />
     </Space>
   );
@@ -572,8 +577,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
     () =>
       (runDetail?.candidate_factors ?? [])
         .map((factor) => {
-          const confirmed = runDetail?.confirmed_factors.find((item) => item.factor_id === factor.factor_id);
-          return { ...factor, ...confirmed, category: classifyFactor(String(factor.expression ?? "")), phase: confirmed ? "confirmed" as const : "candidate" as const };
+          return { ...confirmationRow(factor, runDetail), category: classifyFactor(String(factor.expression ?? "")) };
         })
         .sort((a, b) => asNumber(b.score) - asNumber(a.score)),
     [runDetail],
@@ -600,6 +604,11 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
     { title: "训练 IC", width: 90, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "train")?.ic) },
     { title: "验证 IC", width: 90, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "valid")?.ic) },
     { title: "测试 IC", width: 90, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "test")?.ic) },
+    { title: "测试 RankIC", width: 100, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "test")?.rank_ic) },
+    { title: "测试 ICIR", width: 100, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "test")?.icir) },
+    { title: "测试覆盖率", width: 100, align: "right", render: (_, record) => fmtPercent(segmentOf(record, "test")?.coverage) },
+    { title: "测试有效天数", width: 110, align: "right", render: (_, record) => fmtInteger(segmentOf(record, "test")?.valid_days) },
+    { title: "确认结果", dataIndex: "confirmationText", width: 260 },
     { title: "训练 ICIR", width: 100, align: "right", render: (_, record) => fmtNumber(segmentOf(record, "train")?.icir, 2) },
     { title: "覆盖率", width: 90, align: "right", render: (_, record) => fmtPercent(segmentOf(record, "train")?.coverage) },
     { title: "有效天数", width: 90, align: "right", render: (_, record) => segmentOf(record, "train")?.valid_days ?? "—" },
@@ -965,7 +974,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
                         columns={resultColumns}
                         dataSource={resultRows}
                         pagination={{ pageSize: 10, showSizeChanger: false }}
-                        scroll={{ x: 1150 }}
+                        scroll={{ x: 1850 }}
                       />
                     )}
                     <Flex justify="space-between" gap={12} wrap className="note-action">

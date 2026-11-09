@@ -1135,7 +1135,8 @@ def _persist_factor_run_conn(conn, run_dir: Path) -> None:
     manifest = manifest if isinstance(manifest, dict) else {}
     manifest = {**manifest, "candidate_count": len(candidates), "confirmed_count": len(accepted),
                 "confirmation_status": confirmation.get("status", "pending"),
-                "candidate_factors": candidates, "confirmed_factors": accepted}
+                "candidate_factors": candidates, "confirmed_factors": accepted,
+                "test_evaluations": _read_jsonl(run_dir / "test_evaluations.jsonl")}
     run_id = str(manifest.get("run_id") or run_dir.name)
     created_at = _to_datetime(manifest.get("created_at"), run_dir / "factor_run.json") or datetime.now()
     pool_id = manifest.get("pool_id")
