@@ -69,6 +69,7 @@ export type FactorRunDetail = FactorRunSummary & {
   accepted_factors: AcceptedFactor[];
   candidate_factors: AcceptedFactor[];
   confirmed_factors: AcceptedFactor[];
+  historical_factors?: AcceptedFactor[];
 };
 
 export type FactorBacktestRequest = {

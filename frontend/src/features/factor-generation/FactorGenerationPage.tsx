@@ -112,10 +112,14 @@ function RunFactorPreview({ runId }: { runId: string }) {
   const detailApi = useApiData(() => api.factorRun(runId), [runId]);
   const confirmed = detailApi.data?.confirmed_factors ?? [];
   const confirmedIds = new Set(confirmed.map((factor) => factor.factor_id));
-  const factors = (detailApi.data?.candidate_factors ?? []).map((factor) =>
-    ({ ...factor, ...(confirmed.find((item) => item.factor_id === factor.factor_id) ?? {}), phase: confirmedIds.has(factor.factor_id) ? "confirmed" : "candidate" }));
+  const historical = detailApi.data?.historical_factors ?? [];
+  const factors = [
+    ...(detailApi.data?.candidate_factors ?? []).map((factor) =>
+      ({ ...factor, ...(confirmed.find((item) => item.factor_id === factor.factor_id) ?? {}), phase: confirmedIds.has(factor.factor_id) ? "confirmed" : "candidate" })),
+    ...historical.map((factor) => ({ ...factor, phase: "historical" })),
+  ];
   const columns: TableColumnsType<AcceptedFactor & { phase: string }> = [
-    { title: "状态", width: 90, render: (_, record) => <Tag color={record.phase === "confirmed" ? "green" : "blue"}>{record.phase === "confirmed" ? "合格" : "可接受因子"}</Tag> },
+    { title: "状态", width: 110, render: (_, record) => <Tag color={record.phase === "confirmed" ? "green" : record.phase === "historical" ? "default" : "blue"}>{record.phase === "confirmed" ? "合格" : record.phase === "historical" ? "旧规则接受" : "可接受因子"}</Tag> },
     {
       title: "表达式", dataIndex: "expression", width: 300,
       render: (value: string) => <Text code copyable>{value}</Text>,
@@ -143,11 +147,12 @@ function RunFactorPreview({ runId }: { runId: string }) {
   return (
     <Space direction="vertical" size={8} className="full-width">
       <Text type="secondary">
-        可接受因子 {factors.length} 个 · 合格 {confirmed.length} 个
+        可接受因子 {factors.length - historical.length} 个 · 合格 {confirmed.length} 个 · 旧规则接受 {historical.length} 个
         {detailApi.data?.local_available === false
           ? "（来自 MySQL factors 表）"
           : "（candidate / confirmed 两阶段记录）"}
       </Text>
+      {historical.length > 0 && <Alert type="info" showIcon message="历史因子仅按旧规则接受，未按当前质量门槛及测试集确认，不计入当前可接受或合格因子。" />}
       <RunConfirmation runId={runId} onComplete={detailApi.reload} />
       <Table
         rowKey="factor_id"

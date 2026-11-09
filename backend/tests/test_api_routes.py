@@ -764,6 +764,37 @@ def test_factor_run_detail_falls_back_to_mysql(master, tmp_path, monkeypatch):
     assert not (factor_root / "run_mysql_only").exists()
 
 
+def test_old_mysql_factors_are_visible_without_becoming_confirmed(master, tmp_path, monkeypatch):
+    _factor_case(master, tmp_path, monkeypatch)
+    monkeypatch.setattr(mysql_store, "fetch_factor_run", lambda run_id: {
+        "run_id": run_id, "accepted_count": 51, "raw": {"accepted_count": 51},
+    })
+    rows = [{"factor_id": "old_factor", "expression": "$close", "accepted": True}]
+    calls = []
+    def fetch(run_id, accepted_only=False):
+        calls.append((run_id, accepted_only))
+        return rows
+    monkeypatch.setattr(mysql_store, "fetch_factor_run_factors", fetch)
+    detail = factor_backtest_service.get_factor_run("old_mysql_run")
+    assert detail["historical_factors"] == rows
+    assert calls == [("old_mysql_run", True)]
+    assert detail["candidate_factors"] == []
+    assert detail["confirmed_factors"] == []
+    assert detail["accepted_factors"] == []
+
+
+def test_current_mysql_empty_candidates_do_not_load_old_factors(master, tmp_path, monkeypatch):
+    _factor_case(master, tmp_path, monkeypatch)
+    monkeypatch.setattr(mysql_store, "fetch_factor_run", lambda run_id: {
+        "run_id": run_id, "raw": {"policy_version": 2, "candidate_factors": []},
+    })
+    def unexpected(*args, **kwargs):
+        pytest.fail("current runs must not use historical factors")
+    monkeypatch.setattr(mysql_store, "fetch_factor_run_factors", unexpected)
+    detail = factor_backtest_service.get_factor_run("new_mysql_run")
+    assert detail["historical_factors"] == []
+
+
 def test_create_factor_backtest_builds_payload_and_spawns_job(master, tmp_path, monkeypatch):
     _, _, _ = _factor_case(master, tmp_path, monkeypatch, expressions=("$close", "$open"))
     selected = factor_id(2, "$open")

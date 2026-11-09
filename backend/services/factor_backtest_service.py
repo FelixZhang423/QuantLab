@@ -471,6 +471,9 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
     manifest = db_row.get("raw") if isinstance(db_row.get("raw"), dict) else {}
     records = manifest.get("confirmed_factors") or []
     accepted = _accepted_factor_rows_from_db(records)
+    historical = []
+    if not any(key in manifest for key in ("policy_version", "candidate_factors", "confirmed_factors")):
+        historical = mysql_store.fetch_factor_run_factors(run_id, accepted_only=True)
     return _sanitize(
         {
             **summary,
@@ -479,6 +482,7 @@ def get_factor_run(run_id: str) -> Dict[str, Any]:
             "accepted_factors": accepted,
             "confirmed_factors": accepted,
             "candidate_factors": manifest.get("candidate_factors") or [],
+            "historical_factors": historical,
         }
     )
 
