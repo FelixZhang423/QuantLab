@@ -3,14 +3,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 import common
 from errors import DomainError
 from repositories import company_source
-from schemas import FactorCompositionRequest
+from schemas import FactorCompositionRequest, FactorCompositionScreenRefreshRequest
 from services import composition_service
 
 
@@ -176,8 +178,24 @@ def _write_composition_result(results_root: Path) -> Path:
     _write_json(
         size_dir / "factor_weights.json",
         [
-            {"factor_id": "f1", "weight": 0.5},
-            {"factor_id": "f2", "weight": 0.5},
+            {
+                "factor_id": "f1",
+                "weight": 0.5,
+                "expression": "close",
+                "effective_expression": "close",
+                "preprocess": {"clip": 3.0},
+                "direction": 1,
+                "training_ic": 0.05,
+            },
+            {
+                "factor_id": "f2",
+                "weight": 0.5,
+                "expression": "open",
+                "effective_expression": "open",
+                "preprocess": {"clip": 3.0},
+                "direction": 1,
+                "training_ic": 0.04,
+            },
         ],
     )
     _write_json(
@@ -245,6 +263,32 @@ def test_get_composition_and_screen(composition_env, monkeypatch):
     assert listing["compositions"][0]["composition_id"] == "comp_1"
 
 
+def test_get_screen_keeps_selected_rows_beyond_limit(composition_env, monkeypatch):
+    composition_dir = _write_composition_result(composition_env["results_root"])
+    monkeypatch.setattr(composition_service, "_screen_name_map", lambda: {})
+    _write_json(
+        composition_dir / "comp_1_size_002" / "latest_screen.json",
+        {
+            "signal_date": "2024-01-31",
+            "execution_date": "2024-02-01",
+            "execution_pending": False,
+            "rows": [
+                {"rank": 1, "code": "000001", "selected": True},
+                {"rank": 2, "code": "000002", "selected": False},
+                {"rank": 3, "code": "000003", "selected": False},
+                {"rank": 4, "code": "000004", "selected": False},
+                {"rank": 5, "code": "000005", "selected": True},
+            ],
+        },
+    )
+
+    screen = composition_service.get_factor_composition_screen("comp_1", "pool_a", limit=2)
+
+    assert [row["rank"] for row in screen["screen"]["rows"]] == [1, 2, 5]
+    assert screen["screen"]["returned_rows"] == 3
+    assert screen["screen"]["total_returned_rows"] == 5
+
+
 def test_screen_name_lookup_is_optional(monkeypatch):
     composition_service._name_cache = None
     composition_service._name_failed_at = 0.0
@@ -258,6 +302,162 @@ def test_screen_name_lookup_is_optional(monkeypatch):
     finally:
         composition_service._name_cache = None
         composition_service._name_failed_at = 0.0
+
+
+def _refresh_panel() -> pd.DataFrame:
+    panel = pd.DataFrame(
+        [
+            {"date": "2024-02-01", "code": "000001", "open": 10.0, "close": 10.0, "Ifsuspend": 0, "if_up": 0},
+            {"date": "2024-02-01", "code": "000002", "open": 20.0, "close": 20.0, "Ifsuspend": 0, "if_up": 0},
+            {"date": "2024-02-02", "code": "000001", "open": 10.5, "close": 10.8, "Ifsuspend": 0, "if_up": 0},
+            {"date": "2024-02-02", "code": "000002", "open": 20.5, "close": 20.6, "Ifsuspend": 1, "if_up": 0},
+        ]
+    )
+    panel.attrs["snapshot_id"] = "snap_refresh"
+    return panel
+
+
+def test_refresh_composition_screen_recomputes_next_open(composition_env, monkeypatch):
+    composition_dir = _write_composition_result(composition_env["results_root"])
+    monkeypatch.setattr(
+        composition_service,
+        "_load_refresh_panel",
+        lambda *args, **kwargs: (_refresh_panel(), "local"),
+    )
+    request = FactorCompositionScreenRefreshRequest(
+        pool_id="pool_a", signal_date="2024-02-01", size=2
+    )
+
+    response = composition_service.refresh_factor_composition_screen("comp_1", request)
+
+    screen = response["screen"]
+    assert response["composition_id"] == "comp_1"
+    assert response["size"] == 2
+    assert response["snapshot_id"] == "snap_refresh"
+    assert response["data_source"] == "local"
+    assert screen["signal_date"] == "2024-02-01"
+    assert screen["execution_date"] == "2024-02-02"
+    assert screen["execution_pending"] is False
+    assert screen["selected_count"] == 1
+    assert screen["buyable_count"] == 1
+    assert [factor["factor_id"] for factor in screen["factors"]] == ["f1", "f2"]
+    by_code = {row["code"]: row for row in screen["rows"]}
+    assert by_code["000001"]["status"] == "buyable"
+    assert by_code["000001"]["selected"] is True
+    assert by_code["000002"]["blocked_reason"] == "next_open_suspended"
+    assert by_code["000002"]["selected"] is False
+
+    saved = json.loads(
+        (composition_dir / "comp_1_size_002" / "latest_screen.json").read_text(encoding="utf-8")
+    )
+    assert saved["signal_date"] == "2024-02-01"
+    assert saved["execution_date"] == "2024-02-02"
+    assert saved["refreshed_at"] == response["refreshed_at"]
+    assert saved["refresh_snapshot_id"] == "snap_refresh"
+    assert "flat_rows" not in saved
+    assert (composition_dir / "comp_1_size_002" / "latest_screen.csv").is_file()
+
+    manifest = json.loads(
+        (composition_dir / "composition_manifest.json").read_text(encoding="utf-8")
+    )
+    entry = manifest["sizes"][0]
+    assert entry["screen"]["signal_date"] == "2024-02-01"
+    assert entry["screen"]["execution_date"] == "2024-02-02"
+    assert entry["screen"]["buyable_count"] == 1
+    assert entry["screen_refreshed_at"] == response["refreshed_at"]
+    assert entry["screen_refresh_snapshot_id"] == "snap_refresh"
+
+
+def test_refresh_composition_screen_requires_next_trading_day(composition_env, monkeypatch):
+    _write_composition_result(composition_env["results_root"])
+    panel = _refresh_panel()
+    panel = panel[panel["date"] == "2024-02-01"].reset_index(drop=True)
+    panel.attrs["snapshot_id"] = "snap_refresh"
+    monkeypatch.setattr(
+        composition_service,
+        "_load_refresh_panel",
+        lambda *args, **kwargs: (panel, "local"),
+    )
+
+    with pytest.raises(DomainError) as error:
+        composition_service.refresh_factor_composition_screen(
+            "comp_1",
+            FactorCompositionScreenRefreshRequest(
+                pool_id="pool_a", signal_date="2024-02-01", size=2
+            ),
+        )
+
+    assert error.value.status_code == 422
+    assert "还没有可用的交易日行情" in error.value.detail
+
+
+def test_refresh_composition_screen_rejects_unknown_signal_date(composition_env, monkeypatch):
+    _write_composition_result(composition_env["results_root"])
+    monkeypatch.setattr(
+        composition_service,
+        "_load_refresh_panel",
+        lambda *args, **kwargs: (_refresh_panel(), "local"),
+    )
+
+    with pytest.raises(DomainError) as error:
+        composition_service.refresh_factor_composition_screen(
+            "comp_1",
+            FactorCompositionScreenRefreshRequest(
+                pool_id="pool_a", signal_date="2024-01-15", size=2
+            ),
+        )
+
+    assert error.value.status_code == 422
+    assert "没有可用的组合分" in error.value.detail
+
+
+def test_refresh_composition_screen_rejects_future_signal_date(composition_env):
+    _write_composition_result(composition_env["results_root"])
+
+    with pytest.raises(DomainError) as error:
+        composition_service.refresh_factor_composition_screen(
+            "comp_1",
+            FactorCompositionScreenRefreshRequest(
+                pool_id="pool_a", signal_date="2099-01-01", size=2
+            ),
+        )
+
+    assert error.value.status_code == 422
+    assert "不能晚于今天" in error.value.detail
+
+
+def test_load_refresh_panel_requests_signal_window_with_lookback(composition_env, monkeypatch):
+    captured: dict = {}
+
+    def fake_load(source, codes, config, **kwargs):
+        captured.update(source=source, codes=codes, config=config, kwargs=kwargs)
+        return _refresh_panel()
+
+    monkeypatch.setattr(
+        composition_service,
+        "_generation_pool_source",
+        lambda pool_id: ({"pool_id": pool_id}, ["000001", "000002"], "local"),
+    )
+    monkeypatch.setattr(
+        composition_service.company_source, "resolve_data_source", lambda *args, **kwargs: "local"
+    )
+    monkeypatch.setattr(composition_service, "load_panel_for_pool", fake_load)
+
+    panel, source = composition_service._load_refresh_panel(
+        "pool_a", ["ts_mean(close, 5)"], date(2024, 2, 1), None
+    )
+
+    assert captured["source"] == "local"
+    assert captured["codes"] == ["000001", "000002"]
+    assert captured["config"].start_date == "2024-02-01"
+    assert captured["config"].end_date == date.today().isoformat()
+    assert captured["kwargs"]["pool_id"] == "pool_a"
+    assert captured["kwargs"]["lookback_days"] == composition_service.expression_lookback(
+        ["ts_mean(close, 5)"]
+    )
+    assert "close" in captured["kwargs"]["fields"]
+    assert source == "local"
+    assert panel.attrs["snapshot_id"] == "snap_refresh"
 
 
 def test_get_composition_rejects_unknown_size_and_path_traversal(composition_env):
@@ -277,5 +477,7 @@ def test_composition_routes_are_registered():
 
     paths = set(app.openapi().get("paths", {}))
     assert "/api/factor-compositions" in paths
+    assert "/api/factor-compositions/{composition_id}/screen" in paths
+    assert "/api/factor-compositions/{composition_id}/screen/refresh" in paths
     assert "/api/factor-compositions/{composition_id}" in paths
     assert "/api/factor-compositions/{composition_id}/screen" in paths

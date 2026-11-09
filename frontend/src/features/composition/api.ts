@@ -182,6 +182,28 @@ export type CompositionScreen = CompositionScreenSummary & {
   rows: CompositionScreenRow[];
   returned_rows: number;
   total_returned_rows: number;
+  /** 刷新选股清单后写入 */
+  refreshed_at?: string | null;
+  refresh_snapshot_id?: string | null;
+  refresh_data_source?: string | null;
+};
+
+export type CompositionScreenRefreshRequest = {
+  pool_id: string;
+  /** 已完成的信号日 T；用 T 收盘信号 + T+1 行情复算可买状态 */
+  signal_date: string;
+  size?: number;
+  as_of?: string;
+};
+
+export type CompositionScreenRefreshResponse = {
+  composition_id: string;
+  pool_id: string;
+  size: number;
+  screen: CompositionScreen;
+  refreshed_at: string;
+  snapshot_id: string | null;
+  data_source: string;
 };
 
 export type FactorCompositionDetail = {
@@ -237,5 +259,13 @@ export const compositionApi = {
         size,
         limit,
       }),
+    ),
+  refreshFactorCompositionScreen: (
+    compositionId: string,
+    payload: CompositionScreenRefreshRequest,
+  ) =>
+    apiPost<CompositionScreenRefreshResponse>(
+      `/api/factor-compositions/${encodeURIComponent(compositionId)}/screen/refresh`,
+      payload,
     ),
 };

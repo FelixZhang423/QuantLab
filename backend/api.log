@@ -1,0 +1,40 @@
+INFO	__main__	backend API on http://127.0.0.1:8000 (QL_API_LOG=0 turns file logging off)
+INFO	__main__	logging to D:\1\QuantLab\backend\outputs\logs\api_2026-11-09.log (access: api_access_2026-11-09.log)
+INFO:     Started server process [25044]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:56103 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56105 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56106 - "GET /api/factor-compositions/20261109_163551_3eba4231a9/screen?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&size=2&limit=1000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60135 - "GET /api/pools HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60136 - "GET /api/pools HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60140 - "GET /api/factor-compositions?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60139 - "GET /api/factor-runs?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50637 - "GET /api/factor-compositions/20261109_163551_3eba4231a9?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63196 - "GET /api/factor-compositions/20261109_163551_3eba4231a9/screen?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&size=2&limit=1000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56294 - "GET /api/factor-runs/ppo_run_20261109_e7b38804c6_20261109_143307_005d59a1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52881 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58274 - "GET /api/factor-compositions?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58275 - "GET /api/factor-compositions/20261109_163551_3eba4231a9?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58276 - "GET /api/factor-compositions/20261109_163551_3eba4231a9/screen?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&size=2&limit=1000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64925 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56420 - "GET /api/factor-compositions?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56421 - "GET /api/factor-compositions/20261109_163551_3eba4231a9?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56422 - "GET /api/factor-compositions/20261109_163551_3eba4231a9/screen?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&size=2&limit=1000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65220 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61813 - "GET /api/factor-compositions?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53182 - "GET /api/factor-compositions/20261109_163551_3eba4231a9/screen?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&size=2&limit=1000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53181 - "GET /api/factor-compositions/20261109_163551_3eba4231a9?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59066 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:58975 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:55679 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:52903 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:52626 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62656 - "GET /api/factor-compositions?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62658 - "GET /api/factor-compositions/20261109_163551_3eba4231a9/screen?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&size=2&limit=1000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62657 - "GET /api/factor-compositions/20261109_163551_3eba4231a9?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64894 - "POST /api/factor-compositions/20261109_163551_3eba4231a9/screen/refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50365 - "GET /api/factor-compositions?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50366 - "GET /api/factor-compositions/20261109_163551_3eba4231a9?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50367 - "GET /api/factor-compositions/20261109_163551_3eba4231a9/screen?pool_id=%E6%B2%AA%E5%B8%82300_0cc71218&size=2&limit=1000 HTTP/1.1" 200 OK

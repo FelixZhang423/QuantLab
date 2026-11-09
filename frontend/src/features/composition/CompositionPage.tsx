@@ -9,7 +9,7 @@ import {
   CloudDownloadOutlined, ExperimentOutlined, HistoryOutlined, LoadingOutlined, PlayCircleOutlined,
   ReloadOutlined, ToolOutlined,
 } from "@ant-design/icons";
-import type { Dayjs } from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
 import type { PageNav, TaskAdder } from "../../app/navigation";
 import {
   api, useApiData, useJobPolling,
@@ -103,6 +103,8 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
   const [activeSize, setActiveSize] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [onlySelected, setOnlySelected] = useState(true);
+  const [refreshSignalDate, setRefreshSignalDate] = useState<Dayjs | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const finishedRef = useRef<string | null>(null);
   const lastPoolRef = useRef<string | null>(null);
 
@@ -220,7 +222,7 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
   const displaySize = activeSize ?? detail?.size ?? null;
   const screenApi = useApiData(
     () => (poolId && compositionId && displaySize
-      ? api.factorCompositionScreen(poolId, compositionId, displaySize, 200)
+      ? api.factorCompositionScreen(poolId, compositionId, displaySize, 1000)
       : Promise.resolve(null)),
     [poolId, compositionId, displaySize],
   );
@@ -229,6 +231,11 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
     ? screenApi.data.screen
     : null;
   const screenSummary = screen ?? detail?.result.screen ?? null;
+
+  useEffect(() => {
+    const signalDate = screen?.signal_date ?? detail?.result.screen?.signal_date;
+    if (signalDate) setRefreshSignalDate(dayjs(signalDate));
+  }, [screen?.signal_date, detail?.result.screen?.signal_date]);
 
   useEffect(() => {
     if (!jobId || job?.status !== "finished" || finishedRef.current === jobId) return;
@@ -357,6 +364,35 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
       message.error(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const refreshScreen = async () => {
+    if (!poolId || !compositionId) {
+      message.error("请先选择已完成的因子组合");
+      return;
+    }
+    if (!refreshSignalDate) {
+      message.error("请选择信号日");
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const response = await api.refreshFactorCompositionScreen(compositionId, {
+        pool_id: poolId,
+        signal_date: refreshSignalDate.format("YYYY-MM-DD"),
+        size: displaySize ?? undefined,
+      });
+      message.success(
+        `选股清单已刷新：信号日 ${response.screen.signal_date ?? "—"}，执行日 ${response.screen.execution_date ?? "—"}`,
+      );
+      detailApi.reload();
+      screenApi.reload();
+      historyApi.reload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -963,8 +999,27 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
                   <Tag color="green">次日可买 {screenSummary?.buyable_count ?? "—"}</Tag>
                   <Tag>全市场排名 {screenSummary?.total_ranked ?? "—"}</Tag>
                   <Tag color="cyan">单股计划权重 {fmtPercent(screenSummary?.planned_weight_per_stock, 2)}</Tag>
+                  {screen?.refreshed_at && <Tag color="purple">已刷新 {fmtDateTime(screen.refreshed_at)}</Tag>}
                 </Space>
-                <Space>
+                <Space wrap>
+                  <Text type="secondary">信号日</Text>
+                  <DatePicker
+                    size="small"
+                    value={refreshSignalDate}
+                    allowClear={false}
+                    disabledDate={(current) => Boolean(current && current > dayjs().endOf("day"))}
+                    onChange={(value) => setRefreshSignalDate(value)}
+                  />
+                  <Button
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    loading={refreshing}
+                    disabled={!refreshSignalDate}
+                    onClick={refreshScreen}
+                    title="用最新数据重新加载面板，按所选信号日 T 的收盘信号与 T+1 行情复算可买状态（不重跑组合回测）"
+                  >
+                    刷新选股清单
+                  </Button>
                   <Switch size="small" checked={onlySelected} onChange={setOnlySelected} />
                   <Text type="secondary">只看选中</Text>
                   <Text type="secondary">返回 {screen?.returned_rows ?? 0} / {screen?.total_returned_rows ?? 0} 行</Text>
