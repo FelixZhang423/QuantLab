@@ -325,6 +325,188 @@ class FactorCompositionTests(unittest.TestCase):
         self.assertIsNone(selected[0]["buyable_next_open"])
         self.assertAlmostEqual(selected[0]["target_weight"], 1.0)
 
+    def test_latest_screen_uses_explicit_signal_date_and_next_trading_day(self):
+        from custom_bt.composition_screen import build_latest_screen
+
+        panel = pd.DataFrame(
+            [
+                {"date": "2024-01-02", "code": "000001", "open": 10.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-02", "code": "000002", "open": 20.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-03", "code": "000001", "open": 10.5, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-03", "code": "000002", "open": 20.5, "Ifsuspend": 1, "if_up": 0},
+            ]
+        )
+        composite = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2024-01-02", "2024-01-02", "2024-01-03", "2024-01-03"]),
+                "code": ["000001", "000002", "000001", "000002"],
+                "alpha": [1.0, 2.0, 2.0, 1.0],
+            }
+        )
+        candidate = CompositionCandidate("f1", "close", "close", "close", "pool_a", None, {}, {})
+
+        screen = build_latest_screen(
+            composite,
+            [SelectedComponent(candidate, composite, composite, 1.0)],
+            panel,
+            top_k=1,
+            signal_date="2024-01-02",
+        )
+
+        self.assertEqual(screen["signal_date"], "2024-01-02")
+        self.assertEqual(screen["execution_date"], "2024-01-03")
+        self.assertEqual(screen["panel_end_date"], "2024-01-03")
+        self.assertFalse(screen["execution_pending"])
+        self.assertEqual(screen["selected_count"], 1)
+        self.assertEqual(screen["buyable_count"], 1)
+        by_code = {row["code"]: row for row in screen["rows"]}
+        self.assertEqual(by_code["000002"]["rank"], 1)
+        self.assertEqual(by_code["000002"]["status"], "blocked")
+        self.assertEqual(by_code["000002"]["blocked_reason"], "next_open_suspended")
+        self.assertEqual(by_code["000001"]["status"], "buyable")
+        self.assertTrue(by_code["000001"]["selected"])
+
+    def test_latest_screen_rows_cover_backfilled_selection_beyond_row_limit(self):
+        from custom_bt.composition_screen import build_latest_screen
+
+        panel = pd.DataFrame(
+            [
+                {"date": "2024-01-02", "code": "000001", "open": 10.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-02", "code": "000002", "open": 20.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-02", "code": "000003", "open": 30.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-03", "code": "000001", "open": 10.5, "Ifsuspend": 0, "if_up": 1},
+                {"date": "2024-01-03", "code": "000002", "open": 20.5, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-03", "code": "000003", "open": 30.5, "Ifsuspend": 0, "if_up": 0},
+            ]
+        )
+        composite = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2024-01-02"] * 3),
+                "code": ["000001", "000002", "000003"],
+                "alpha": [3.0, 2.0, 1.0],
+            }
+        )
+        candidate = CompositionCandidate("f1", "close", "close", "close", "pool_a", None, {}, {})
+
+        screen = build_latest_screen(
+            composite,
+            [SelectedComponent(candidate, composite, composite, 1.0)],
+            panel,
+            top_k=1,
+            row_limit=1,
+            signal_date="2024-01-02",
+        )
+
+        self.assertEqual(screen["selected_count"], 1)
+        self.assertEqual([row["code"] for row in screen["rows"] if row["selected"]], ["000002"])
+        # 排名 1 涨停被跳过，排名 2 补位选中；rows 至少覆盖到补位后的选中行。
+        self.assertEqual([row["rank"] for row in screen["rows"]], [1, 2])
+        self.assertEqual(len(screen["flat_rows"]), 3)
+
+    def test_latest_screen_returns_full_ranking_by_default(self):
+        from custom_bt.composition_screen import build_latest_screen
+
+        codes = [f"{index:06d}" for index in range(1, 206)]
+        panel = pd.DataFrame(
+            [
+                {"date": "2024-01-02", "code": code, "open": 10.0, "Ifsuspend": 0, "if_up": 0}
+                for code in codes
+            ]
+        )
+        composite = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2024-01-02"] * len(codes)),
+                "code": codes,
+                "alpha": np.linspace(2.0, -2.0, len(codes)),
+            }
+        )
+        candidate = CompositionCandidate("f1", "close", "close", "close", "pool_a", None, {}, {})
+
+        screen = build_latest_screen(
+            composite,
+            [SelectedComponent(candidate, composite, composite, 1.0)],
+            panel,
+            top_k=5,
+        )
+
+        self.assertEqual(screen["total_ranked"], 205)
+        self.assertEqual(len(screen["rows"]), 205)
+        self.assertEqual(screen["rows"][0]["rank"], 1)
+        self.assertEqual(screen["rows"][-1]["rank"], 205)
+
+    def test_latest_screen_rejects_explicit_signal_date_without_scores(self):
+        from custom_bt.composition_screen import build_latest_screen
+
+        panel = pd.DataFrame(
+            [{"date": "2024-01-02", "code": "000001", "open": 10.0, "Ifsuspend": 0, "if_up": 0}]
+        )
+        composite = pd.DataFrame(
+            {"date": pd.to_datetime(["2024-01-02"]), "code": ["000001"], "alpha": [1.0]}
+        )
+        candidate = CompositionCandidate("f1", "close", "close", "close", "pool_a", None, {}, {})
+
+        with self.assertRaises(ValueError) as raised:
+            build_latest_screen(
+                composite,
+                [SelectedComponent(candidate, composite, composite, 1.0)],
+                panel,
+                top_k=1,
+                signal_date="2024-01-05",
+            )
+
+        self.assertIn("没有可用的组合分", str(raised.exception))
+
+    def test_rebuild_latest_screen_reuses_saved_weights_and_expressions(self):
+        from custom_bt.factor_composition import rebuild_latest_screen
+
+        panel = pd.DataFrame(
+            [
+                {"date": "2024-01-02", "code": "000001", "open": 10.0, "close": 10.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-02", "code": "000002", "open": 20.0, "close": 20.0, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-03", "code": "000001", "open": 10.5, "close": 10.8, "Ifsuspend": 0, "if_up": 0},
+                {"date": "2024-01-03", "code": "000002", "open": 20.5, "close": 20.6, "Ifsuspend": 1, "if_up": 0},
+            ]
+        )
+        weights = [
+            {
+                "factor_id": "f1",
+                "weight": 0.5,
+                "expression": "close",
+                "effective_expression": "close",
+                "preprocess": {"clip": 3.0},
+                "direction": 1,
+                "training_ic": 0.05,
+            },
+            {
+                "factor_id": "f2",
+                "weight": 0.5,
+                "expression": "open",
+                "effective_expression": "open",
+                "preprocess": {"clip": 3.0},
+                "direction": 1,
+                "training_ic": 0.04,
+            },
+        ]
+
+        screen = rebuild_latest_screen(
+            panel,
+            weights,
+            top_k=1,
+            max_weight_per_stock=1.0,
+            signal_date="2024-01-02",
+        )
+
+        self.assertEqual([factor["factor_id"] for factor in screen["factors"]], ["f1", "f2"])
+        self.assertEqual([factor["weight"] for factor in screen["factors"]], [0.5, 0.5])
+        self.assertEqual(screen["signal_date"], "2024-01-02")
+        self.assertEqual(screen["execution_date"], "2024-01-03")
+        by_code = {row["code"]: row for row in screen["rows"]}
+        self.assertEqual(by_code["000002"]["rank"], 1)
+        self.assertEqual(by_code["000002"]["blocked_reason"], "next_open_suspended")
+        self.assertTrue(by_code["000001"]["selected"])
+        self.assertEqual(by_code["000001"]["status"], "buyable")
+        self.assertAlmostEqual(screen["planned_weight_per_stock"], 1.0)
+
     def test_composite_combination_applies_weights_to_preprocessed_alphas(self):
         base = pd.DataFrame(
             {

@@ -1,0 +1,2 @@
+INFO	__main__	backend API on http://127.0.0.1:8000 (QL_API_LOG=0 turns file logging off)
+INFO	__main__	logging to D:\1\QuantLab\backend\outputs\logs\api_2026-11-09.log (access: api_access_2026-11-09.log)

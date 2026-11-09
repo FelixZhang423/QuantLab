@@ -106,6 +106,13 @@ class FactorCompositionRequest(BaseModel):
     max_weight_per_stock: float = 0.03
 
 
+class FactorCompositionScreenRefreshRequest(BaseModel):
+    pool_id: str
+    signal_date: str
+    size: Optional[int] = None
+    as_of: Optional[str] = None
+
+
 class ManualBacktestRequest(BaseModel):
     snapshot_id: Optional[str] = None
     as_of: Optional[str] = None

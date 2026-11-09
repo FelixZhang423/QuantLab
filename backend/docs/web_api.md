@@ -2,7 +2,7 @@
 
 # Web API 数据清单与技术栈（React 前端接入）
 
-> 更新时间：2026-11-09（因子组合接入 Web：等权组合、历史清单与最新一期选股，见 §2.13；此前 2026-10-27 股票池、因子生成与回测全部切公司 ClickHouse，见 §2.8；同日股票池删除 `DELETE /api/pools/{pool_id}` + 前端删除/模板新建，见 §2.8.1；同日手动回测接入真实后台任务，见 §2.10；同日晚间结果详情页改为只读真实结果，见 §2.11）｜ 后端代码：`backend/api/` ｜ 前端接入层：`frontend/src/api/client.ts`
+> 更新时间：2026-11-09（因子组合接入 Web：等权组合、历史清单、最新一期选股与刷新选股清单，见 §2.13；此前 2026-10-27 股票池、因子生成与回测全部切公司 ClickHouse，见 §2.8；同日股票池删除 `DELETE /api/pools/{pool_id}` + 前端删除/模板新建，见 §2.8.1；同日手动回测接入真实后台任务，见 §2.10；同日晚间结果详情页改为只读真实结果，见 §2.11）｜ 后端代码：`backend/api/` ｜ 前端接入层：`frontend/src/api/client.ts`
 > 相关：README「Web API（React 前端用）」、`quantops/README.md`、`progress.md`「2026-10-10 React 原型接入只读 API（第一步）」「2026-10-10 展示端点切换 ClickHouse 实时数据」「2026-10-14 算子抽成独立库 quantops」「2026-10-15 后端日志落盘」「2026-10-20 股票池接入公司数据库真实股票」「2026-10-25 MySQL 集中存档」「2026-10-25 因子批量回测接入 Web」「2026-10-27 股票池 MySQL 主读 + 删除/模板新建」「2026-10-27 全链路切换公司 ClickHouse」「2026-10-27 手动回测 + 结果详情页接真实结果」「2026-11-09 因子组合等权改造 + 最新选股清单」
 
 ## 1. 架构总览
@@ -54,6 +54,7 @@
 | `GET /api/factor-backtests` `/{backtest_id}` `/.../files/{file}` | 因子回测（批次结果） | `var/outputs/saved_backtests/factor/<pool>/<run>/<backtest_id>/` | 批次汇总行、失败明细与 CSV 下载 |
 | `POST /api/factor-compositions` | 因子组合（提交） | 多个已确认 factor run + 快照面板，复用 `compose_factors` 后台任务（等权 1/N） | 202 + `job_id`（后台任务） |
 | `GET /api/factor-compositions` `/{composition_id}` `/.../screen` | 因子组合（结果与最新选股） | `var/outputs/saved_backtests/composite/<pool_id>/<composition_id>/` | 权重、多规模指标、最新一期 TopK 选股清单 |
+| `POST /api/factor-compositions/{composition_id}/screen/refresh` | 因子组合（刷新选股清单） | 复用该规模权重 + 重新加载最新面板（不重跑组合回测） | 同步返回指定信号日的次日可买状态，并覆盖 `latest_screen.json/.csv` |
 | `POST /api/manual-backtests` | 手动回测（提交） | 股票池本地目录优先、MySQL 兜底；按 manifest 绑定的快照读取面板（旧 local 来源拒绝执行），后台执行 `run_manual_backtest` | 202 + `job_id`（后台任务） |
 | `GET /api/jobs/{job_id}` | 手动回测（进度） | `var/outputs/jobs/<job_id>/status.json` 的 `progress.stage` + `message` | loading_panel → evaluating → running → finished |
 | `GET /api/results/detail?run_key=...`、`GET /api/results/file` | 手动 / 因子回测结果 | 任意层级的结果目录（`run_key` 相对路径） | 手动结果 `manual/<job_id>/<run_name>` 直接复用详情/下载 |
@@ -500,6 +501,7 @@ GET /api/jobs/{job_id} 轮询
 GET /api/factor-compositions?pool_id=&limit=
 GET /api/factor-compositions/{composition_id}?pool_id=&size=
 GET /api/factor-compositions/{composition_id}/screen?pool_id=&size=&limit=
+POST /api/factor-compositions/{composition_id}/screen/refresh（不重跑组合，仅复算指定信号日）
 ```
 
 **`POST /api/factor-compositions`**（202）请求示例：
@@ -571,14 +573,49 @@ API 层递归把 NaN/Inf 转成 `null`，浏览器可直接 `JSON.parse`。组�
 
 **`GET /api/factor-compositions/{composition_id}/screen`**（需 `pool_id`，可选 `size` / `limit`，默认 200，最大 1000）返回最新信号日的选股清单：
 
-- `signal_date = 组合 alpha 的最后一个交易日`，按综合分降序排名；
+- 组合刚跑完时 `signal_date = 组合 alpha 的最后一个交易日`（等于面板最后日期）；之后可用下面的刷新接口把清单复算到面板中已出现下一交易日的信号日；
+- 按综合分降序排名；
 - `execution_date = 面板中 signal_date 之后的下一个交易日`；若数据还没有下一交易日，`execution_pending=true`，先按信号日排名选 TopK；
 - 有下一交易日时，逐名检查开盘可买性：下一交易日无行情 / 停牌 / 开盘价缺失 / 涨停都会被标记 `blocked` 并跳过，继续按排名补足 `top_k`；
 - 行状态：`buyable`（次日可买）、`pending_next_open`（待次日校验）、`blocked`（次日不可买）、`not_selected`（未选中）；`blocked_reason` 为 `next_open_missing_row / next_open_suspended / next_open_missing / next_open_limit_up`；
-- 每行带 `rank / code / name / composite_score / target_weight / status` 和 `contributions`（各因子的 `zscore / weight / contribution`），前端可展开查看；`name` 由 API 读取时按代码从公司库 `dim.stock_main_info_fd.ChiNameAbbr` 补全（进程内缓存 600s；公司库不可用时为 `null`，不影响选股结果）；
+- 每行带 `rank / code / name / composite_score / target_weight / status` 和 `contributions`（各因子的 `zscore / weight / contribution`），前端可展开查看；`rank` 是信号日综合分在全部可评分股票中的降序名次，不因 `blocked` / `not_selected` 重新编号；`name` 由 API 读取时按代码从公司库 `dim.stock_main_info_fd.ChiNameAbbr` 补全（进程内缓存 600s；公司库不可用时为 `null`，不影响选股结果）；
+- 落盘的 `rows` 默认包含全部排名行（前端可完整展示 1..N 名）；`limit` 只截取本次返回的行数，但所有 `selected` 行（含向下补位到 `limit` 之外的）始终返回；
 - 响应包含 `factors`（因子权重与方向）、`total_ranked`、`selected_count`、`buyable_count`（执行日待定时为 `null`）、`planned_weight_per_stock`、`returned_rows / total_returned_rows`。落盘的 `latest_screen.json/.csv` 仍只含代码与数值字段，名称只在 API 响应中补齐。
 
-前端「因子组合」页已全部接真实后端（§3 的 mock 提交表单已移除）：默认等权、自动 TopN 或手动勾选因子、mutual IC / z-clip / 多规模参数可调；提交后轮询任务，结果区展示组合 IC/IR、回测指标、因子权重、多规模对比、最新一期选股清单与单因子贡献，并可载入历史组合、下载权重 JSON。
+**`POST /api/factor-compositions/{composition_id}/screen/refresh`**（同步请求，不创建后台任务）用于信号日之后数据补齐时，只复算该规模的选股清单，不重新选因子、不重跑组合回测：
+
+```json
+{"pool_id": "bank_20261020", "signal_date": "2026-11-06", "size": 20, "as_of": null}
+```
+
+- `size` 省略时使用该组合的默认规模；`signal_date` 必须是面板内有组合分的交易日，且不能晚于今天；
+- 复用该规模已落盘的 `factor_weights.json`：因子、等权权重、方向、`effective_expression` 与 z-clip 预处理都沿用，不重新做 mutual IC 去重和边际筛选；
+- 以 `signal_date` 为窗口起点、今天为终点重新加载面板（自动带表达式回看窗口；同日同参数复用快照，跨日生成新快照），用该日收盘信号 + 面板中的下一交易日行情复算可买状态；
+- 若指定信号日之后还没有可用交易日行情，返回 422，且不覆盖已有清单；
+- 成功后覆盖 `<composition_id>_size_XXX/latest_screen.json/.csv`，并更新 `composition_manifest.json` 对应规模条目的 `screen`、`screen_refreshed_at`、`screen_refresh_snapshot_id`；响应：
+
+```json
+{
+  "composition_id": "...",
+  "pool_id": "...",
+  "size": 20,
+  "screen": {
+    "signal_date": "2026-11-06",
+    "execution_date": "2026-11-09",
+    "execution_pending": false,
+    "selected_count": 46,
+    "buyable_count": 46,
+    "refreshed_at": "2026-11-09T18:30:00",
+    "refresh_snapshot_id": "...",
+    "refresh_data_source": "clickhouse"
+  },
+  "refreshed_at": "2026-11-09T18:30:00",
+  "snapshot_id": "...",
+  "data_source": "clickhouse"
+}
+```
+
+前端「因子组合」页已全部接真实后端（§3 的 mock 提交表单已移除）：默认等权、自动 TopN 或手动勾选因子、mutual IC / z-clip / 多规模参数可调；提交后轮询任务，结果区展示组合 IC/IR、回测指标、因子权重、多规模对比、最新一期选股清单与单因子贡献，可在清单工具栏选择信号日并「刷新选股清单」，也可载入历史组合、下载权重 JSON。
 
 ## 3. 仍是演示数据的部分
 

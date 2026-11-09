@@ -80,12 +80,19 @@ def build_latest_screen(
     top_k: int,
     *,
     max_weight_per_stock: float = 0.03,
-    row_limit: int = 200,
+    row_limit: int | None = None,
+    signal_date: Any | None = None,
 ) -> dict[str, Any]:
-    """生成最新信号日的组合选股清单。
+    """生成组合选股清单。
 
-    返回字典中 ``rows`` 带单因子贡献（受 ``row_limit`` 限制，但至少覆盖全部
-    top_k 选中行），``flat_rows`` 是全市场的扁平记录，供落盘 CSV 使用。
+    ``signal_date`` 省略时取综合分的最新日期（组合刚跑完的默认口径）；
+    显式指定时用该日收盘信号 + 面板中的下一交易日行情复算可买状态，
+    供「刷新选股清单」在数据更新后重算历史信号日。
+
+    返回字典中 ``rows`` 带单因子贡献，默认包含全部排名行；显式传
+    ``row_limit`` 时受其限制，但仍会覆盖全部选中行——停牌/涨停会让选中
+    向下补位，可能远低于 top_k。``flat_rows`` 是全市场的扁平记录，供落盘
+    CSV 使用。
     """
     if int(top_k) < 1:
         raise ValueError("top_k must be positive")
@@ -101,7 +108,15 @@ def build_latest_screen(
     scores = scores.dropna(subset=["date", "alpha"])
     if scores.empty:
         raise ValueError("composite alpha has no finite values for screening")
-    signal_date = pd.Timestamp(scores["date"].max())
+    if signal_date is None:
+        signal_date = pd.Timestamp(scores["date"].max())
+    else:
+        signal_date = pd.Timestamp(signal_date)
+        if signal_date not in set(scores["date"]):
+            raise ValueError(
+                f"signal_date {signal_date.strftime('%Y-%m-%d')} 没有可用的组合分，"
+                "请选择面板内有信号的交易日"
+            )
     current = scores[scores["date"] == signal_date].drop_duplicates("code", keep="first")
     current = current.sort_values(["alpha", "code"], ascending=[False, True]).reset_index(drop=True)
     current["rank"] = np.arange(1, len(current) + 1)
@@ -203,7 +218,13 @@ def build_latest_screen(
 
     records = list(current.itertuples(index=False))
     flat_rows = [row_payload(record, include_contributions=False) for record in records]
-    limit = max(int(row_limit), int(top_k), 1)
+    # 不可买时选中会按排名向下补位，rows 必须覆盖所有 selected，而不只是 top_k。
+    if row_limit is None:
+        limit = len(records)
+    else:
+        selected_ranks = [rank for rank, take in enumerate(selected_flags, start=1) if take]
+        limit = max(int(row_limit), int(top_k), max(selected_ranks, default=0), 1)
+        limit = min(limit, len(records))
     rows = [row_payload(record, include_contributions=True) for record in records[:limit]]
     buyable_count = None if next_date is None else int(sum(1 for row in flat_rows if row["selected"] and row["buyable_next_open"] is True))
     return {

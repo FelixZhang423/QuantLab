@@ -4,19 +4,25 @@ from __future__ import annotations
 import logging
 import math
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
+
 import common
 from common import _cache_ymd, _live_error, _parse_ymd, _read_json, _safe_child, _sanitize
+from custom_bt.engine import BacktestConfig
+from custom_bt.factor_composition import rebuild_latest_screen
 from errors import make_error
 from repositories import clickhouse as live_db
 from repositories import company_source
+from repositories.composition_store import write_composition_manifest, write_latest_screen
 from repositories.factor_run_store import confirmed_records
 from repositories.job_store import update_job_status
+from repositories.panel_store import expression_fields, expression_lookback, load_panel_for_pool
 from repositories.snapshot_store import snapshot_manifest
-from schemas import FactorCompositionRequest
+from schemas import FactorCompositionRequest, FactorCompositionScreenRefreshRequest
 from services.generation_service import _generation_pool_source
 from workers.job_dispatcher import create_platform_job
 from workers.job_runner import spawn_platform_job
@@ -493,6 +499,12 @@ def get_factor_composition_screen(
     limit_value = max(1, min(int(limit), 1000))
     payload = dict(screen)
     payload["rows"] = rows[:limit_value]
+    if len(payload["rows"]) < len(rows):
+        # 补位后的选中行可能排在前 limit 名之外，展示时可以截断，但选中行必须返回。
+        payload["rows"] = payload["rows"] + [
+            row for row in rows[limit_value:]
+            if isinstance(row, dict) and row.get("selected")
+        ]
     payload["returned_rows"] = len(payload["rows"])
     payload["total_returned_rows"] = len(rows)
     # 组合产物只落股票代码；名称在 API 读取时补齐，旧结果也能立即显示。
@@ -507,6 +519,135 @@ def get_factor_composition_screen(
             "pool_id": pool_id,
             "size": resolved_size,
             "screen": payload,
+        }
+    )
+
+
+def _load_refresh_panel(
+    pool_id: str,
+    expressions: List[str],
+    signal_date: date,
+    as_of: Optional[str],
+) -> tuple[pd.DataFrame, str]:
+    """按最新数据加载信号日及其后续交易日的面板（含表达式回看窗口）。"""
+    pool_manifest, codes, _pool_storage = _generation_pool_source(pool_id)
+    try:
+        source = company_source.resolve_data_source(None, pool_manifest)
+    except ValueError as exc:
+        raise make_error(status_code=422, detail=str(exc)) from None
+    config = BacktestConfig(
+        start_date=signal_date.isoformat(),
+        end_date=date.today().isoformat(),
+    )
+    try:
+        panel = load_panel_for_pool(
+            source,
+            codes,
+            config,
+            pool_id=pool_id,
+            fields=expression_fields(expressions),
+            snapshot_root=common.SNAPSHOT_ROOT,
+            as_of=as_of,
+            lookback_days=expression_lookback(expressions),
+        )
+    except live_db.LiveDBError as exc:
+        raise _live_error(exc) from None
+    except (ValueError, OSError) as exc:
+        raise make_error(status_code=422, detail=f"重新加载面板失败：{exc}") from None
+    return panel, source
+
+
+def refresh_factor_composition_screen(
+    composition_id: str,
+    request: FactorCompositionScreenRefreshRequest,
+) -> Dict[str, Any]:
+    """用最新数据复算指定信号日的选股清单，不重跑组合回测。"""
+    composition_dir, manifest = _composition_dir(request.pool_id, composition_id)
+    resolved_size, entry, output_dir = _size_entry(composition_dir, manifest, request.size)
+    weights_path = output_dir / "factor_weights.json"
+    if not weights_path.is_file():
+        raise make_error(
+            status_code=404,
+            detail=f"组合规模 {resolved_size} 缺少因子权重，无法刷新选股清单",
+        )
+    try:
+        raw_weights = _read_json(weights_path)
+    except (OSError, ValueError) as exc:
+        raise make_error(status_code=500, detail=f"读取因子权重失败：{exc}") from None
+    weight_rows = [row for row in raw_weights if isinstance(row, dict)] if isinstance(raw_weights, list) else []
+    if not weight_rows:
+        raise make_error(status_code=422, detail="因子权重为空，无法刷新选股清单")
+
+    signal_date = _parse_ymd(request.signal_date, "signal_date")
+    if signal_date > date.today():
+        raise make_error(status_code=422, detail="signal_date 不能晚于今天")
+
+    backtest_config = manifest.get("backtest_config") or {}
+    try:
+        top_k = int(backtest_config.get("top_k") or 50)
+        max_weight_per_stock = float(backtest_config.get("max_weight_per_stock") or 0.03)
+    except (TypeError, ValueError):
+        raise make_error(status_code=500, detail="组合回测参数无效，无法刷新选股清单") from None
+
+    expressions = [
+        str(row.get("effective_expression") or row.get("expression") or "").strip()
+        for row in weight_rows
+    ]
+    if not all(expressions):
+        raise make_error(status_code=422, detail="因子权重缺少有效表达式，无法刷新选股清单")
+
+    panel, source = _load_refresh_panel(request.pool_id, expressions, signal_date, request.as_of)
+    try:
+        screen = rebuild_latest_screen(
+            panel,
+            weight_rows,
+            top_k=top_k,
+            max_weight_per_stock=max_weight_per_stock,
+            signal_date=signal_date.isoformat(),
+        )
+    except ValueError as exc:
+        raise make_error(status_code=422, detail=str(exc)) from None
+    if screen.get("execution_pending"):
+        raise make_error(
+            status_code=422,
+            detail=(
+                f"信号日 {signal_date.isoformat()} 之后还没有可用的交易日行情，"
+                "暂时无法复算次日可买状态；请等待下一交易日数据后再试"
+            ),
+        )
+
+    refreshed_at = datetime.now().isoformat(timespec="seconds")
+    snapshot_id = panel.attrs.get("snapshot_id")
+    screen["refreshed_at"] = refreshed_at
+    screen["refresh_snapshot_id"] = snapshot_id
+    screen["refresh_data_source"] = source
+    write_latest_screen(output_dir, screen)
+
+    entry["screen"] = {
+        key: screen.get(key)
+        for key in (
+            "signal_date",
+            "execution_date",
+            "execution_pending",
+            "total_ranked",
+            "selected_count",
+            "buyable_count",
+            "planned_weight_per_stock",
+        )
+    }
+    entry["screen_refreshed_at"] = refreshed_at
+    entry["screen_refresh_snapshot_id"] = snapshot_id
+    write_composition_manifest(composition_dir.parent, composition_id, manifest)
+
+    return _sanitize(
+        {
+            "composition_id": composition_id,
+            "pool_id": request.pool_id,
+            "size": resolved_size,
+            "screen": screen,
+            "refreshed_at": refreshed_at,
+            "snapshot_id": snapshot_id,
+            "data_source": source,
         }
     )
 

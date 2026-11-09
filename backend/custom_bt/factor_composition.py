@@ -443,6 +443,79 @@ def _combine_weighted_alphas(components: Sequence[SelectedComponent]) -> pd.Data
     return merged[["date", "code", "alpha"]]
 
 
+def _components_from_saved_weights(
+    panel: pd.DataFrame,
+    weights: Sequence[Mapping[str, Any]],
+) -> list[SelectedComponent]:
+    """用已落盘的因子权重重建组合分量，仅用于刷新选股清单（不重新选因子）。"""
+    components: list[SelectedComponent] = []
+    for row in weights:
+        factor_id = str(row.get("factor_id") or "").strip()
+        expression = str(
+            row.get("effective_expression") or row.get("expression") or ""
+        ).strip()
+        if not factor_id or not expression:
+            raise ValueError("因子权重记录缺少 factor_id 或有效表达式，无法刷新选股清单")
+        weight = _as_float(row.get("weight"))
+        if not np.isfinite(weight):
+            raise ValueError(f"因子 {factor_id} 的权重无效")
+        alpha = evaluate_expression(expression, panel, output_name="alpha")
+        preprocess = row.get("preprocess") or {}
+        clip = preprocess.get("clip") if isinstance(preprocess, Mapping) else None
+        if clip is not None:
+            clip = _as_float(clip)
+            if not np.isfinite(clip) or clip <= 0:
+                raise ValueError(f"因子 {factor_id} 的 z_clip 无效")
+        zalpha = daily_cross_section_zscore(alpha, clip=clip)
+        raw = {
+            "training_ic": row.get("training_ic"),
+            "direction": row.get("direction"),
+            "direction_source": row.get("direction_source"),
+        }
+        candidate = CompositionCandidate(
+            factor_id=factor_id,
+            expression=str(row.get("expression") or expression),
+            canonical_expression=str(row.get("expression") or expression),
+            backtest_expression=expression,
+            pool_id=None,
+            source_signature=None,
+            metrics={},
+            raw=raw,
+        )
+        components.append(
+            SelectedComponent(
+                candidate=candidate,
+                alpha=alpha,
+                zalpha=zalpha,
+                weight=float(weight),
+            )
+        )
+    if not components:
+        raise ValueError("因子权重记录为空，无法刷新选股清单")
+    return components
+
+
+def rebuild_latest_screen(
+    panel: pd.DataFrame,
+    weights: Sequence[Mapping[str, Any]],
+    *,
+    top_k: int,
+    max_weight_per_stock: float,
+    signal_date: str,
+) -> dict[str, Any]:
+    """用已保存的权重和最新面板复算指定信号日的选股清单。"""
+    components = _components_from_saved_weights(panel, weights)
+    composite = _combine_weighted_alphas(components)
+    return build_latest_screen(
+        composite,
+        components,
+        panel,
+        top_k,
+        max_weight_per_stock=max_weight_per_stock,
+        signal_date=signal_date,
+    )
+
+
 def _preprocessed_expression(expression: str) -> str:
     return normalize_expression(f"zscore({expression})")
 
@@ -1063,7 +1136,6 @@ def compose_factors(
             panel,
             config.top_k,
             max_weight_per_stock=config.max_weight_per_stock,
-            row_limit=200,
         )
         screen_summary = {
             "signal_date": screen["signal_date"],

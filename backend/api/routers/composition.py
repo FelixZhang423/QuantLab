@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Query
 
-from schemas import FactorCompositionRequest
+from schemas import FactorCompositionRequest, FactorCompositionScreenRefreshRequest
 from services import composition_service
 
 router = APIRouter()
@@ -22,6 +22,15 @@ def get_factor_compositions(
     limit: int = Query(50, ge=1, le=500, description='返回条数上限'),
 ) -> Dict[str, Any]:
     return composition_service.get_factor_compositions(pool_id, limit)
+
+
+@router.post('/api/factor-compositions/{composition_id}/screen/refresh')
+def refresh_factor_composition_screen(
+    composition_id: str,
+    request: FactorCompositionScreenRefreshRequest,
+) -> Dict[str, Any]:
+    """用最新数据复算指定信号日的次日可买状态，不重跑组合回测。"""
+    return composition_service.refresh_factor_composition_screen(composition_id, request)
 
 
 @router.get('/api/factor-compositions/{composition_id}/screen')
