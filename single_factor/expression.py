@@ -195,3 +195,13 @@ class SingleFactorExpressionBuilder:
 
     def validate_featured_expr(self) -> bool:
         return not (self.stack and isinstance(self.stack[-1], DeltaTime))
+
+
+def required_history(expr: Expression) -> int:
+    """历史需求沿表达式路径累加；并行分支取最大值。"""
+    children = [child for child in getattr(expr, "operands", ()) if isinstance(child, Expression) and not isinstance(child, DeltaTime)]
+    history = max((required_history(child) for child in children), default=0)
+    if isinstance(expr, (RollingOperator, PairRollingOperator)):
+        from ._vendor.alphagen.data.expression import Ref, Delta
+        history += expr._delta_time if isinstance(expr, (Ref, Delta)) else expr._delta_time - 1
+    return history

@@ -138,7 +138,14 @@ def _filtered_universe(live: live_db.LiveResult, **filters: Any) -> List[Dict[st
 
 def get_master_info() -> Dict[str, Any]:
     try:
-        stats = live_db.live_master_stats()
+        universe = live_db.live_stock_rows()
+        rows = universe.data
+        stats = live_db.LiveResult({
+            "rows": sum(item["rows"] for item in rows),
+            "n_stocks": len(rows),
+            "date_min": min((item["start_date"] for item in rows if item.get("start_date")), default=None),
+            "date_max": max((item["end_date"] for item in rows if item.get("end_date")), default=None),
+        }, universe.cached, universe.queried_at, universe.cache_ttl_seconds)
         catalog = live_db.live_field_catalog()
     except live_db.LiveDBError as exc:
         raise _live_error(exc) from None

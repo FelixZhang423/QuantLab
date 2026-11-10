@@ -15,7 +15,7 @@ from repositories.factor_run_store import read_jsonl, confirmed_records
 
 @pytest.fixture
 def generated(tmp_path, monkeypatch):
-    dates = pd.date_range("2024-01-01", "2024-06-30")
+    dates = pd.date_range("2023-12-20", "2024-06-30")
     rates = [-0.02, -0.01, 0.01, 0.02]
     rows = []
     for i, day in enumerate(dates):
@@ -132,3 +132,14 @@ def test_finished_confirmation_repairs_summary_after_publish_crash(generated):
         final = confirm_factor_run(root, snapshots)
     assert final["confirmed_count"] == 1
     assert json.loads((root / "factor_run.json").read_text(encoding="utf-8"))["confirmed_count"] == 1
+
+
+def test_warmup_precedes_metric_window(generated):
+    from single_factor.data import PanelData
+    root, _ = generated
+    run = json.loads((root / "factor_run.json").read_text(encoding="utf-8"))
+    runtime = json.loads(Path(run["runtime_manifest"]).read_text(encoding="utf-8"))
+    for name, split in runtime["splits"].items():
+        panel = PanelData.from_memmap(split["cache_dir"], max_backtrack_days=run["max_backtrack_days"],
+                                     max_future_days=run["max_future_days"])
+        assert str(panel.dates[panel.max_backtrack_days].date()) == split["cache_start"]

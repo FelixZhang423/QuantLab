@@ -212,40 +212,24 @@ def _generation_pool_source(
 def _generation_splits_for_window(
     start: date, end: date, ratios: Dict[str, float], target_horizon: int = 20
 ) -> Dict[str, Dict[str, str]]:
-    """把股票池时间跨度按比例切成连续的 train / valid / test。"""
-    # Preview uses a conservative calendar margin; the worker verifies actual sessions.
-    gap_days = 3 * target_horizon + 14
-    span_days = (end - start).days + 1
-    total_days = span_days - 2 * gap_days
-    if total_days < len(_GENERATION_SPLIT_NAMES):
-        raise make_error(
-            status_code=422,
-            detail=(
-                f"股票池真实时间跨度只有 {span_days} 天，预留两段隔离后剩余 {max(total_days, 0)} 天"
-                f"（{start.isoformat()} ~ {end.isoformat()}），不足以切分 train/valid/test"
-            ),
-        )
-    lengths: Dict[str, int] = {}
+    """按真实交易日分配指标窗口，边界排除 horizon 个交易日。"""
+    try:
+        dates = company_source.trading_dates(start.isoformat(), end.isoformat())
+    except live_db.LiveDBError as exc:
+        raise make_error(status_code=502, detail=f"读取交易日历失败：{exc}") from None
+    total_days = len(dates) - 2 * target_horizon
+    if total_days < 3:
+        raise make_error(status_code=422, detail="实际交易日不足，预留两段隔离后无法切分 train/valid/test")
     remaining = total_days
+    cursor = 0
+    splits = {}
     for index, name in enumerate(_GENERATION_SPLIT_NAMES):
-        if index == len(_GENERATION_SPLIT_NAMES) - 1:
-            length = remaining
-        else:
-            length = max(1, int(round(total_days * ratios[name])))
-            length = min(length, remaining - (len(_GENERATION_SPLIT_NAMES) - index - 1))
-        lengths[name] = length
+        length = remaining if index == 2 else min(max(1, round(total_days * ratios[name])), remaining - (2 - index))
+        splits[name] = {"cache_start": dates[cursor], "cache_end": dates[cursor + length - 1]}
         remaining -= length
-
-    splits: Dict[str, Dict[str, str]] = {}
-    cursor = start
-    for name in _GENERATION_SPLIT_NAMES:
-        split_end = cursor + timedelta(days=lengths[name] - 1)
-        splits[name] = {
-            "cache_start": cursor.isoformat(),
-            "cache_end": split_end.isoformat(),
-        }
-        cursor = split_end + timedelta(days=gap_days + 1)
+        cursor += length + target_horizon
     return splits
+
 
 def _generation_field_aliases() -> Dict[str, str]:
     """字段目录里的原始名 / 面板列名 → 面板列名。"""
@@ -378,7 +362,7 @@ def _normalize_generation_splits(
         raise make_error(status_code=422, detail="因子生成必须包含 train、valid、test 三个数据切分")
     splits: Dict[str, Dict[str, str]] = {}
     warnings: List[str] = []
-    minimum_days = max_backtrack_days + max_future_days + 1
+    minimum_days = max_future_days + 1
     for name in _GENERATION_SPLIT_NAMES:
         value = raw.get(name)
         if value is None:
@@ -406,7 +390,7 @@ def _normalize_generation_splits(
         if (end - start).days + 1 < minimum_days:
             warnings.append(
                 f"{name} 切分只有 {(end - start).days + 1} 天，"
-                f"少于回溯 {max_backtrack_days} 天 + 未来 {max_future_days} 天，可能无法评估"
+                f"少于未来 {max_future_days} 天，可能无法评估（历史预热另行加载）"
             )
         if source_start and start < source_start:
             warnings.append(
@@ -531,13 +515,10 @@ def create_factor_generation(request: FactorGenerationRequest) -> Dict[str, Any]
             "数据切分回退到 configs/factor_generation.yaml"
         )
 
-    max_backtrack_days = int(
-        request.max_backtrack_days
-        if request.max_backtrack_days is not None
-        else defaults.get("max_backtrack_days", 100)
-    )
-    if not 0 <= max_backtrack_days <= 1000:
-        raise make_error(status_code=422, detail="max_backtrack_days 必须在 0 到 1000 之间")
+    from adapters.operator_registry import get_operator, generation_operator_names
+    names = operators or generation_operator_names()
+    max_backtrack_days = int(defaults.get("max_backtrack_days", 100)) if any(
+        get_operator(name).category == "time_series" for name in names) else 0
     target_horizon = int(
         request.target_horizon
         if request.target_horizon is not None

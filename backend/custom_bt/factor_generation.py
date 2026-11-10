@@ -207,7 +207,7 @@ def prepare_factor_runtime(
         raise ValueError("pool has no stock codes")
     all_starts = [pd.Timestamp(value["cache_start"]) for value in splits.values()]
     all_ends = [pd.Timestamp(value["cache_end"]) for value in splits.values()]
-    panel_start = str(min(all_starts).date())
+    panel_start = str((min(all_starts) - pd.Timedelta(days=int(max_backtrack_days) * 3 + 30 if max_backtrack_days else 0)).date())
     panel_end = str(max(all_ends).date())
     panel_result = resolve_panel_snapshot(source, resolved_codes, BacktestConfig(panel_start, panel_end),
                                          pool_id=pool_id, fields=panel_fields,
@@ -218,7 +218,7 @@ def prepare_factor_runtime(
     panel_result = {**panel_result, "panel_path": str(snapshot_store.snapshot_path(snapshot_id, snapshot_root=snapshot_root))}
     calendar = pd.read_parquet(snapshot_store.snapshot_path(snapshot_id, snapshot_root=snapshot_root), columns=["date"])["date"]
     isolation = validate_splits(splits, calendar, int(target_horizon))
-    runtime_key["split_isolation_version"] = 2
+    runtime_key["split_isolation_version"] = 3
     runtime_key["snapshot_id"] = snapshot_id
     runtime_key["preprocess_version"] = hashlib.sha256((_single_factor_root() / "single_factor" / "preprocess.py").read_bytes()).hexdigest()
     runtime_id = hashlib.sha256(json.dumps(runtime_key, sort_keys=True).encode("utf-8")).hexdigest()[:20]
@@ -243,12 +243,17 @@ def prepare_factor_runtime(
         split_results: Dict[str, dict] = {}
         for name, split in splits.items():
             cache_dir = runtime_dir / name
+            sessions = pd.DatetimeIndex(pd.to_datetime(calendar)).unique().sort_values()
+            prior = sessions[sessions < pd.Timestamp(split["cache_start"])]
+            if len(prior) < int(max_backtrack_days):
+                raise ValueError(f"{name}: historical warmup insufficient; need {max_backtrack_days} trading days, got {len(prior)}")
+            cache_start = str(prior[-int(max_backtrack_days)].date()) if max_backtrack_days else split["cache_start"]
             manifest = materialize_memmap(
                 processed_dir=processed_dir,
                 output_dir=cache_dir,
                 codes=resolved_codes,
                 fields=panel_fields,
-                start=split["cache_start"],
+                start=cache_start,
                 end=split["cache_end"],
             )
             split_results[name] = {
@@ -316,6 +321,9 @@ def run_factor_generation(
         str(item).strip() for item in (operators or []) if str(item).strip()
     ]
     operator_classes, operator_names = resolve_generation_operators(requested_operators)
+    from single_factor._vendor.alphagen.data.expression import RollingOperator, PairRollingOperator
+    from adapters.operator_registry import load_alphagen_operator_classes
+    max_backtrack_days = int(max_backtrack_days) if any(issubclass(cls, (RollingOperator, PairRollingOperator)) for cls in (operator_classes or load_alphagen_operator_classes())) else 0
     operator_mode = "selected" if requested_operators else "all"
 
     def report(stage: str, **extra: object) -> None:
@@ -370,20 +378,7 @@ def run_factor_generation(
             f"不足以覆盖未来 {int(max_future_days)} 天；"
             "请扩大股票池时间跨度，或调小 target_horizon / max_future_days"
         )
-    # 每个切分必须留出 lookback + lookahead 才能构造评估日；短切分下自动收紧
-    # 回溯窗口，并尽量让最短切分保留 5 个评估日。
-    effective_backtrack = min(
-        int(max_backtrack_days),
-        max(0, shortest_days - int(max_future_days) - 5),
-    )
-    if effective_backtrack < int(max_backtrack_days):
-        logger.warning(
-            "max_backtrack_days reduced from %s to %s to fit shortest split %s (%s trading days)",
-            max_backtrack_days,
-            effective_backtrack,
-            shortest_name,
-            shortest_days,
-        )
+    effective_backtrack = int(max_backtrack_days)
 
     panel_kwargs = {
         "max_backtrack_days": effective_backtrack,

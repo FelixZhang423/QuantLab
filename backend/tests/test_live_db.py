@@ -575,3 +575,19 @@ def test_source_label_and_panel_alias():
     assert live_db.source_label("computed", live_db.DAILY_TABLE) == "computed"
     assert live_db.panel_alias("vol") == "volume"
     assert live_db.panel_alias("close") == "close"
+
+
+def test_stock_aggregation_uses_panel_query_budget(monkeypatch):
+    from repositories import clickhouse as db
+    settings = db.LiveDBSettings(password="test", timeout=30, max_execution_time=20,
+                                 panel_timeout=120, panel_max_execution_time=100)
+    captured = []
+    def stop_at_client(settings, client):
+        captured.append(settings)
+        raise RuntimeError("captured")
+    monkeypatch.setattr(db, "_client", stop_at_client)
+    with pytest.raises(RuntimeError, match="captured"):
+        db.live_stock_rows(settings)
+    assert captured[0].timeout == 120
+    assert captured[0].max_execution_time == 100
+    assert settings.timeout == 30

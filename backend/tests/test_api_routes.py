@@ -105,6 +105,7 @@ def _items():
 
 @pytest.fixture()
 def master(tmp_path, monkeypatch):
+    monkeypatch.setattr(company_source, "trading_dates", lambda start, end: pd.date_range(start, end, freq="D").strftime("%Y-%m-%d").tolist())
     root = tmp_path / "master"
     (root / "stocks").mkdir(parents=True)
     (root / "meta.json").write_text(
@@ -1740,7 +1741,7 @@ def test_create_factor_generation_builds_payload_and_returns_run_id(master, monk
     assert payload["fields"] == ["close", "open", "fund_OperatingReenue"]
     assert payload["operators"] == ["add", "div"]
     assert payload["splits"] == {name: value.model_dump() for name, value in _generation_splits().items()}
-    assert payload["max_backtrack_days"] == 100
+    assert payload["max_backtrack_days"] == 0
     assert payload["target_horizon"] == 20
     assert payload["max_future_days"] == 20
     assert payload["data_source"] == "clickhouse"
@@ -1764,9 +1765,7 @@ def test_create_factor_generation_builds_payload_and_returns_run_id(master, monk
     assert response["operation"] == "generate_factors"
     assert response["run_id"] == run_id
     assert response["run_name"] == "ppo_demo"
-    assert len(response["warnings"]) == 2
-    assert any("valid" in warning for warning in response["warnings"])
-    assert any("test" in warning for warning in response["warnings"])
+    assert response["warnings"] == []
     summary = response["request_summary"]
     assert summary["pool_id"] == "pool_company"
     assert summary["n_stocks"] == 2
@@ -2166,3 +2165,26 @@ def test_stock_list_refresh_invalidates_cache(monkeypatch):
     monkeypatch.setattr(live_db, "clear_cache", lambda keys: cleared.append(keys))
     data_service.get_stocks(refresh=True)
     assert cleared == [("stock_rows", "dim_profiles")]
+
+
+def test_split_uses_observed_sessions_and_exact_horizon(monkeypatch):
+    from datetime import date
+    dates = pd.bdate_range("2025-01-01", "2025-12-31").strftime("%Y-%m-%d").tolist()
+    dates.remove("2025-01-08")
+    monkeypatch.setattr(company_source, "trading_dates", lambda *args: dates)
+    splits = generation_service._generation_splits_for_window(date(2025,1,1), date(2025,12,31), {"train":.6,"valid":.2,"test":.2}, 20)
+    for left, right in [("train","valid"),("valid","test")]:
+        assert dates.index(splits[right]["cache_start"]) - dates.index(splits[left]["cache_end"]) - 1 == 20
+    assert splits["test"]["cache_end"] == dates[-1]
+
+
+def test_overview_reuses_stock_universe_instead_of_scanning_again(monkeypatch):
+    _stub_universe(monkeypatch)
+    monkeypatch.setattr(live_db, "target_label", lambda: "test")
+    monkeypatch.setattr(live_db, "live_field_catalog", lambda: _live([]))
+    def unexpected(*args, **kwargs):
+        pytest.fail("overview must reuse stock aggregation")
+    monkeypatch.setattr(live_db, "live_master_stats", unexpected)
+    result = data_service.get_master_info()
+    assert result["n_stocks"] == 5
+    assert result["rows"] == 410

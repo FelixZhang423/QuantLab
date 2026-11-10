@@ -509,6 +509,20 @@ def meta(
     }
 
 
+def trading_dates(start, end):
+    """公司股票行情中的实际交易日；仅返回日期，不加载行情面板。"""
+    where = _where_sql(None, start, end, category="stock", market_code=None)
+    sql = f"SELECT DISTINCT toString(toDate(d.timestamps)) AS date FROM {live_db.DAILY_TABLE} AS d WHERE {where} ORDER BY date"
+    settings = live_db.resolve_settings()
+    def query():
+        payload = live_db._client(settings).query_bytes(sql, timeout=settings.panel_timeout,
+            max_execution_time=settings.panel_max_execution_time)
+        import io
+        import pandas as pd
+        return sorted(set(pd.read_parquet(io.BytesIO(payload))["date"].astype(str)))
+    return live_db._cached(f"trading_dates:{start}:{end}", settings.universe_ttl, query).data
+
+
 def selection_days(
     codes: Optional[Iterable[str]],
     start: Any,

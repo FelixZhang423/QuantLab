@@ -52,6 +52,10 @@ class SingleFactorEvaluator:
         self.quality = quality or QualityConfig()
 
     def _segment_metrics(self, expr: Expression, panel: PanelData) -> SegmentMetrics:
+        from .expression import required_history
+        needed = required_history(expr)
+        if needed > panel.max_backtrack_days:
+            raise ValueError(f"history budget exceeded: expression requires {needed} trading days, budget is {panel.max_backtrack_days}")
         values = expr.evaluate(panel).float()
         target = panel.target(self.target_horizon).float()
         valid = torch.isfinite(values) & torch.isfinite(target)

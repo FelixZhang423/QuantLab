@@ -30,7 +30,6 @@ type GenFormValues = {
   valid?: DateRangeValue;
   test?: DateRangeValue;
   targetHorizon?: number;
-  maxBacktrackDays?: number;
   targetFactorCount?: number;
   maxAttempts?: number;
   rolloutTimesteps?: number;
@@ -321,7 +320,6 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
     defaultsApplied.current = true;
     form.setFieldsValue({
       targetHorizon: defaults.target_horizon,
-      maxBacktrackDays: defaults.max_backtrack_days,
       targetFactorCount: defaults.target_factor_count,
       maxAttempts: defaults.max_attempts,
       rolloutTimesteps: defaults.rollout_timesteps,
@@ -498,7 +496,6 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
         fields,
         operators: pickedOperators,
         splits: { train, valid, test },
-        max_backtrack_days: values.maxBacktrackDays,
         target_horizon: values.targetHorizon,
         target_factor_count: values.targetFactorCount,
         max_attempts: values.maxAttempts,
@@ -735,7 +732,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
               initialValues={{
                 name: `ppo_run_${dayjs().format("YYYYMMDD")}`,
                 fields: [], operators: [],
-                targetHorizon: 20, maxBacktrackDays: 100, targetFactorCount: 50,
+                targetHorizon: 20, targetFactorCount: 50,
                 maxAttempts: 100000, rolloutTimesteps: 2048, seed: 0, device: "auto",
                 minCoverage: 0.9, minTrainIc: 0.05, minValidIc: 0.04, minIcir: 0.5,
               }}
@@ -830,7 +827,6 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
               <Divider orientation="left" plain>搜索与训练</Divider>
               <Row gutter={12}>
                 <Col span={12}><Form.Item label="目标持有期 horizon" name="targetHorizon" rules={[{ type: "number", min: 1, max: 60 }]}><InputNumber className="full-width" min={1} max={60} /></Form.Item></Col>
-                <Col span={12}><Form.Item label="最大回溯天数" name="maxBacktrackDays"><InputNumber className="full-width" min={0} max={250} /></Form.Item></Col>
                 <Col span={12}><Form.Item label="目标因子数" name="targetFactorCount"><InputNumber className="full-width" min={1} max={200} /></Form.Item></Col>
               </Row>
               <Divider orientation="left" plain>质量阈值</Divider>

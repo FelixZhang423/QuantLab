@@ -27,7 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -760,6 +760,9 @@ def live_stock_rows(
     避免筛选预览在 QL_CH_CACHE_TTL=0 的部署里反复打全市场聚合。
     """
     settings = settings or resolve_settings()
+    # 全市场历史聚合与分页大小无关，需要面板级查询预算。
+    settings = replace(settings, timeout=max(settings.timeout, settings.panel_timeout),
+                       max_execution_time=max(settings.max_execution_time, settings.panel_max_execution_time))
     client = _client(settings, client)
 
     def produce() -> List[Dict[str, Any]]:

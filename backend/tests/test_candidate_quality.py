@@ -79,7 +79,7 @@ def test_exact_ninety_percent_finite_coverage_passes_without_float32_rounding():
     values = torch.arange(10, dtype=torch.float32).repeat(2, 1)
     target = values.clone()
     values[:, 0] = float("nan")
-    panel = SimpleNamespace(target=lambda _: target)
+    panel = SimpleNamespace(target=lambda _: target, max_backtrack_days=0)
     expression = SimpleNamespace(evaluate=lambda _: values)
     e = SingleFactorEvaluator(panel, 1, valid_panel=panel)
     metrics = e._segment_metrics(expression, panel)
@@ -94,3 +94,18 @@ def test_confirmation_parser_understands_stored_canonical_operator_names():
     for expression in ("rank(close)", "ts_mean(close,2)", "add(ts_std(close,3),1.0)"):
         parsed = parser.parse(expression)
         assert serialize_alphagen_expression(parsed) == expression
+
+
+def test_nested_history_budget_rejected_before_evaluation():
+    from single_factor.expression import SingleFactorParser, required_history
+    from single_factor.evaluator import SingleFactorEvaluator
+    from types import SimpleNamespace
+    parser = SingleFactorParser(["close"])
+    expr = parser.parse("delay(ts_mean(close,20),90)")
+    assert required_history(expr) == 109
+    evaluator = SingleFactorEvaluator(SimpleNamespace(max_backtrack_days=100), 5)
+    result = evaluator.evaluate(expr)
+    assert not result.accepted
+    assert "history budget exceeded" in result.reason
+    assert required_history(parser.parse("add(close,1)")) == 0
+    assert required_history(parser.parse("ts_mean(close,20)")) == 19

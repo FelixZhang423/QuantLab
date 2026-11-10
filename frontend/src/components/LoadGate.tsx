@@ -14,7 +14,7 @@ export function LoadGate({ state, hint, children }: { state: ApiState<unknown>; 
           type="error" showIcon message="数据加载失败"
           description={<Space direction="vertical" size={4}>
             <Text>{state.error}</Text>
-            <Text type="secondary">请确认 backend 目录下已运行 <Text code>py -3 -m api</Text>（默认 127.0.0.1:8000）</Text>
+            <Text type="secondary">{state.error.includes("HTTP 502") ? "后端已响应，但上游数据查询失败；请检查数据库查询超时或连接状态后重试。" : "请检查后端服务及网络连接，或根据上方错误信息排查。"}</Text>
             {hint && <Text type="secondary">{hint}</Text>}
           </Space>}
           action={<Button icon={<ReloadOutlined />} onClick={state.reload}>重试</Button>}
