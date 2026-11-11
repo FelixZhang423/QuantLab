@@ -171,16 +171,7 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pool?.pool_id]);
 
-  const resultsApi = useApiData(api.results);
-  const latestManual = useMemo(() => {
-    // 只展示新版 manual/<job_id>/<run_name> 结果；旧扁平 web_run 等不当作本页历史
-    const items = (resultsApi.data?.results ?? []).filter(
-      (item) => item.result_type === "manual" && item.run_key.startsWith("manual/"),
-    );
-    return items.sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))[0] ?? null;
-  }, [resultsApi.data]);
-
-  const previewKey = resultKey ?? latestManual?.run_key ?? null;
+  const previewKey = resultKey;
   const detailApi = useApiData(
     () => (previewKey ? api.result(previewKey) : Promise.resolve(null)),
     [previewKey],
@@ -188,15 +179,14 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
   const detail = detailApi.data?.run_key === previewKey ? detailApi.data : null;
 
   useEffect(() => {
-    if (!jobId || job?.status !== "finished" || finishedRef.current === jobId) return;
+    if (!jobId || job?.job_id !== jobId || job.status !== "finished" || finishedRef.current === jobId) return;
     finishedRef.current = jobId;
     const key = typeof job.result?.run_key === "string" ? job.result.run_key : null;
     if (key) {
       setResultKey(key);
       message.success(`手动回测完成：${key}`);
     }
-    resultsApi.reload();
-  }, [jobId, job?.status, job?.result, resultsApi.reload]);
+  }, [jobId, job]);
 
   const submit = async (values: ManualFormValues) => {
     if (!pool) {
@@ -210,7 +200,7 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
     const payload: ManualBacktestRequest = {
       expression: values.expression,
       pool_id: pool.pool_id,
-      run_name: values.runName,
+      run_name: values.runName.trim(),
       start_date: values.dates[0].format("YYYY-MM-DD"),
       end_date: values.dates[1].format("YYYY-MM-DD"),
       top_k: values.topK,
@@ -227,6 +217,7 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
     setWarnings([]);
     try {
       const response = await api.createManualBacktest(payload);
+      setResultKey(null);
       setJobId(response.job_id);
       setWarnings(response.warnings);
       message.info(`手动回测任务已提交：${response.job_id}`);
@@ -249,7 +240,23 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
           : job.status === "failed" ? "手动回测失败"
             : `任务状态：${job.status}`;
 
-  const canSubmit = Boolean(pool) && !polling && !submitting;
+  const busy = submitting || polling || Boolean(jobId && !job && !jobError);
+  const canSubmit = Boolean(pool) && !busy;
+
+  const reset = () => {
+    form.resetFields();
+    const defaultPool = pools[0];
+    if (defaultPool) {
+      form.setFieldValue("poolId", defaultPool.pool_id);
+      if (defaultPool.selection_start && defaultPool.selection_end) {
+        form.setFieldValue("dates", [dayjs(defaultPool.selection_start), dayjs(defaultPool.selection_end)]);
+      }
+    }
+    finishedRef.current = null;
+    setJobId(null);
+    setResultKey(null);
+    setWarnings([]);
+  };
 
   return (
     <Space direction="vertical" size={16} className="page-stack">
@@ -272,14 +279,14 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
             <Form
               form={form} layout="vertical" onFinish={submit}
               initialValues={{
-                expression: EXAMPLES[0],
+                expression: "",
                 dates: [dayjs().subtract(1, "year"), dayjs()],
                 topK: 50, initialCash: 100000000, commission: 0.0003, stampDuty: 0.0005, transferFee: 0.00001,
                 rebalanceFreq: "1D", slippage: 0.001, minCost: 5, maxWeight: 0.03, runName: "manual_run",
               }}
             >
               <Form.Item label="Alpha 表达式" name="expression" rules={[{ required: true, message: "请输入 Alpha 表达式" }]}>
-                <Input.TextArea className="code-input" autoSize={{ minRows: 3, maxRows: 5 }} placeholder="例如 close / delay(close, 20) - 1" />
+                <Input.TextArea className="code-input" autoSize={{ minRows: 3, maxRows: 5 }} placeholder="请输入因子表达式，或点击下方示例填入" />
               </Form.Item>
               <Flex gap={6} wrap className="example-row">
                 {EXAMPLES.map((item, index) => (
@@ -336,12 +343,13 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
                 <Col span={12}><Form.Item label="滑点（基准 0.001 / 压力 0.002）" name="slippage"><InputNumber className="full-width" step={0.0001} min={0} max={0.1} /></Form.Item></Col>
                 <Col span={12}><Form.Item label="最低佣金" name="minCost"><InputNumber className="full-width" min={0} addonAfter="元" /></Form.Item></Col>
                 <Col span={12}><Form.Item label="单票权重上限" name="maxWeight"><InputNumber className="full-width" min={0.001} max={1} step={0.005} /></Form.Item></Col>
-                <Col span={12}><Form.Item label="运行名称" name="runName" rules={[{ required: true, message: "请输入运行名称" }, { max: 64, message: "不超过 64 个字符" }]}><Input /></Form.Item></Col>
+                <Col span={12}><Form.Item label="运行名称" name="runName" rules={[{ required: true, message: "请输入运行名称" }, { transform: (value: string) => value?.trim(), pattern: /^[A-Za-z0-9_.\-\u4e00-\u9fff]{1,64}$/, message: "仅允许中英文、数字、下划线、点和短横线，最多 64 个字符" }]}><Input /></Form.Item></Col>
               </Row>
               <Text type="secondary">最低佣金按每笔买卖分别收取；过户费与卖出印花税另计。周／双周／月按日历周期调仓，遇休市顺延至该周期首个交易日。</Text>
               <Button size="large" block type="primary" htmlType="submit" loading={submitting} disabled={!canSubmit} icon={<PlayCircleOutlined />}>
                 提交回测
               </Button>
+              <Button block className="note-action" htmlType="button" disabled={busy} onClick={reset}>一键重置</Button>
             </Form>
             {warnings.length > 0 && (
               <Alert
@@ -372,7 +380,7 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
             title="回测结果"
             extra={!detail ? undefined : (
               <Space wrap>
-                <Tag color={resultKey ? "blue" : "default"}>{resultKey ? "本次提交" : "最近完成"}</Tag>
+                <Tag color="blue">本次提交</Tag>
                 <Button size="small" icon={<ReloadOutlined />} onClick={detailApi.reload}>刷新</Button>
               </Space>
             )}
@@ -380,8 +388,8 @@ export function ManualBacktestPage({ onOpenResult }: { onOpenResult: (runKey: st
           >
             <ResultPreview
               detail={detail}
-              loading={detailApi.loading}
-              error={detailApi.error}
+              loading={Boolean(previewKey) && detailApi.loading}
+              error={previewKey ? detailApi.error : null}
               onReload={detailApi.reload}
               onOpenResult={onOpenResult}
             />

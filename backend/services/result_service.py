@@ -155,6 +155,11 @@ def _result_detail_payload(run_dir: Path, run_key: str) -> Dict[str, Any]:
                     "date": str(row.get("date", "")),
                     "equity": round(float(row.get("account") or 0.0) / initial_cash, 4),
                     "drawdown": round(float(row.get("drawdown") or 0.0) * 100.0, 2),
+                    **({
+                        "benchmark_equity": float(row["benchmark_account"]) / initial_cash,
+                        "relative_equity": float(row["account"]) / float(row["benchmark_account"]),
+                        "excess_return_pp": (float(row["account"]) - float(row["benchmark_account"])) / initial_cash * 100,
+                    } if pd.notna(row.get("benchmark_account")) and float(row["benchmark_account"]) > 0 else {}),
                 }
             )
 

@@ -18,7 +18,7 @@ from custom_bt.factor_direction import orient_expression
 from repositories import company_source
 from repositories.factor_run_store import confirmed_records
 from repositories.panel_store import load_panel_for_pool, expression_fields, expression_lookback
-from custom_bt.engine import BacktestConfig, run_backtest
+from custom_bt.engine import BacktestConfig, attach_benchmark, equal_weight_benchmark, run_backtest
 from adapters.expressions import evaluate_expression
 from custom_bt.pools import load_pool_codes, load_pool_manifest
 from services.report_service import save_result
@@ -1114,6 +1114,7 @@ def compose_factors(
     size_entries: list[dict[str, Any]] = []
     (output_base / composition_id).mkdir(parents=True, exist_ok=True)
     target = _evaluation_window(make_forward_return_target(panel, int(target_horizon)), panel)
+    benchmark = None
     for size in sizes:
         if len(full_selection.components) < size:
             continue
@@ -1166,6 +1167,9 @@ def compose_factors(
             "planned_weight_per_stock": screen["planned_weight_per_stock"],
         }
         backtest = run_backtest(panel, composite_alpha, config)
+        if benchmark is None:
+            benchmark = equal_weight_benchmark(panel, config)
+        attach_benchmark(backtest, benchmark)
         is_positive_backtest = bool(_as_float(backtest.summary.get("total_return"), 0.0) > 0.0)
         run_name = f"{composition_id}_size_{size:03d}"
         metadata = {

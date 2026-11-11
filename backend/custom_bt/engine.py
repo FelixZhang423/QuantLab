@@ -89,7 +89,7 @@ def _tradable(row: pd.Series) -> bool:
     return bool(row.get("Ifsuspend", 0) == 0 and pd.notna(row.get("open")) and row.get("open", 0) > 0)
 
 
-def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfig) -> BacktestResult:
+def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame | None, config: BacktestConfig) -> BacktestResult:
     if config.rebalance_freq not in {"1D", "1W", "2W", "1M"} or config.price != "next_open":
         raise ValueError("Supported rebalance_freq: 1D/1W/2W/1M; price must be next_open")
     for name in ("commission", "transfer_fee", "stamp_duty", "buy_cost", "sell_cost", "slippage", "min_cost"):
@@ -101,7 +101,8 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
     if config.top_k < 1 or not 0 < config.max_weight_per_stock <= 1:
         raise ValueError("top_k must be positive and max_weight_per_stock must be in (0, 1]")
     data = panel.copy()
-    scores = alpha.copy()
+    equal_weight = alpha is None
+    scores = panel[["date", "code"]].assign(alpha=0.0) if equal_weight else alpha.copy()
     data["date"] = pd.to_datetime(data["date"])
     scores["date"] = pd.to_datetime(scores["date"])
     data["code"] = data["code"].astype(str).str.zfill(6)
@@ -136,7 +137,8 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
 
         if date in rebalance_dates and signal_date is not None and signal_date in alpha_by_date:
             next_panel = today
-            raw_scores = alpha_by_date[signal_date].dropna().sort_values(ascending=False)
+            ranked = alpha_by_date[signal_date]
+            raw_scores = ranked if equal_weight else ranked.dropna().sort_values(ascending=False)
             candidates = []
             for code in raw_scores.index:
                 if code not in next_panel.index:
@@ -147,7 +149,7 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
                 if config.exclude_limit_up_buy and row.get("if_up", 0) == 1 and code not in holdings:
                     continue
                 candidates.append(code)
-                if len(candidates) >= config.top_k:
+                if not equal_weight and len(candidates) >= config.top_k:
                     break
 
             account_before = cash + sum(
@@ -245,3 +247,14 @@ def run_backtest(panel: pd.DataFrame, alpha: pd.DataFrame, config: BacktestConfi
     summary = performance_summary(daily_report, config.initial_cash)
     annual = annual_metrics(daily_report)
     return BacktestResult(daily_report=daily_report, positions=positions, trades=trades, summary=summary, annual=annual)
+
+
+def equal_weight_benchmark(panel: pd.DataFrame, config: BacktestConfig) -> pd.Series:
+    """同池全量等权，沿用策略的成交、成本、调仓和权重约束。"""
+    report = run_backtest(panel, None, config).daily_report
+    return report.set_index("date")["account"] if not report.empty else pd.Series(dtype=float)
+
+
+def attach_benchmark(result: BacktestResult, benchmark: pd.Series) -> None:
+    if not result.daily_report.empty:
+        result.daily_report["benchmark_account"] = result.daily_report["date"].map(benchmark)

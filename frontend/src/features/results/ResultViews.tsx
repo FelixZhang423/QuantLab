@@ -186,7 +186,8 @@ function RealResultView({
         <Col span={4}><RealMetric title="胜率" value={metrics.winRate} tone="cyan" /></Col>
       </Row>
       <Row gutter={16}>
-        <Col span={15}><Card title="策略净值与回撤" className="data-card">{detail.equity.length > 0 ? <EquityChart data={detail.equity} /> : <Empty description="无每日净值数据" />}</Card></Col>
+        <Col span={15}><Card title="策略净值与回撤" className="data-card"
+          extra={detail.equity.at(-1)?.excess_return_pp != null && <Text>累计收益差 {detail.equity.at(-1)?.excess_return_pp?.toFixed(2)} 个百分点</Text>}>{detail.equity.length > 0 ? <EquityChart data={detail.equity} /> : <Empty description="无每日净值数据" />}</Card></Col>
         <Col span={9}><Card title="年度收益" extra={<Text type="secondary">红涨绿跌</Text>} className="data-card">{detail.yearly.length > 0 ? <YearlyChart data={detail.yearly} /> : <Empty description="无年度指标" />}</Card></Col>
       </Row>
       <Card title="年度指标" className="data-card"><Table rowKey="year" size="middle" pagination={false} scroll={{ x: 1050 }} columns={yearlyColumns} dataSource={detail.yearly} /></Card>

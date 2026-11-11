@@ -9,7 +9,7 @@ export const yearlyData: YearlyDatum[] = [
   { year: "2026", returns: 11.23, sharpe: 1.45, drawdown: -5.8, turnover: 32.6, cost: 0.57, winRate: 55.1 },
 ];
 
-export type EquityPoint = { date: string; equity: number; drawdown: number };
+export type EquityPoint = { date: string; equity: number; drawdown: number; benchmark_equity?: number; relative_equity?: number; excess_return_pp?: number };
 
 export function makeEquityData(seed = 0): EquityPoint[] {
   const points: EquityPoint[] = [];

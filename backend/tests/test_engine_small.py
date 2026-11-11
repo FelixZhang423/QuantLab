@@ -45,6 +45,9 @@ class EngineSmallTests(unittest.TestCase):
 
         result = run_backtest(panel, panel[["date", "code", "alpha"]], cfg)
 
+        benchmark = run_backtest(panel, None, cfg)
+        self.assertEqual(benchmark.daily_report.iloc[1]["holding_count"], 3)
+        self.assertEqual(result.daily_report.iloc[1]["holding_count"], 2)
         self.assertFalse(result.daily_report.empty)
         self.assertFalse(result.positions.empty)
         self.assertFalse(result.trades.empty)

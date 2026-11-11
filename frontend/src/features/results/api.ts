@@ -9,7 +9,7 @@ export type ResultMetrics = {
   winRate: number | null;
 };
 
-export type EquityPoint = { date: string; equity: number; drawdown: number };
+export type EquityPoint = { date: string; equity: number; drawdown: number; benchmark_equity?: number; relative_equity?: number; excess_return_pp?: number };
 export type YearlyDatum = { year: string; returns: number; sharpe: number; drawdown: number; turnover: number; cost: number; winRate: number };
 
 export type ResultSummary = {
