@@ -885,7 +885,9 @@ class FactorCompositionTests(unittest.TestCase):
 
             result = compose_factors(
                 snapshot_root=root / "snapshots",
-                pools_root=root / "pools",
+                pools_root=root / "missing_pools",
+                pool_manifest=pool_manifest,
+                pool_codes=["000001", "000002", "000003", "000004"],
                 pool_id=pool_manifest["pool_id"],
                 factor_run_dirs=[run_dir],
                 outputs_root=root / "outputs" / "saved_backtests",
@@ -930,3 +932,16 @@ class FactorCompositionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_old_composition_job_resolves_mysql_pool_without_local_files(tmp_path, monkeypatch):
+    import pytest
+    from repositories import mysql_store, company_source
+    from custom_bt import factor_composition as module
+    manifest = {"pool_id": "mysql_pool", "data_source": "clickhouse", "source_signature": company_source.source_signature()}
+    monkeypatch.setattr(mysql_store, "fetch_pool", lambda pool_id: {"manifest": manifest, "codes": ["000001"]})
+    def reached_records(*args):
+        raise RuntimeError("pool resolved")
+    monkeypatch.setattr(module, "_load_records_from_factor_run", reached_records)
+    with pytest.raises(RuntimeError, match="pool resolved"):
+        compose_factors(tmp_path / "missing", "mysql_pool", [tmp_path / "run"], tmp_path / "output", {})

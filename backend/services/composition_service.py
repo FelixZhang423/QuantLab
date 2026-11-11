@@ -304,6 +304,8 @@ def create_factor_composition(request: FactorCompositionRequest) -> Dict[str, An
         "pools_root": str(common.POOLS_ROOT),
         "pool_id": request.pool_id,
         "factor_run_dirs": [str(path) for path in run_dirs],
+        "pool_manifest": pool_manifest,
+        "pool_codes": _pool_codes,
         "outputs_root": str(common.RESULTS_ROOT),
         "backtest_config": backtest_config,
         "selection_metric": request.selection_metric,

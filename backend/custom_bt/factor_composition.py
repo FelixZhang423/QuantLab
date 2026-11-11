@@ -975,6 +975,8 @@ def compose_factors(
     snapshot_root: str | Path | None = None,
     snapshot_id: str | None = None,
     as_of: str | None = None,
+    pool_manifest: Mapping[str, Any] | None = None,
+    pool_codes: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     if z_clip is not None and (not np.isfinite(z_clip) or float(z_clip) <= 0):
         raise ValueError("z_clip must be a positive finite value")
@@ -985,7 +987,25 @@ def compose_factors(
         )
         if not requested_factor_ids:
             raise ValueError("factor_ids must not be empty when provided")
-    pool_manifest = load_pool_manifest(pools_root, pool_id)
+    if pool_manifest is None or pool_codes is None:
+        try:
+            resolved_manifest = load_pool_manifest(pools_root, pool_id)
+            resolved_codes = load_pool_codes(pools_root, pool_id)
+        except FileNotFoundError:
+            from repositories.mysql_store import fetch_pool
+            stored = fetch_pool(pool_id)
+            if not stored:
+                raise ValueError(f"pool not found locally or in MySQL: {pool_id}") from None
+            resolved_manifest = stored.get("manifest") or {}
+            resolved_codes = stored.get("codes") or []
+        pool_manifest = dict(pool_manifest) if pool_manifest is not None else resolved_manifest
+        pool_codes = list(pool_codes) if pool_codes is not None else resolved_codes
+    pool_manifest = dict(pool_manifest)
+    if pool_manifest.get("pool_id") not in (None, pool_id):
+        raise ValueError("pool manifest ID does not match requested pool")
+    codes = list(dict.fromkeys(str(code).strip() for code in pool_codes if str(code).strip()))
+    if not codes:
+        raise ValueError("pool has no stock codes")
     source = company_source.resolve_data_source(data_source, pool_manifest)
     source_signature = company_source.source_signature()
     if source_signature and pool_manifest.get("source_signature") and source_signature != pool_manifest.get("source_signature"):
@@ -1026,7 +1046,6 @@ def compose_factors(
     if not requested_sizes:
         raise ValueError("sweep_sizes must contain at least one positive size no larger than max_factors")
     required_size = max(requested_sizes)
-    codes = load_pool_codes(pools_root, pool_id)
     parent_snapshots = sorted({m["snapshot_id"] for m in run_manifests if m.get("snapshot_id")})
     if snapshot_id is None and len(parent_snapshots) > 1:
         raise ValueError("Factor runs use different snapshots; explicitly select a compatible composition snapshot")
