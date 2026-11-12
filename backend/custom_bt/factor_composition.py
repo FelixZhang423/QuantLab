@@ -18,7 +18,7 @@ from custom_bt.factor_direction import orient_expression
 from repositories import company_source
 from repositories.factor_run_store import confirmed_records
 from repositories.panel_store import load_panel_for_pool, expression_fields, expression_lookback
-from custom_bt.engine import BacktestConfig, attach_benchmark, equal_weight_benchmark, run_backtest
+from custom_bt.engine import BacktestConfig, attach_benchmark, attach_random_topk, equal_weight_benchmark, random_topk_returns, run_backtest
 from adapters.expressions import evaluate_expression
 from custom_bt.pools import load_pool_codes, load_pool_manifest
 from services.report_service import save_result
@@ -1169,7 +1169,9 @@ def compose_factors(
         backtest = run_backtest(panel, composite_alpha, config)
         if benchmark is None:
             benchmark = equal_weight_benchmark(panel, config)
+            random_returns = random_topk_returns(panel, config)
         attach_benchmark(backtest, benchmark)
+        attach_random_topk(backtest, random_returns)
         is_positive_backtest = bool(_as_float(backtest.summary.get("total_return"), 0.0) > 0.0)
         run_name = f"{composition_id}_size_{size:03d}"
         metadata = {

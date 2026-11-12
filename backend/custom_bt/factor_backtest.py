@@ -14,7 +14,7 @@ from repositories import company_source
 from custom_bt.canonical_expression import canonicalize_alphagen
 from custom_bt.factor_direction import orient_expression
 from repositories.panel_store import load_panel_for_pool, expression_fields, expression_lookback
-from custom_bt.engine import BacktestConfig, attach_benchmark, equal_weight_benchmark, run_backtest
+from custom_bt.engine import BacktestConfig, attach_benchmark, attach_random_topk, equal_weight_benchmark, random_topk_returns, run_backtest
 from custom_bt.factor_adapter import validate_backtest_expression, ExpressionAdapterError
 from custom_bt.pools import load_pool_codes, load_pool_manifest
 from services.report_service import save_result
@@ -125,6 +125,7 @@ def backtest_accepted_factors(
     accepted = confirmed_records(factor_path)
     indexed: List[Dict[str, Any]] = []
     benchmark = equal_weight_benchmark(panel, config)
+    random_returns = random_topk_returns(panel, config)
     for index, record in enumerate(accepted, start=1):
         expression = str(record.get("expression", "")).strip()
         current_id = str(record.get("factor_id") or (_factor_id(index, expression) if expression else f"factor_{index:04d}"))
@@ -188,6 +189,7 @@ def backtest_accepted_factors(
                 )
                 result = run_backtest(panel, alpha, config)
                 attach_benchmark(result, benchmark)
+                attach_random_topk(result, random_returns)
                 run_key = f"{run_key_prefix}/{factor_id_value}"
                 save_result(
                     result,

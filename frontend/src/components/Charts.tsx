@@ -2,6 +2,13 @@ import { useEffect, useRef } from "react";
 import * as echarts from "echarts";
 import type { EquityPoint, YearlyDatum } from "../features/results/mock";
 
+const equityMetricHelp: Record<string, string> = {
+  "策略净值": "当日收盘账户总资产除以初始资金，已计入交易费用和滑点。",
+  "回撤": "策略净值相对截至当日的历史最高净值的跌幅，使用右侧百分比轴。",
+  "同池等权净值": "在相同股票池和交易规则下，按调仓频率恢复等权后的净值，已计入交易成本。",
+  "相对净值": "策略净值除以同池等权净值。高于 1 表示累计表现领先基线。",
+};
+
 export function EquityChart({ data, compact = false }: { data: EquityPoint[]; compact?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -19,7 +26,7 @@ export function EquityChart({ data, compact = false }: { data: EquityPoint[]; co
         formatter: (params: Array<{ axisValue: string; marker: string; seriesName: string; value: number }>) =>
           `<b>${params[0].axisValue}</b><br/>${params.map((p) => `${p.marker}${p.seriesName}：${p.value}${p.seriesName === "回撤" ? "%" : ""}`).join("<br/>")}`,
       },
-      legend: { data: ["策略净值", "回撤", ...(hasBenchmark ? ["同池等权净值", "相对净值"] : [])], top: 0, right: 8, textStyle: { color: "#64748b" } },
+      legend: { tooltip: { show: true, formatter: ({ name }: { name: string }) => equityMetricHelp[name] ?? "" }, data: ["策略净值", "回撤", ...(hasBenchmark ? ["同池等权净值", "相对净值"] : [])], top: 0, right: 8, textStyle: { color: "#64748b" } },
       grid: { left: 48, right: 54, top: 38, bottom: compact ? 28 : 48 },
       xAxis: { type: "category", boundaryGap: false, data: data.map((p) => p.date), axisLabel: { hideOverlap: true } },
       yAxis: [

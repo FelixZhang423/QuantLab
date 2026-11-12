@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 import math
 
+import numpy as np
 import pandas as pd
 
 from custom_bt.metrics import annual_metrics, performance_summary
@@ -258,3 +259,25 @@ def equal_weight_benchmark(panel: pd.DataFrame, config: BacktestConfig) -> pd.Se
 def attach_benchmark(result: BacktestResult, benchmark: pd.Series) -> None:
     if not result.daily_report.empty:
         result.daily_report["benchmark_account"] = result.daily_report["date"].map(benchmark)
+
+
+def random_topk_returns(panel: pd.DataFrame, config: BacktestConfig) -> pd.Series:
+    """Ten reproducible random rankings with the strategy's TopK and execution rules."""
+    scores = panel[["date", "code"]].drop_duplicates().sort_values(["date", "code"])
+    returns = []
+    for seed in range(10):
+        scores["alpha"] = np.random.default_rng(seed).random(len(scores))
+        result = run_backtest(panel, scores, config)
+        returns.append(result.summary["total_return"])
+    return pd.Series(returns, dtype=float)
+
+
+def attach_random_topk(result: BacktestResult, returns: pd.Series) -> None:
+    strategy_return = result.summary["total_return"]
+    result.summary.update(
+        random_topk_runs=int(len(returns)),
+        random_topk_p10=float(returns.quantile(0.1)),
+        random_topk_median=float(returns.median()),
+        random_topk_p90=float(returns.quantile(0.9)),
+        random_topk_win_fraction=float((returns < strategy_return).mean()),
+    )

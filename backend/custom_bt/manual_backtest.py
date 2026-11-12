@@ -21,7 +21,7 @@ import pandas as pd
 from repositories import company_source
 from custom_bt.canonical_expression import normalize_expression
 from repositories.panel_store import expression_fields, expression_lookback
-from custom_bt.engine import BacktestConfig, attach_benchmark, equal_weight_benchmark, run_backtest
+from custom_bt.engine import BacktestConfig, attach_benchmark, attach_random_topk, equal_weight_benchmark, random_topk_returns, run_backtest
 from adapters.expressions import evaluate_expression
 from custom_bt.pools import load_pool_codes, load_pool_manifest
 from services.report_service import save_result
@@ -176,6 +176,7 @@ def run_manual_backtest(
     )
     result = run_backtest(panel, alpha, config)
     attach_benchmark(result, equal_weight_benchmark(panel, config))
+    attach_random_topk(result, random_topk_returns(panel, config))
 
     outputs_root = Path(output_root).expanduser().resolve()
     saves_root = outputs_root / "manual"

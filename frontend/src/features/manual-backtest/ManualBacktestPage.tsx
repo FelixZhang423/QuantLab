@@ -1,3 +1,4 @@
+import { RandomTopKComparison } from "../results/RandomTopKComparison";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert, Button, Card, Col, DatePicker, Empty, Flex, Form, Input, InputNumber, message,
@@ -117,7 +118,9 @@ function ResultPreview({
         <Col span={8}><MetricCard title="胜率" value={metrics.winRate} tone="cyan" /></Col>
       </Row>
       <Row gutter={12}>
-        <Col span={15}><Card title="策略净值与回撤" className="data-card">{detail.equity.length > 0 ? <EquityChart data={detail.equity} /> : <Empty description="无每日净值数据" />}</Card></Col>
+        <Col span={15}><Card title="策略净值与回撤" className="data-card">{detail.equity.length > 0 ? <EquityChart data={detail.equity} /> : <Empty description="无每日净值数据" />}
+          <RandomTopKComparison summary={detail.summary} />
+        </Card></Col>
         <Col span={9}><Card title="年度收益" extra={<Text type="secondary">红涨绿跌</Text>} className="data-card">{detail.yearly.length > 0 ? <YearlyChart data={detail.yearly} /> : <Empty description="无年度指标" />}</Card></Col>
       </Row>
       <Card title="年度指标" className="data-card">

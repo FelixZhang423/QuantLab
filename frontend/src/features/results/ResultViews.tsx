@@ -1,7 +1,8 @@
+import { RandomTopKComparison } from "./RandomTopKComparison";
 import { useEffect, useState } from "react";
 import {
   Alert, Button, Card, Col, Descriptions, Divider, Empty, Flex, Input, Result, Row, Segmented, Select,
-  Skeleton, Space, Statistic, Table, Tag, Typography, message,
+  Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography, message,
 } from "antd";
 import type { TableColumnsType } from "antd";
 import { CloudDownloadOutlined, ExperimentOutlined, ReloadOutlined } from "@ant-design/icons";
@@ -187,7 +188,9 @@ function RealResultView({
       </Row>
       <Row gutter={16}>
         <Col span={15}><Card title="策略净值与回撤" className="data-card"
-          extra={detail.equity.at(-1)?.excess_return_pp != null && <Text>累计收益差 {detail.equity.at(-1)?.excess_return_pp?.toFixed(2)} 个百分点</Text>}>{detail.equity.length > 0 ? <EquityChart data={detail.equity} /> : <Empty description="无每日净值数据" />}</Card></Col>
+          extra={detail.equity.at(-1)?.excess_return_pp != null && <Tooltip title="策略累计收益减去同池等权累计收益，以百分点表示。"><Text tabIndex={0}>累计收益差 {detail.equity.at(-1)?.excess_return_pp?.toFixed(2)} 个百分点</Text></Tooltip>}>{detail.equity.length > 0 ? <EquityChart data={detail.equity} /> : <Empty description="无每日净值数据" />}
+          <RandomTopKComparison summary={detail.summary} />
+        </Card></Col>
         <Col span={9}><Card title="年度收益" extra={<Text type="secondary">红涨绿跌</Text>} className="data-card">{detail.yearly.length > 0 ? <YearlyChart data={detail.yearly} /> : <Empty description="无年度指标" />}</Card></Col>
       </Row>
       <Card title="年度指标" className="data-card"><Table rowKey="year" size="middle" pagination={false} scroll={{ x: 1050 }} columns={yearlyColumns} dataSource={detail.yearly} /></Card>
