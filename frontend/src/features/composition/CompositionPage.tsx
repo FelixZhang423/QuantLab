@@ -10,7 +10,7 @@ import {
   ReloadOutlined, ToolOutlined,
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
-import type { PageNav, TaskAdder } from "../../app/navigation";
+import type { PageNav } from "../../app/navigation";
 import {
   api, useApiData, useJobPolling,
   type AcceptedFactor, type CompositionFactorWeight, type CompositionScreenRow,
@@ -79,10 +79,10 @@ const BLOCKED_LABELS: Record<string, string> = {
   next_open_limit_up: "下一交易日涨停",
 };
 
-export function CompositionPage({ addTask, navigate, initialResult }: { addTask: TaskAdder; navigate: PageNav; initialResult?: [string, string] }) {
-  void addTask;
+export function CompositionPage({ navigate, initialResult, resultsOnly = false }: { navigate: PageNav; initialResult?: [string, string | null, string[]?]; resultsOnly?: boolean }) {
 
   const [poolId, setPoolId] = useState<string | undefined>(initialResult?.[0]);
+  const [resultRunIds, setResultRunIds] = useState(initialResult?.[2] ?? []);
   const [runIds, setRunIds] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("auto");
   const [maxFactors, setMaxFactors] = useState(20);
@@ -106,7 +106,7 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
   const [refreshSignalDate, setRefreshSignalDate] = useState<Dayjs | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const finishedRef = useRef<string | null>(null);
-  const lastPoolRef = useRef<string | null>(null);
+  const lastPoolRef = useRef<string | null>(initialResult?.[0] ?? null);
 
   const poolsApi = useApiData(api.pools);
   const pools = useMemo(() => poolsApi.data?.pools ?? [], [poolsApi.data]);
@@ -132,6 +132,7 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
   useEffect(() => {
     if (lastPoolRef.current === (poolId ?? null)) return;
     lastPoolRef.current = poolId ?? null;
+    setResultRunIds([]);
     setRunIds([]);
     setSelectedFactorIds([]);
     setCompositionId(null);
@@ -158,6 +159,7 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
 
   const runKey = useMemo(() => [...runIds].sort().join("|"), [runIds]);
   useEffect(() => {
+    if (resultsOnly) return;
     setSelectedFactorIds([]);
     setCompositionId(null);
     setActiveSize(null);
@@ -201,11 +203,14 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
     [poolId],
   );
   const historyOptions = useMemo(
-    () => (historyApi.data?.compositions ?? []).map((item) => ({
+    () => (historyApi.data?.compositions ?? []).filter((item) =>
+      resultRunIds.length === 0 || (item.source_factor_run_ids?.length === resultRunIds.length &&
+        resultRunIds.every((id) => item.source_factor_run_ids.includes(id))),
+    ).map((item) => ({
       value: item.composition_id,
       label: `${fmtDateTime(item.created_at)} · ${item.composition_id} · ${methodLabel(item.weight_method)} · ${item.selected_count ?? 0} 因子`,
     })),
-    [historyApi.data],
+    [historyApi.data, resultRunIds],
   );
 
   const { job, error: jobError } = useJobPolling(jobId);
@@ -251,7 +256,8 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
     setActiveSize(nextSize);
     historyApi.reload();
     message.success(`因子组合完成：${nextId}`);
-  }, [jobId, job?.status, job?.result, historyApi.reload]);
+    if (poolId) navigate("composition_results", undefined, JSON.stringify([poolId, nextId]));
+  }, [jobId, job?.status, job?.result, historyApi.reload, poolId, navigate]);
 
   const active = Boolean(jobId) && !jobError && (!job || job.status === "queued" || job.status === "running");
   const failed = Boolean(jobId) && (Boolean(jobError) || job?.status === "failed" || job?.status === "missing");
@@ -606,6 +612,14 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
                 label: `${pool.name} · ${pool.n_stocks} 只`,
               }))}
             />
+            {resultsOnly && resultRunIds.length > 0 && <Space wrap>
+              <Text strong>因子运行</Text>
+              {resultRunIds.map((id) => <Tag key={id}>{usableRuns.find((run) => run.run_id === id)?.run_name || id}</Tag>)}
+              <Button type="link" onClick={() => setResultRunIds([])}>查看全部运行</Button>
+            </Space>}
+            {resultsOnly ? <Select value={compositionId ?? undefined} onChange={loadComposition}
+              loading={historyApi.loading} disabled={!poolId} options={historyOptions}
+              placeholder="选择历史组合" style={{ minWidth: 330 }} /> : <>
             <Text strong>因子运行</Text>
             <Select
               mode="multiple"
@@ -628,9 +642,9 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
               onClick={() => { runsApi.reload(); detailsApi.reload(); }}
             >
               刷新因子
-            </Button>
+            </Button></>}
           </Space>
-          <Space wrap>
+          {!resultsOnly && <Space wrap>
             <Text strong>权重方法</Text>
             <Tag color="blue">等权 1/N</Tag>
             <Button
@@ -640,9 +654,10 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
             >
               提交组合
             </Button>
-          </Space>
+          </Space>}
         </Flex>
 
+        {!resultsOnly && <>
         {poolsApi.error && (
           <Alert
             type="error" showIcon className="note-action"
@@ -721,16 +736,8 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
             <Text type="secondary">实际提交 {effectiveSizes.length ? effectiveSizes.join(" / ") : "—"}</Text>
           </Space>
           <Space wrap>
-            <Text strong><HistoryOutlined /> 历史组合</Text>
-            <Select
-              value={compositionId ?? undefined}
-              onChange={loadComposition}
-              loading={historyApi.loading}
-              showSearch optionFilterProp="label"
-              placeholder={historyOptions.length ? "载入已保存组合" : "暂无历史组合"}
-              style={{ minWidth: 330 }}
-              options={historyOptions}
-            />
+            <Button icon={<HistoryOutlined />} onClick={() => navigate("composition_results", undefined, poolId ? JSON.stringify([poolId, null, runIds]) : undefined)}>查看组合结果</Button>
+
           </Space>
         </Flex>
 
@@ -813,9 +820,10 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
             </ul>}
           />
         )}
+        </>}
       </Card>
 
-      <Card
+      {!resultsOnly && <Card
         title={<Space><ToolOutlined />候选合格因子<Tag>{candidateRows.length}</Tag>
           {selectionMode === "manual" && <Tag color="blue">已选 {selectedFactorIds.length}</Tag>}
         </Space>}
@@ -865,8 +873,9 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
             locale={{ emptyText: <Empty description="所选运行没有合格因子" /> }}
           />
         )}
-      </Card>
+      </Card>}
 
+      {resultsOnly && !showResultPanel && <Card><Empty description="请选择股票池和历史组合" /></Card>}
       {showResultPanel && (
         <Card
           title={<Space>
@@ -965,28 +974,23 @@ export function CompositionPage({ addTask, navigate, initialResult }: { addTask:
                 ]}
               />
 
-              <Divider orientation="left" plain>因子权重与多规模对比</Divider>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Table
-                    rowKey="factor_id" size="small"
-                    columns={weightColumns} dataSource={detail.weights}
-                    pagination={false} scroll={{ x: 520 }}
-                    locale={{ emptyText: <Empty description="没有因子权重记录" /> }}
-                  />
-                </Col>
-                <Col span={12}>
-                  <Table
-                    rowKey="size" size="small" className="clickable-rows"
-                    columns={sizeColumns} dataSource={detail.manifest.sizes}
-                    pagination={false} scroll={{ x: 760 }}
-                    rowClassName={(record) => record.size === displaySize ? "highlight-row" : ""}
-                    onRow={(record) => ({ onClick: () => setActiveSize(record.size) })}
-                    locale={{ emptyText: <Empty description="没有规模结果" /> }}
-                  />
-                  <Text type="secondary">点击规模行可切换下方选股清单；默认展示最大规模。</Text>
-                </Col>
-              </Row>
+              <Divider orientation="left" plain>因子权重</Divider>
+              <Table
+                rowKey="factor_id" size="small"
+                columns={weightColumns} dataSource={detail.weights}
+                pagination={false} scroll={{ x: 520 }}
+                locale={{ emptyText: <Empty description="没有因子权重记录" /> }}
+              />
+              <Divider orientation="left" plain>多规模对比</Divider>
+              <Table
+                rowKey="size" size="small" className="clickable-rows"
+                columns={sizeColumns} dataSource={detail.manifest.sizes}
+                pagination={false} scroll={{ x: 760 }}
+                rowClassName={(record) => record.size === displaySize ? "highlight-row" : ""}
+                onRow={(record) => ({ onClick: () => setActiveSize(record.size) })}
+                locale={{ emptyText: <Empty description="没有规模结果" /> }}
+              />
+              <Text type="secondary">点击规模行可切换下方选股清单；默认展示最大规模。</Text>
 
               <Divider orientation="left" plain>最新一期选股清单</Divider>
               <Flex justify="space-between" gap={12} wrap align="center">

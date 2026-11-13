@@ -10,7 +10,7 @@ import {
   ToolOutlined, UserOutlined,
 } from "@ant-design/icons";
 import { TaskWorkspace } from "../features/tasks/TaskWorkspace";
-import type { Page, PageNav, Role, TaskAdder } from "./navigation";
+import type { Page, PageNav, Role } from "./navigation";
 import { Brand } from "../components/Brand";
 import { LoginPage } from "../features/auth";
 
@@ -36,11 +36,10 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
   const [page, setPage] = useState<Page>("tasks");
   const [selectedRunKey, setSelectedRunKey] = useState<string | undefined>();
   const navigate = (target: Page, _id?: number, runKey?: string) => {
-    setPage(target === "dashboard" ? "tasks" : target);
+    setPage(target);
     setSelectedRunKey(runKey);
     window.scrollTo(0, 0);
   };
-  const addTask: TaskAdder = () => 0;
   const menuItems: MenuProps["items"] = [
     { key: "tasks", icon: <FileTextOutlined />, label: "任务中心" },
     { key: "data", icon: <DatabaseOutlined />, label: "数据配置", children: [
@@ -58,7 +57,10 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
       { key: "backtest", label: "单因子回测" },
       { key: "result", label: "回测结果" },
     ] },
-    { key: "composition", icon: <ToolOutlined />, label: "组合选股" },
+    { key: "composition-group", icon: <ToolOutlined />, label: "组合选股", children: [
+      { key: "composition", label: "因子组合" },
+      { key: "composition_results", label: "组合结果" },
+    ] },
     { key: "system", icon: <SettingOutlined />, label: "系统管理", children: [
       { key: "users", label: "用户与权限" },
       { key: "audit", label: "审计日志" },
@@ -66,7 +68,6 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
   ];
   const titles: Record<Page, { title: string; subtitle: string }> = {
     login: { title: "", subtitle: "" },
-    dashboard: { title: "任务中心", subtitle: "掌握数据、任务与策略表现" },
     tasks: { title: "任务中心", subtitle: "监控计算任务全生命周期" },
     backtest: { title: "单因子回测", subtitle: "配置 Alpha 表达式与交易参数" },
     result: { title: "回测结果", subtitle: "指标、净值、年度表现与结果文件" },
@@ -77,7 +78,8 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
     pools: { title: "股票池创建", subtitle: "创建与查看命名股票池" },
     factor_generation: { title: "因子生成", subtitle: "PPO 自动搜索可解释因子表达式" },
     factor_backtest: { title: "批量回测", subtitle: "批量回测合格因子" },
-    composition: { title: "组合选股", subtitle: "mutual IC 去重 + 权重优化 + 多规模回测" },
+    composition_results: { title: "组合结果", subtitle: "查看历史组合、回测表现与选股明细" },
+    composition: { title: "因子组合", subtitle: "mutual IC 去重 + 权重优化 + 多规模回测" },
     users: { title: "用户与权限", subtitle: "平台账号与角色管理" },
     audit: { title: "审计日志", subtitle: "操作留痕与合规追溯" },
   };
@@ -89,18 +91,18 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
   const navigatePages: PageNav = (target, id, runKey) => navigate(target as Page, id, runKey);
   const taskWorkspace = <TaskWorkspace navigate={navigatePages} />;
   const pageMap: Record<Exclude<Page, "login">, React.ReactNode> = {
-    dashboard: taskWorkspace,
     tasks: taskWorkspace,
     backtest: <ManualBacktestPage onOpenResult={(runKey) => navigate("result", undefined, runKey)} />,
     result: <ResultPage navigate={navigate} initialRunKey={selectedRunKey} />,
-    data_overview: <DataOverviewPage addTask={addTask} navigate={navigatePages} />,
+    data_overview: <DataOverviewPage navigate={navigatePages} />,
     fields: <FieldsPage />,
     stocks: <StocksPage />,
     operators: <OperatorsPage />,
-    pools: <PoolsPage addTask={addTask} navigate={navigatePages} />,
-    factor_generation: <FactorGenerationPage initialRunId={selectedRunKey} addTask={addTask} navigate={navigatePages} />,
+    pools: <PoolsPage navigate={navigatePages} />,
+    factor_generation: <FactorGenerationPage initialRunId={selectedRunKey} navigate={navigatePages} />,
     factor_backtest: <FactorBacktestPage navigate={navigatePages} />,
-    composition: <CompositionPage initialResult={page === "composition" && selectedRunKey ? JSON.parse(selectedRunKey) : undefined} addTask={addTask} navigate={navigatePages} />,
+    composition: <CompositionPage key="composition" navigate={navigatePages} />,
+    composition_results: <CompositionPage key={selectedRunKey ?? "composition_results"} resultsOnly initialResult={page === "composition_results" && selectedRunKey ? JSON.parse(selectedRunKey) : undefined} navigate={navigatePages} />,
     users: <UsersPage role={role} />,
     audit: <AuditPage role={role} />,
   };
@@ -109,7 +111,7 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
     <Layout className="app-shell">
       <Sider width={220} collapsedWidth={72} collapsed={collapsed} className="app-sider">
         <div className="sider-brand"><Brand light /></div>
-        <Menu theme="dark" mode="inline" selectedKeys={[page === "dashboard" ? "tasks" : page]} defaultOpenKeys={["data", "stock-group", "backtest-group"]} items={menuItems} onClick={({ key }) => { if (["dashboard", "tasks", "backtest", "result", "data_overview", "fields", "stocks", "operators", "pools", "factor_generation", "factor_backtest", "composition", "users", "audit"].includes(key)) navigate(key as Page); }} />
+        <Menu theme="dark" mode="inline" selectedKeys={[page]} defaultOpenKeys={["data", "stock-group", "backtest-group", "composition-group"]} items={menuItems} onClick={({ key }) => { if (["tasks", "backtest", "result", "data_overview", "fields", "stocks", "operators", "pools", "factor_generation", "factor_backtest", "composition", "composition_results", "users", "audit"].includes(key)) navigate(key as Page); }} />
         <div className="sider-version">{!collapsed && <Text>QuantLab Prototype</Text>}<Tag>v0.9</Tag></div>
       </Sider>
       <Layout>

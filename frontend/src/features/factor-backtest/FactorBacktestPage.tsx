@@ -10,7 +10,7 @@ import dayjs from "dayjs";
 import { CATEGORY_META, FACTOR_CATEGORIES, classifyFactor, type FactorCategoryKey } from "../../shared/domain/factorCategories";
 import { FilterChips } from "../../components/FilterChips";
 import { LoadGate } from "../../components/LoadGate";
-import type { PageNav, TaskAdder } from "../../app/navigation";
+import type { PageNav } from "../../app/navigation";
 import {
   api, ApiError, useApiData, useJobPolling,
   type AcceptedFactor, type FactorBacktestRequest,

@@ -127,3 +127,31 @@ body { margin: 0; min-width: 1180px; min-height: 100vh; }
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+
+.task-status-card.ant-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  height: auto;
+  min-height: 98px;
+  padding: 16px;
+  text-align: left;
+  white-space: normal;
+}
+
+.task-status-card.ant-btn[aria-pressed="true"] {
+  border-color: currentColor;
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.task-status-icon {
+  display: grid;
+  flex: 0 0 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 10%, white);
+  font-size: 18px;
+}

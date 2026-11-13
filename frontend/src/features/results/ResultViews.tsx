@@ -13,7 +13,7 @@ import {
 import { EquityChart, YearlyChart } from "../../components/Charts";
 import { BacktestBatchPanel, SingleResultAnalysisCard } from "./backtestAnalysis";
 import type { Page } from "../../app/navigation";
-import type { YearlyDatum } from "./mock";
+import type { YearlyDatum } from "./api";
 
 const { Text, Title } = Typography;
 

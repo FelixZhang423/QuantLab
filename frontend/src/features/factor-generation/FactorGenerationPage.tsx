@@ -12,7 +12,7 @@ import { confirmationRow } from "./confirmation";
 import { CATEGORY_META, FACTOR_CATEGORIES, classifyFactor, type FactorCategoryKey } from "../../shared/domain/factorCategories";
 import { fieldCategory } from "../../shared/domain/fieldCategories";
 import { FilterChips } from "../../components/FilterChips";
-import type { PageNav, TaskAdder } from "../../app/navigation";
+import type { PageNav } from "../../app/navigation";
 import {
   api, useApiData, useJobPolling,
   type AcceptedFactor, type FactorGenerationResponse, type FactorRunDetail, type FactorRunSummary,
@@ -227,8 +227,7 @@ function poolOptions(pools: PoolInfo[]) {
   }));
 }
 
-export function FactorGenerationPage({ addTask, navigate, initialRunId }: { addTask: TaskAdder; navigate: PageNav; initialRunId?: string }) {
-  void addTask;
+export function FactorGenerationPage({ navigate, initialRunId }: { navigate: PageNav; initialRunId?: string }) {
   const [form] = Form.useForm<GenFormValues>();
   const [jobId, setJobId] = useState<string | null>(null);
   const [submission, setSubmission] = useState<FactorGenerationResponse | null>(null);

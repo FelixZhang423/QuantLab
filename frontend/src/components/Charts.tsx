@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts";
-import type { EquityPoint, YearlyDatum } from "../features/results/mock";
+import type { EquityPoint, YearlyDatum } from "../features/results/api";
 
 const equityMetricHelp: Record<string, string> = {
   "策略净值": "当日收盘账户总资产除以初始资金，已计入交易费用和滑点。",

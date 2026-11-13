@@ -1,8 +1,5 @@
-import type { Task } from "../features/tasks/mock";
-
 export type Page =
   | "login"
-  | "dashboard"
   | "tasks"
   | "backtest"
   | "result"
@@ -14,11 +11,10 @@ export type Page =
   | "factor_generation"
   | "factor_backtest"
   | "composition"
+  | "composition_results"
   | "users"
   | "audit";
 
 export type Role = "研究员" | "管理员";
 
 export type PageNav = (p: string, id?: number, runKey?: string) => void;
-
-export type TaskAdder = (task: Omit<Task, "id"> & { id?: number }) => number;

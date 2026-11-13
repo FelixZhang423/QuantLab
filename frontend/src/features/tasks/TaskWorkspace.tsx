@@ -1,5 +1,6 @@
+import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Col, Descriptions, Drawer, Flex, Row, Select, Statistic, Table, Tag } from "antd";
+import { Alert, Button, Card, Col, Descriptions, Drawer, Flex, Input, Row, Select, Statistic, Table, Tag } from "antd";
 import type { PageNav } from "../../app/navigation";
 import { apiGet, useApiData } from "../../shared/api/base";
 
@@ -33,10 +34,10 @@ const colors: Record<string, string> = {
 };
 
 const cards = [
-  { status: "running", label: "运行中" },
-  { status: "queued", label: "排队中" },
-  { status: "finished", label: "今日完成", today: true },
-  { status: "failed", label: "今日失败", today: true },
+  { status: "running", icon: SyncOutlined, color: "#1677ff", label: "运行中" },
+  { status: "queued", icon: ClockCircleOutlined, color: "#595f78", label: "排队中" },
+  { status: "finished", icon: CheckCircleOutlined, color: "#237804", label: "今日完成", today: true },
+  { status: "failed", icon: CloseCircleOutlined, color: "#c41d25", label: "今日失败", today: true },
 ];
 
 const parameterLabels: Record<string, string> = {
@@ -62,6 +63,7 @@ export function TaskWorkspace({ navigate }: { navigate: PageNav }) {
   const [status, setStatus] = useState<string>();
   const [operation, setOperation] = useState<string>();
   const [today, setToday] = useState(false);
+  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string>();
   useEffect(() => {
     if (loading) return;
@@ -70,7 +72,9 @@ export function TaskWorkspace({ navigate }: { navigate: PageNav }) {
   }, [loading, reload]);
 
   const jobs = data ?? [];
+  const query = search.trim().toLowerCase();
   const visible = jobs.filter((job) =>
+    (!query || [job.job_id, operations[job.operation], job.message].some((value) => value?.toLowerCase().includes(query))) &&
     (!status || job.status === status) && (!operation || job.operation === operation) &&
     (!today || isToday(job.updated_at)));
   const detail = jobs.find((job) => job.job_id === selected);
@@ -82,7 +86,7 @@ export function TaskWorkspace({ navigate }: { navigate: PageNav }) {
     }
     if (composition_id && typeof job.parameters.pool_id === "string" && job.operation === "compose_factors") {
       const key = JSON.stringify([job.parameters.pool_id, composition_id]);
-      return <Button type="link" onClick={() => navigate("composition", undefined, key)}>查看组合结果</Button>;
+      return <Button type="link" onClick={() => navigate("composition_results", undefined, key)}>查看组合结果</Button>;
     }
     const key = job.result.run_key;
     if (key && job.operation === "manual_backtest") {
@@ -98,18 +102,24 @@ export function TaskWorkspace({ navigate }: { navigate: PageNav }) {
     {error && <Alert type="error" showIcon message="任务状态获取失败" description={error} />}
     <Row gutter={[12, 12]}>
       {cards.map((card) => <Col key={card.status} xs={12} lg={6}>
-        <Card size="small" loading={loading && !data}>
+        <Button block className="task-status-card" aria-pressed={status === card.status && today === Boolean(card.today)}
+          style={{ color: card.color }} disabled={!data}
+          onClick={() => {
+            const active = status === card.status && today === Boolean(card.today);
+            setStatus(active ? undefined : card.status);
+            setToday(!active && Boolean(card.today));
+          }}>
+          <span className="task-status-icon"><card.icon /></span>
           <Statistic title={card.label} value={data ? jobs.filter((job) =>
             job.status === card.status && (!card.today || isToday(job.updated_at))).length : "—"} />
-          <Button type={status === card.status && today === Boolean(card.today) ? "primary" : "link"}
-            size="small" disabled={!data} onClick={() => { setStatus(card.status); setToday(Boolean(card.today)); }}>
-            筛选任务
-          </Button>
-        </Card>
+        </Button>
       </Col>)}
     </Row>
-    <Card title="任务列表" extra={<Button onClick={reload} loading={loading}>刷新</Button>}>
+    <Card title={<Flex align="center" gap={8}>任务列表{data && <Tag>{visible.length} 条</Tag>}</Flex>}
+      extra={<Button icon={<ReloadOutlined />} onClick={reload} loading={loading}>刷新</Button>}>
       <Flex gap={12} wrap style={{ marginBottom: 16 }}>
+        <Input.Search allowClear placeholder="搜索任务 ID、类型或运行信息" aria-label="搜索任务"
+          value={search} onChange={(event) => setSearch(event.target.value)} style={{ width: 300, maxWidth: "100%" }} />
         <Select allowClear placeholder="全部状态" style={{ width: 150 }} value={status}
           options={Object.entries(statuses).map(([value, label]) => ({ value, label }))}
           onChange={(value) => { setStatus(value); setToday(false); }} />

@@ -9,7 +9,7 @@ import dayjs from "dayjs";
 import { CATEGORY_META, FACTOR_CATEGORIES, classifyFactor, type FactorCategoryKey } from "../../shared/domain/factorCategories";
 import { FilterChips } from "../../components/FilterChips";
 import { LoadGate } from "../../components/LoadGate";
-import type { PageNav, TaskAdder } from "../../app/navigation";
+import type { PageNav } from "../../app/navigation";
 import { ApiError, useApiData, useJobPolling } from "../../shared/api/base";
 import { dataApi, type UniverseQuery, type UniverseStock, type UniverseStocks } from "../data-browser/api";
 import { poolApi, type PoolCreateRequest, type PoolInfo } from "./api";
@@ -83,7 +83,7 @@ function describeFilters(filters?: Record<string, unknown>): string {
   return parts.length > 0 ? parts.join("；") : "全市场（无筛选）";
 }
 
-export function PoolsPage({ addTask, navigate }: { addTask: TaskAdder; navigate: PageNav }) {
+export function PoolsPage({ navigate }: { navigate: PageNav }) {
   const [form] = Form.useForm<PoolFormValues>();
   const [submitting, setSubmitting] = useState(false);
   const [openPool, setOpenPool] = useState<PoolInfo | null>(null);
