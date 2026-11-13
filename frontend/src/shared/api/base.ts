@@ -23,6 +23,9 @@ export class ApiError extends Error {
 
 async function readResponse<T>(response: Response, path: string): Promise<T> {
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/api/auth/")) {
+      window.dispatchEvent(new Event("quantlab:session-expired"));
+    }
     // 后端用 detail 传中文原因（如「未配置 ClickHouse 密码」「需要在公司网络环境下访问」），
     // 必须带出来，否则页面只剩一个 HTTP 状态码
     let detail = "";
@@ -49,7 +52,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: { Accept: "application/json", "Content-Type": "application/json", "X-QuantLab-Request": "1" },
     body: JSON.stringify(body),
   });
   return readResponse<T>(response, path);
@@ -58,7 +61,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 export async function apiDelete<T>(path: string): Promise<T> {
   const response = await fetch(path, {
     method: "DELETE",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", "X-QuantLab-Request": "1" },
   });
   return readResponse<T>(response, path);
 }

@@ -1,6 +1,6 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
-  App as AntApp, Avatar, Breadcrumb, Button, Card, ConfigProvider, Dropdown,
+  Alert, App as AntApp, Avatar, Breadcrumb, Button, Card, ConfigProvider, Dropdown,
   Flex, Layout, Menu, Skeleton, Space, Tag, Typography,
 } from "antd";
 import type { MenuProps } from "antd";
@@ -10,9 +10,11 @@ import {
   ToolOutlined, UserOutlined,
 } from "@ant-design/icons";
 import { TaskWorkspace } from "../features/tasks/TaskWorkspace";
-import type { Page, PageNav, Role } from "./navigation";
+import type { Page, PageNav } from "./navigation";
 import { Brand } from "../components/Brand";
 import { LoginPage } from "../features/auth";
+import { authApi, roleLabel, type AuthUser } from "../features/auth/api";
+import { ApiError, useApiData } from "../shared/api/base";
 
 const ResultPage = lazy(() => import("../features/results").then((m) => ({ default: m.ResultPage })));
 const DataOverviewPage = lazy(() => import("../features/data-browser").then((m) => ({ default: m.DataOverviewPage })));
@@ -24,6 +26,7 @@ const FactorGenerationPage = lazy(() => import("../features/factor-generation").
 const FactorBacktestPage = lazy(() => import("../features/factor-backtest").then((m) => ({ default: m.FactorBacktestPage })));
 const ManualBacktestPage = lazy(() => import("../features/manual-backtest").then((m) => ({ default: m.ManualBacktestPage })));
 const CompositionPage = lazy(() => import("../features/composition").then((m) => ({ default: m.CompositionPage })));
+const PasswordDialog = lazy(() => import("../features/system/SystemPages").then((m) => ({ default: m.PasswordDialog })));
 const UsersPage = lazy(() => import("../features/system").then((m) => ({ default: m.UsersPage })));
 const AuditPage = lazy(() => import("../features/system").then((m) => ({ default: m.AuditPage })));
 
@@ -31,7 +34,9 @@ const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
 
 
-function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
+function MainShell({ user, onLogout, onSessionEnded }: { user: AuthUser; onLogout: () => void; onSessionEnded: () => void }) {
+  const role = roleLabel(user);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [page, setPage] = useState<Page>("tasks");
   const [selectedRunKey, setSelectedRunKey] = useState<string | undefined>();
@@ -61,10 +66,10 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
       { key: "composition", label: "因子组合" },
       { key: "composition_results", label: "组合结果" },
     ] },
-    { key: "system", icon: <SettingOutlined />, label: "系统管理", children: [
+    ...(user.role === "admin" ? [{ key: "system", icon: <SettingOutlined />, label: "系统管理", children: [
       { key: "users", label: "用户与权限" },
       { key: "audit", label: "审计日志" },
-    ] },
+    ] }] : []),
   ];
   const titles: Record<Page, { title: string; subtitle: string }> = {
     login: { title: "", subtitle: "" },
@@ -84,8 +89,9 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
     audit: { title: "审计日志", subtitle: "操作留痕与合规追溯" },
   };
   const profileItems: MenuProps["items"] = [
-    { key: "identity", label: <Space><Avatar size="small" icon={<UserOutlined />} /><div><Text strong>林研究员</Text><br/><Text type="secondary">{role}</Text></div></Space>, disabled: true },
+    { key: "identity", label: <Space><Avatar size="small" icon={<UserOutlined />} /><div><Text strong>{user.display_name}</Text><br/><Text type="secondary">{role}</Text></div></Space>, disabled: true },
     { type: "divider" },
+    { key: "password", label: "修改密码", onClick: () => setPasswordOpen(true) },
     { key: "logout", icon: <LogoutOutlined />, label: "退出登录", onClick: onLogout },
   ];
   const navigatePages: PageNav = (target, id, runKey) => navigate(target as Page, id, runKey);
@@ -103,8 +109,8 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
     factor_backtest: <FactorBacktestPage navigate={navigatePages} />,
     composition: <CompositionPage key="composition" navigate={navigatePages} />,
     composition_results: <CompositionPage key={selectedRunKey ?? "composition_results"} resultsOnly initialResult={page === "composition_results" && selectedRunKey ? JSON.parse(selectedRunKey) : undefined} navigate={navigatePages} />,
-    users: <UsersPage role={role} />,
-    audit: <AuditPage role={role} />,
+    users: <UsersPage />,
+    audit: <AuditPage />,
   };
   const pageContent = page === "login" ? null : pageMap[page];
   return (
@@ -122,12 +128,12 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
               <div><Breadcrumb items={[{ title: titles[page].title }]} /><Flex align="baseline" gap={10}><Title level={4}>{titles[page].title}</Title><Text type="secondary">{titles[page].subtitle}</Text></Flex></div>
             </Flex>
             <Space size={18}>
-              <Dropdown menu={{ items: profileItems }} placement="bottomRight"><Button type="text" className="profile-button"><Space><Avatar size="small" className="user-avatar">林</Avatar><Text strong>林研究员</Text><Tag color={role === "管理员" ? "gold" : "blue"}>{role}</Tag></Space></Button></Dropdown>
+              <Dropdown menu={{ items: profileItems }} placement="bottomRight"><Button type="text" className="profile-button"><Space><Avatar size="small" className="user-avatar">{user.display_name.slice(0, 1)}</Avatar><Text strong>{user.display_name}</Text><Tag color={role === "管理员" ? "gold" : "blue"}>{role}</Tag></Space></Button></Dropdown>
             </Space>
           </Flex>
         </Header>
         <Content className="app-content">
-          <Suspense fallback={<Card><Skeleton active paragraph={{ rows: 12 }} /></Card>}>{pageContent}</Suspense>
+          <Suspense fallback={<Card><Skeleton active paragraph={{ rows: 12 }} /></Card>}>{pageContent}{passwordOpen && <PasswordDialog onClose={() => setPasswordOpen(false)} onChanged={onSessionEnded} />}</Suspense>
         </Content>
       </Layout>
     </Layout>
@@ -135,8 +141,36 @@ function MainShell({ role, onLogout }: { role: Role; onLogout: () => void }) {
 }
 
 function RootApp() {
-  const [role, setRole] = useState<Role | null>(null);
-  return role ? <MainShell role={role} onLogout={() => setRole(null)} /> : <LoginPage onLogin={setRole} />;
+  const { message } = AntApp.useApp();
+  const [user, setUser] = useState<AuthUser | null>();
+  const session = useApiData(async () => {
+    try {
+      return await authApi.me();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) return null;
+      throw error;
+    }
+  });
+  useEffect(() => {
+    const expired = () => setUser(null);
+    window.addEventListener("quantlab:session-expired", expired);
+    return () => window.removeEventListener("quantlab:session-expired", expired);
+  }, []);
+  const logout = async () => {
+    try {
+      await authApi.logout();
+      setUser(null);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "退出失败");
+    }
+  };
+  if (user === undefined && session.loading) return <Card><Skeleton active /></Card>;
+  if (user === undefined && session.error) {
+    return <Alert type="error" message="无法验证登录状态" description={session.error}
+      action={<Button onClick={session.reload}>重试</Button>} />;
+  }
+  const currentUser = user === undefined ? session.data : user;
+  return currentUser ? <MainShell user={currentUser} onLogout={logout} onSessionEnded={() => setUser(null)} /> : <LoginPage onLogin={setUser} />;
 }
 
 export default function App() {

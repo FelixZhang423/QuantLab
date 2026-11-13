@@ -4,11 +4,11 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, FastAPI
 
 from api.errors import install_error_handlers
 from api.routers import (
+    auth,
     composition,
     data,
     factor_backtest,
@@ -30,13 +30,6 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="QuantLab Custom Backtester API", version="0.1.0", lifespan=_lifespan)
-# 本地开发：前端 dev server 通过 vite proxy 访问，这里放开跨域方便直接调试
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"],
-)
 install_error_handlers(app)
 
 
@@ -45,11 +38,8 @@ def health() -> Dict[str, Any]:
     return {"ok": True, "service": "quantlab-backend-api"}
 
 
-app.include_router(data.router)
-app.include_router(pools.router)
-app.include_router(jobs.router)
-app.include_router(factor_generation.router)
-app.include_router(factor_backtest.router)
-app.include_router(composition.router)
-app.include_router(manual_backtest.router)
-app.include_router(results.router)
+app.include_router(auth.router)
+for business_router in (data, pools, jobs, factor_generation, factor_backtest, composition, manual_backtest, results):
+    app.include_router(business_router.router, dependencies=[
+        Depends(auth.require_user), Depends(auth.require_write_header),
+    ])

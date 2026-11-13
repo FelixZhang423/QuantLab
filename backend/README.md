@@ -200,3 +200,16 @@ python -m api
 
 
 两阶段门槛、测试确认与切分隔离见 [因子确认说明](docs/factor_confirmation.md)。
+
+## 本地账号登录
+
+使用现有 MySQL 配置。首次在 backend 目录用部署账号创建应用用户，命令会创建两张认证表并交互读取密码。部署账号需要建表权限，运行 API 的账号需要认证表的读写权限。
+
+```powershell
+python -m cli.create_user admin --name "管理员" --role admin
+python -m cli.create_user researcher --name "研究员"
+```
+
+本地通过 HTTP 和 Vite 代理开发时，启动 API 前设置 `$env:QL_AUTH_SECURE_COOKIE="0"`。生产环境使用 HTTPS，由同一站点反向代理 `/api`，保留默认的 Secure Cookie。修改数据的请求须带 `X-QuantLab-Request: 1`。登录尝试按连接来源 IP 在单个 API 进程内限流。
+
+当前研究数据和任务由已登录用户共享。管理员可在「用户与权限」创建、启用、停用研究员和重置密码，并在「审计日志」查看账号事件。首次认证操作会创建审计表 ql_auth_audit，因此升级后运行账号需要该表的建表和读写权限。改密、重置密码和停用账号会撤销受影响账号的旧会话。
