@@ -1,92 +1,13 @@
 """后台任务状态查询。"""
 from __future__ import annotations
 
-from errors import DomainError, make_error
+import json
+from typing import Any, Dict
 
 import common
+from common import _read_json, _safe_child, _sanitize
+from errors import make_error
 
-
-import json
-
-import logging
-
-import math
-
-import os
-
-import re
-
-import shutil
-
-import sys
-
-from collections import Counter
-
-from contextlib import asynccontextmanager
-
-from datetime import date, datetime, timedelta
-
-from pathlib import Path
-
-from typing import Any, AsyncIterator, Dict, List, Optional
-
-import pandas as pd
-
-import yaml
-
-
-
-
-from schemas import (  # noqa: E402
-    FactorBacktestRequest,
-    FactorGenerationRequest,
-    FactorGenerationSplit,
-    ManualBacktestRequest,
-    PoolCreateRequest,
-)
-
-from repositories import clickhouse as live_db  # noqa: E402
-
-from workers.job_runner import spawn_platform_job  # noqa: E402
-
-from repositories import company_source, mysql_store  # noqa: E402
-
-from custom_bt.canonical_expression import normalize_expression  # noqa: E402
-
-from repositories.local_store import normalize_code  # noqa: E402
-
-from custom_bt.docs import enrich_operators  # noqa: E402
-
-from adapters.expressions import (  # noqa: E402
-    ExpressionError,
-    _validate_ast,
-    list_operators,
-)
-
-from custom_bt.factor_backtest import factor_id as factor_id_for  # noqa: E402
-
-from custom_bt.factor_generation import (  # noqa: E402
-    fundamental_period_mode,
-    resolve_generation_device,
-)
-
-from repositories.job_store import update_job_status  # noqa: E402
-
-from custom_bt.manual_backtest import (  # noqa: E402
-    normalize_manual_expression,
-    validate_run_name,
-)
-
-from adapters.operator_registry import get_operator  # noqa: E402
-
-from workers.job_dispatcher import create_platform_job  # noqa: E402
-
-
-from common import (
-    _read_json,
-    _safe_child,
-    _sanitize,
-)
 
 def get_job(job_id: str) -> Dict[str, Any]:
     """平台任务状态（create_pool 等），前端轮询用。"""
@@ -100,3 +21,37 @@ def get_job(job_id: str) -> Dict[str, Any]:
         raise make_error(status_code=500, detail=f"读取任务状态失败：{exc}") from None
     status.setdefault("job_id", job_id)
     return _sanitize(status)
+
+
+def list_jobs() -> list[Dict[str, Any]]:
+    """Return task summaries from the same files used by worker polling."""
+    jobs = []
+    if not common.JOBS_ROOT.is_dir():
+        return jobs
+    for job_dir in sorted(common.JOBS_ROOT.iterdir(), reverse=True):
+        if job_dir.is_symlink() or not (job_dir / "status.json").is_file():
+            continue
+        try:
+            status = _read_json(job_dir / "status.json")
+            config = _read_json(job_dir / "platform_job.json")
+        except (OSError, ValueError):
+            continue
+        if not isinstance(status, dict) or not isinstance(config, dict):
+            continue
+        result = status.get("result") or {}
+        payload = config.get("payload") or {}
+        progress = status.get("progress") or {}
+        if not all(isinstance(value, dict) for value in (result, payload, progress)):
+            continue
+        params = payload.get("config")
+        if isinstance(params, dict):
+            payload = {**params, **payload}
+        jobs.append({
+            "job_id": job_dir.name,
+            "created_at": config.get("created_at"),
+            **{key: status.get(key) for key in ("operation", "status", "message", "updated_at")},
+            "stage": progress.get("stage"),
+            "parameters": {key: payload[key] for key in ("pool_id", "run_id", "start_date", "end_date", "expression", "topk") if key in payload},
+            "result": {key: result[key] for key in ("run_key", "run_id", "pool_id", "composition_id", "backtest_id") if key in result},
+        })
+    return _sanitize(jobs)

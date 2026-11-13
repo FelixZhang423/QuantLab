@@ -79,10 +79,10 @@ const BLOCKED_LABELS: Record<string, string> = {
   next_open_limit_up: "下一交易日涨停",
 };
 
-export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; navigate: PageNav }) {
+export function CompositionPage({ addTask, navigate, initialResult }: { addTask: TaskAdder; navigate: PageNav; initialResult?: [string, string] }) {
   void addTask;
 
-  const [poolId, setPoolId] = useState<string | undefined>();
+  const [poolId, setPoolId] = useState<string | undefined>(initialResult?.[0]);
   const [runIds, setRunIds] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("auto");
   const [maxFactors, setMaxFactors] = useState(20);
@@ -99,7 +99,7 @@ export function CompositionPage({ addTask, navigate }: { addTask: TaskAdder; nav
   const [jobId, setJobId] = useState<string | null>(null);
   const [submission, setSubmission] = useState<FactorCompositionResponse | null>(null);
   const [jobWarnings, setJobWarnings] = useState<string[]>([]);
-  const [compositionId, setCompositionId] = useState<string | null>(null);
+  const [compositionId, setCompositionId] = useState<string | null>(initialResult?.[1] ?? null);
   const [activeSize, setActiveSize] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [onlySelected, setOnlySelected] = useState(true);

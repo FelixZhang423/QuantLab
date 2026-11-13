@@ -227,7 +227,7 @@ function poolOptions(pools: PoolInfo[]) {
   }));
 }
 
-export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder; navigate: PageNav }) {
+export function FactorGenerationPage({ addTask, navigate, initialRunId }: { addTask: TaskAdder; navigate: PageNav; initialRunId?: string }) {
   void addTask;
   const [form] = Form.useForm<GenFormValues>();
   const [jobId, setJobId] = useState<string | null>(null);
@@ -236,7 +236,7 @@ export function FactorGenerationPage({ addTask, navigate }: { addTask: TaskAdder
   const [runDetail, setRunDetail] = useState<FactorRunDetail | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [runLoading, setRunLoading] = useState(false);
-  const [runId, setRunId] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(initialRunId ?? null);
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const loadedRunRef = useRef<string | null>(null);
