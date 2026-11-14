@@ -132,6 +132,7 @@ export type CompositionFactorWeight = {
   metrics: CompositionMetrics & Record<string, unknown>;
   direction: number | null;
   training_ic: number | null;
+  segments?: Partial<Record<"train" | "valid" | "test", CompositionMetrics>> | null;
   direction_source: string | null;
   effective_expression: string | null;
 };
@@ -201,7 +202,7 @@ export type CompositionScreenRefreshResponse = {
   pool_id: string;
   size: number;
   screen: CompositionScreen;
-  refreshed_at: string;
+  refreshed_at: string | null;
   snapshot_id: string | null;
   data_source: string;
 };

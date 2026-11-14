@@ -10,6 +10,8 @@ import {
   ReloadOutlined, ToolOutlined,
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
+import type { CompositionMetrics, CompositionScreenRefreshResponse } from "./api";
+import { ApiError } from "../../shared/api/base";
 import type { PageNav } from "../../app/navigation";
 import {
   api, useApiData, useJobPolling,
@@ -67,7 +69,7 @@ const STAGE_LABELS: Record<string, string> = {
 
 const SCREEN_STATUS: Record<string, { label: string; color: string }> = {
   buyable: { label: "次日可买", color: "green" },
-  pending_next_open: { label: "待次日校验", color: "blue" },
+  pending_next_open: { label: "待开盘确认", color: "blue" },
   blocked: { label: "次日不可买", color: "orange" },
   not_selected: { label: "未选中", color: "default" },
 };
@@ -103,6 +105,7 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
   const [activeSize, setActiveSize] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [onlySelected, setOnlySelected] = useState(true);
+  const [screenPreview, setScreenPreview] = useState<CompositionScreenRefreshResponse | null>(null);
   const [refreshSignalDate, setRefreshSignalDate] = useState<Dayjs | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const finishedRef = useRef<string | null>(null);
@@ -231,10 +234,14 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
       : Promise.resolve(null)),
     [poolId, compositionId, displaySize],
   );
-  const screen = screenApi.data?.composition_id === compositionId
+  const storedScreen = screenApi.data?.composition_id === compositionId
     && screenApi.data.size === displaySize
     ? screenApi.data.screen
     : null;
+  const preview = screenPreview && screenPreview.pool_id === poolId
+    && screenPreview.composition_id === compositionId && screenPreview.size === displaySize
+    ? screenPreview.screen : null;
+  const screen = preview ?? storedScreen;
   const screenSummary = screen ?? detail?.result.screen ?? null;
 
   useEffect(() => {
@@ -312,7 +319,7 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
       return;
     }
     if (runIds.length === 0) {
-      message.error("请至少选择一个已完成测试确认的因子运行");
+      message.error("请至少选择一个已完成测试确认的因子生成批次");
       return;
     }
     if (selectionMode === "manual" && selectedFactorIds.length === 0) {
@@ -389,6 +396,12 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
         signal_date: refreshSignalDate.format("YYYY-MM-DD"),
         size: displaySize ?? undefined,
       });
+      if (response.screen.execution_pending) {
+        setScreenPreview(response);
+        message.info(`信号日 ${refreshSignalDate.format("YYYY-MM-DD")} 仍待开盘确认。下一交易日行情入库后可再次校验。`);
+        return;
+      }
+      setScreenPreview(null);
       message.success(
         `选股清单已刷新：信号日 ${response.screen.signal_date ?? "—"}，执行日 ${response.screen.execution_date ?? "—"}`,
       );
@@ -396,7 +409,11 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
       screenApi.reload();
       historyApi.reload();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiError && err.status === 422 && err.message.includes("之后还没有可用的交易日行情")) {
+        message.info(`信号日 ${refreshSignalDate.format("YYYY-MM-DD")} 仍待开盘确认。下一交易日行情入库后可再次校验。`);
+      } else {
+        message.error(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setRefreshing(false);
     }
@@ -464,28 +481,50 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
 
   const weightColumns: TableColumnsType<CompositionFactorWeight> = [
     {
-      title: "因子", dataIndex: "factor_id", width: 170,
+      title: "因子", dataIndex: "factor_id", width: 205,
       render: (value: string) => <Text code>{value}</Text>,
     },
     {
-      title: "表达式", dataIndex: "expression", ellipsis: true,
-      render: (value: string | null) => <Text code>{value ?? "—"}</Text>,
+      title: "表达式", dataIndex: "expression",
+      render: (value: string | null) => <Typography.Paragraph style={{ margin: 0, overflowWrap: "anywhere", fontFamily: "monospace" }}
+        ellipsis={{ rows: 2, expandable: true, symbol: "展开" }} copyable={value ? { text: value } : false}>{value ?? "—"}</Typography.Paragraph>,
     },
     {
-      title: "权重", dataIndex: "weight", width: 84, align: "right",
+      title: "权重", dataIndex: "weight", width: 142, align: "right",
       sorter: (left, right) => left.weight - right.weight,
-      render: (value: number) => <Text strong>{fmtPercent(value, 2)}</Text>,
+      render: (value: number) => <Flex vertical align="end" gap={3}><Text strong>{fmtPercent(value, 2)}</Text>
+        <progress max={1} value={value} aria-label="因子权重" style={{ width: 90, height: 7, accentColor: "#1677ff" }} />
+      </Flex>,
     },
     {
-      title: "训练 IC", dataIndex: "training_ic", width: 92, align: "right",
-      render: (value: number | null) => fmtNumber(value, 4),
+      title: "应用方向", dataIndex: "direction", width: 94,
+      render: (value: number | null) => value === -1 ? "反向" : value === 1 ? "正向" : "—",
     },
+    ...([
+      ["train", "训练集"], ["valid", "验证集"], ["test", "测试集"],
+    ] as const).map(([segment, title]) => ({
+      title,
+      children: ([
+        ["ic", "IC", 4], ["rank_ic", "RankIC", 4], ["icir", "ICIR", 2],
+        ["coverage", "覆盖率", 1], ["valid_days", "有效天数", 0],
+      ] as const).map(([metric, label, digits]) => {
+        const value = (row: CompositionFactorWeight) =>
+          row.segments?.[segment]?.[metric] ?? (segment === "train" && metric === "ic" ? row.training_ic : null);
+        return {
+          title: label, width: 96, align: "right" as const,
+          sorter: (left: CompositionFactorWeight, right: CompositionFactorWeight) =>
+            (value(left) ?? -Infinity) - (value(right) ?? -Infinity),
+          render: (_: unknown, row: CompositionFactorWeight) => metric === "coverage"
+            ? fmtPercent(value(row), digits) : fmtNumber(value(row), digits),
+        };
+      }),
+    })),
   ];
 
   const sizeColumns: TableColumnsType<CompositionSizeEntry> = [
     {
-      title: "规模", dataIndex: "size", width: 84, fixed: "left",
-      render: (value: number) => <Tag color="blue">Top {value}</Tag>,
+      title: "因子数", dataIndex: "size", width: 105, fixed: "left",
+      render: (value: number) => <Tag color={value === displaySize ? "blue" : "default"}>{value} 个</Tag>,
     },
     {
       title: "组合 IC", width: 92, align: "right",
@@ -501,17 +540,20 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
       render: (_, record) => fmtNumber(record.composition_metrics.icir, 2),
     },
     {
-      title: "年化", width: 86, align: "right",
+      title: "年化收益", width: 100, align: "right",
+      sorter: (left, right) => asNumber(left.backtest_summary.annual_return) - asNumber(right.backtest_summary.annual_return),
       render: (_, record) => <Text type={asNumber(record.backtest_summary.annual_return) >= 0 ? "success" : "danger"}>
         {fmtPercent(record.backtest_summary.annual_return)}
       </Text>,
     },
     {
-      title: "夏普", width: 76, align: "right",
+      title: "夏普", width: 82, align: "right",
+      sorter: (left, right) => asNumber(left.backtest_summary.sharpe) - asNumber(right.backtest_summary.sharpe),
       render: (_, record) => fmtNumber(record.backtest_summary.sharpe, 2),
     },
     {
-      title: "最大回撤", width: 92, align: "right",
+      title: "最大回撤", width: 100, align: "right",
+      sorter: (left, right) => asNumber(left.backtest_summary.max_drawdown) - asNumber(right.backtest_summary.max_drawdown),
       render: (_, record) => <Text type="danger">{fmtPercent(record.backtest_summary.max_drawdown)}</Text>,
     },
     {
@@ -519,8 +561,32 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
       render: (_, record) => fmtPercent(record.backtest_summary.average_turnover),
     },
     {
-      title: "选股", width: 74, align: "right",
+      title: "选中股票", width: 96, align: "right",
       render: (_, record) => record.screen.selected_count ?? "—",
+    },
+    ...([
+      ["coverage", "覆盖率", 1], ["valid_days", "有效天数", 0],
+    ] as const satisfies readonly (readonly [keyof CompositionMetrics, string, number])[]).map(([key, title, digits]) => ({
+      title, width: 96, align: "right" as const,
+      render: (_: unknown, row: CompositionSizeEntry) => key === "coverage"
+        ? fmtPercent(row.composition_metrics[key], digits) : fmtNumber(row.composition_metrics[key], digits),
+    })),
+    ...([
+      ["total_return", "累计收益", true], ["win_rate", "胜率", true],
+      ["total_cost", "总成本", true], ["annual_cost", "年化成本", true],
+      ["average_holding_count", "平均持仓数", false],
+    ] as const).map(([key, title, percentage]) => ({
+      title, width: 100, align: "right" as const,
+      render: (_: unknown, row: CompositionSizeEntry) => percentage
+        ? fmtPercent(row.backtest_summary[key]) : fmtNumber(row.backtest_summary[key], 2),
+    })),
+    {
+      title: "操作", width: 96,
+      render: (_, record) => record.size === displaySize ? <Text type="secondary">当前查看</Text>
+        : <Button type="link" size="small" onClick={(event) => {
+          event.stopPropagation();
+          setActiveSize(record.size);
+        }}>查看明细</Button>,
     },
   ];
 
@@ -613,14 +679,14 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
               }))}
             />
             {resultsOnly && resultRunIds.length > 0 && <Space wrap>
-              <Text strong>因子运行</Text>
+              <Text strong>因子生成批次</Text>
               {resultRunIds.map((id) => <Tag key={id}>{usableRuns.find((run) => run.run_id === id)?.run_name || id}</Tag>)}
-              <Button type="link" onClick={() => setResultRunIds([])}>查看全部运行</Button>
+              <Button type="link" onClick={() => setResultRunIds([])}>查看全部批次</Button>
             </Space>}
             {resultsOnly ? <Select value={compositionId ?? undefined} onChange={loadComposition}
               loading={historyApi.loading} disabled={!poolId} options={historyOptions}
               placeholder="选择历史组合" style={{ minWidth: 330 }} /> : <>
-            <Text strong>因子运行</Text>
+            <Text strong>因子生成批次</Text>
             <Select
               mode="multiple"
               value={runIds}
@@ -629,7 +695,7 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
               showSearch optionFilterProp="label"
               maxTagCount="responsive"
               disabled={!poolId || runsApi.loading}
-              placeholder={usableRuns.length ? "选择已完成确认的运行（可多选）" : "该股票池暂无已确认运行"}
+              placeholder={usableRuns.length ? "选择已完成确认的批次（可多选）" : "该股票池暂无已确认批次"}
               style={{ minWidth: 380 }}
               options={usableRuns.map((run) => ({
                 value: run.run_id,
@@ -676,14 +742,14 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
         {runsApi.error && (
           <Alert
             type="warning" showIcon className="note-action"
-            message="因子运行加载失败" description={runsApi.error}
+            message="因子生成批次加载失败" description={runsApi.error}
             action={<Button size="small" onClick={runsApi.reload}>重试</Button>}
           />
         )}
         {poolId && !runsApi.loading && usableRuns.length === 0 && (
           <Alert
             type="info" showIcon className="note-action"
-            message="该股票池没有可用于组合的因子运行"
+            message="该股票池没有可用于组合的因子生成批次"
             description="只有完成测试集确认、且合格因子数大于 0、运行目录在本地存在的 factor run 才能参与组合。"
             action={<Button size="small" onClick={() => navigate("factor_generation")}>去生成因子</Button>}
           />
@@ -859,7 +925,7 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
             action={<Button size="small" onClick={detailsApi.reload}>重试</Button>}
           />
         ) : runIds.length === 0 ? (
-          <Empty description="先选择股票池和已完成测试确认的因子运行" />
+          <Empty description="先选择股票池和已完成测试确认的因子生成批次" />
         ) : (
           <Table
             rowKey="factor_id"
@@ -970,7 +1036,7 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
                   { key: "rejected", label: "去重/容量剔除", children: `${detail.manifest.rejected_count} 个` },
                   { key: "mutual", label: "mutual IC 阈值", children: fmtNumber(detail.manifest.mutual_ic_threshold, 2) },
                   { key: "clip", label: "z-clip", children: detail.manifest.z_clip ?? "不截断" },
-                  { key: "runs", label: "来源运行", children: detail.manifest.source_factor_run_ids.join("、") || "—" },
+                  { key: "runs", label: "来源批次", children: detail.manifest.source_factor_run_ids.join("、") || "—" },
                 ]}
               />
 
@@ -978,29 +1044,31 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
               <Table
                 rowKey="factor_id" size="small"
                 columns={weightColumns} dataSource={detail.weights}
-                pagination={false} scroll={{ x: 520 }}
+                pagination={{ pageSize: 10, hideOnSinglePage: true }} scroll={{ x: 2450 }}
                 locale={{ emptyText: <Empty description="没有因子权重记录" /> }}
               />
               <Divider orientation="left" plain>多规模对比</Divider>
               <Table
                 rowKey="size" size="small" className="clickable-rows"
                 columns={sizeColumns} dataSource={detail.manifest.sizes}
-                pagination={false} scroll={{ x: 760 }}
+                pagination={false} scroll={{ x: 1950 }}
                 rowClassName={(record) => record.size === displaySize ? "highlight-row" : ""}
                 onRow={(record) => ({ onClick: () => setActiveSize(record.size) })}
                 locale={{ emptyText: <Empty description="没有规模结果" /> }}
               />
-              <Text type="secondary">点击规模行可切换下方选股清单；默认展示最大规模。</Text>
+              <Text type="secondary">切换因子数后，权重、回测指标和选股清单会同步更新。</Text>
 
               <Divider orientation="left" plain>最新一期选股清单</Divider>
               <Flex justify="space-between" gap={12} wrap align="center">
                 <Space wrap>
                   <Tag color="blue">信号日 {screenSummary?.signal_date ?? "—"}</Tag>
                   <Tag color={screenSummary?.execution_pending ? "orange" : "green"}>
-                    执行日 {screenSummary?.execution_date ?? (screenSummary?.execution_pending ? "下一交易日待定" : "—")}
+                    {screenSummary?.execution_pending ? "待下一交易日开盘" : `执行日 ${screenSummary?.execution_date ?? "—"}`}
                   </Tag>
-                  <Tag>选中 {screenSummary?.selected_count ?? 0} / TopK {screen?.top_k ?? topK}</Tag>
-                  <Tag color="green">次日可买 {screenSummary?.buyable_count ?? "—"}</Tag>
+                  <Tag>{screenSummary?.execution_pending ? "候选" : "选中"} {screenSummary?.selected_count ?? "—"} / TopK {screen?.top_k ?? topK}</Tag>
+                  <Tag color={screenSummary?.execution_pending ? "orange" : "green"}>
+                    {screenSummary?.execution_pending ? "可买数量待确认" : `次日可买 ${screenSummary?.buyable_count ?? "—"}`}
+                  </Tag>
                   <Tag>全市场排名 {screenSummary?.total_ranked ?? "—"}</Tag>
                   <Tag color="cyan">单股计划权重 {fmtPercent(screenSummary?.planned_weight_per_stock, 2)}</Tag>
                   {screen?.refreshed_at && <Tag color="purple">已刷新 {fmtDateTime(screen.refreshed_at)}</Tag>}
@@ -1012,7 +1080,7 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
                     value={refreshSignalDate}
                     allowClear={false}
                     disabledDate={(current) => Boolean(current && current > dayjs().endOf("day"))}
-                    onChange={(value) => setRefreshSignalDate(value)}
+                    onChange={setRefreshSignalDate}
                   />
                   <Button
                     size="small"
@@ -1022,14 +1090,20 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
                     onClick={refreshScreen}
                     title="用最新数据重新加载面板，按所选信号日 T 的收盘信号与 T+1 行情复算可买状态（不重跑组合回测）"
                   >
-                    刷新选股清单
+                    {refreshSignalDate?.format("YYYY-MM-DD") !== screenSummary?.signal_date ? "查看所选信号日" : screenSummary?.execution_pending ? "刷新开盘校验" : "刷新选股清单"}
                   </Button>
                   <Switch size="small" checked={onlySelected} onChange={setOnlySelected} />
-                  <Text type="secondary">只看选中</Text>
+                  <Text type="secondary">{screenSummary?.execution_pending ? "只看候选" : "只看选中"}</Text>
                   <Text type="secondary">返回 {screen?.returned_rows ?? 0} / {screen?.total_returned_rows ?? 0} 行</Text>
                 </Space>
               </Flex>
-              {screenApi.error ? (
+              {screenSummary?.execution_pending && (
+                <Alert type="info" showIcon className="note-action"
+                  message="当前展示收盘信号生成的候选名单"
+                  description="下一交易日开盘行情入库后，保持当前信号日并点击「刷新开盘校验」。系统会校验可买状态，并按排名递补。"
+                />
+              )}
+              {screenApi.error && !preview ? (
                 <Alert
                   type="warning" showIcon className="note-action"
                   message="最新选股清单读取失败" description={screenApi.error}
@@ -1055,7 +1129,7 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
                       />
                     ),
                   }}
-                  locale={{ emptyText: <Empty description={onlySelected ? "最新一期没有选中的股票" : "没有选股记录"} /> }}
+                  locale={{ emptyText: <Empty description={onlySelected ? (screenSummary?.execution_pending ? "没有候选股票" : "没有选中的股票") : "没有选股记录"} /> }}
                 />
               ) : (
                 <Flex justify="center" className="note-action">
@@ -1064,7 +1138,7 @@ export function CompositionPage({ navigate, initialResult, resultsOnly = false }
               )}
               <Text type="secondary">
                 选股口径：信号日收盘计算组合分，下一交易日开盘买入；停牌、开盘价缺失或涨停的股票会被跳过，
-                并继续按排名补足 TopK。执行日为待定时，先用信号日排名展示，次日开盘前需再做可买校验。
+                并继续按排名补足 TopK。
               </Text>
             </Spin>
           )}

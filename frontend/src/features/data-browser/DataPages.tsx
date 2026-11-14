@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Alert, Button, Card, Col, Descriptions, Flex, Input, Pagination, Row, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
 } from "antd";
@@ -23,10 +23,12 @@ const PERIOD_TYPE_LABELS: Record<string, string> = {
   derived: "派生",
 };
 const fmtInt = (value: number | null | undefined) => (value == null ? "—" : value.toLocaleString("zh-CN"));
-const fmtPrice = (value: number | null) => (value == null ? "—" : value.toFixed(2));
+const fmtPrice = (value: number | null | undefined) => (value == null ? "—" : value.toFixed(2));
 
 /** 数据总览 / 数据字段 / 股票列表三个页面走数据库实时查询，失败时给出这句提示 */
 const LIVE_HINT = "数据预览和股票池筛选查询公司 ClickHouse；因子生成、回测与组合使用不可变 Parquet 快照。首次取数需连接公司网络并配置 ClickHouse。";
+
+const StockDetail = lazy(() => import("./StockDetail").then((module) => ({ default: module.StockDetail })));
 
 /* ============ 数据总览 ============ */
 
@@ -276,6 +278,7 @@ export function FieldsPage() {
 /* ============ 股票列表 ============ */
 
 export function StocksPage() {
+  const [selectedStock, setSelectedStock] = useState<StockInfo | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -297,15 +300,15 @@ export function StocksPage() {
   }, [query, page, pageSize, filters, suspended, sort]);
   const items = stocksApi.data?.items ?? [];
   const columns: TableColumnsType<StockInfo> = [
-    { title: "股票代码", dataIndex: "code", width: 110, sorter: true, render: (v) => <Text code>{v}</Text> },
+    { title: "股票代码", dataIndex: "code", width: 110, sorter: true, render: (v, stock) => <Button type="link" size="small" onClick={() => setSelectedStock(stock)}>{v}</Button> },
     { title: "名称", dataIndex: "name", width: 140, ellipsis: true, render: (v) => v || "—" },
     { title: "行业", dataIndex: "industry", width: 120 },
     { title: "板块", dataIndex: "board", width: 120 },
-    { title: "上市状态（库内值）", dataIndex: "listed_state", width: 150, render: (v) => v == null ? "未知" : <Tag>{v}</Tag> },
     { title: "交易状态", dataIndex: "latest_ifsuspend", width: 110, render: (v) => v === 1 ? <Tag color="orange">停牌</Tag> : v === 0 ? <Tag color="green">正常</Tag> : "未知" },
     { title: "数据行数", dataIndex: "rows", align: "right", sorter: true, render: (v) => fmtInt(v) },
     { title: "起止日期", key: "range", width: 220, render: (_, s) => <Text type="secondary">{s.start_date} ~ {s.end_date}</Text> },
     { title: "最近交易日", dataIndex: "latest_date", width: 120 },
+    { title: "最近开盘价", dataIndex: "latest_open", align: "right", render: (v) => fmtPrice(v) },
     { title: "最近收盘价", dataIndex: "latest_close", align: "right", sorter: true, render: (v) => fmtPrice(v) },
     { title: "最近成交量", dataIndex: "latest_volume", align: "right", render: (v) => fmtInt(v) },
     { title: "最近成交额", dataIndex: "latest_amount", align: "right", render: (v) => (v == null ? "—" : `¥${v.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}`) },
@@ -355,6 +358,9 @@ export function StocksPage() {
             }} />
         </Card>
       </LoadGate>
+      {selectedStock && <Suspense fallback={<Skeleton active />}>
+        <StockDetail key={selectedStock.code} stock={selectedStock} onClose={() => setSelectedStock(null)} />
+      </Suspense>}
     </Space>
   );
 }

@@ -59,6 +59,7 @@ export type StockInfo = {
   start_date: string;
   end_date: string;
   latest_date: string;
+  latest_open: number | null;
   latest_close: number | null;
   latest_volume: number | null;
   latest_amount: number | null;

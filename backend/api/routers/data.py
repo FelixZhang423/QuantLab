@@ -41,3 +41,7 @@ def get_universe_codes(industries: List[str]=Query(default=[], description='è¡Œä
 @router.get('/api/operators', response_model=OperatorsResponse)
 def get_operators() -> Dict[str, Any]:
     return data_service.get_operators()
+
+@router.get("/api/data/stocks/{code}/history")
+def get_stock_history(code: str, days: int = Query(60, ge=1, le=250), end: Optional[str] = None) -> Dict[str, Any]:
+    return data_service.get_stock_history(code, days, end)

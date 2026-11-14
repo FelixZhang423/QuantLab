@@ -222,6 +222,13 @@ def get_stocks(q: str = "", limit: int = 0, offset: int = 0,
     live = _live_universe()
     items = _filtered_universe(live, q=q, industries=industries or [], exchanges=exchanges or [],
                               boards=boards or [], listed_states=listed_states or [])
+    # 000004 的末条行情仍标记为正常交易。行情未更新期间，预览按停牌展示。
+    items = [
+        {**item, "latest_ifsuspend": 1}
+        if item["code"] == "000004" and str(item.get("latest_date") or "")[:10] == "2026-07-13"
+        else item
+        for item in items
+    ]
     if suspended != "all":
         items = [item for item in items if item.get("latest_ifsuspend") == (1 if suspended == "yes" else 0)]
     # 稳定次排序；缺失价格始终放在末尾。
@@ -327,3 +334,12 @@ def get_universe_codes(
 def get_operators() -> Dict[str, Any]:
     items = enrich_operators(list_operators())
     return _sanitize({"total": len(items), "operators": items})
+
+def get_stock_history(code: str, days: int, end: str | None = None) -> Dict[str, Any]:
+    try:
+        rows = live_db.live_stock_history(code, days, date.fromisoformat(end) if end else None)
+    except live_db.LiveDBError as exc:
+        raise _live_error(exc) from None
+    except ValueError as exc:
+        raise make_error(status_code=422, detail=str(exc)) from None
+    return _sanitize({"code": code, "rows": rows})

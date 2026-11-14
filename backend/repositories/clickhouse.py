@@ -28,7 +28,7 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
@@ -123,6 +123,7 @@ SELECT
     toString(count()) AS rows,
     min(timestamps) AS start_date,
     max(timestamps) AS end_date,
+    toString(argMax(tuple(open), timestamps).1) AS latest_open,
     toString(argMax(close, timestamps)) AS latest_close,
     toString(argMax(vol, timestamps)) AS latest_volume,
     toString(argMax(amount, timestamps)) AS latest_amount,
@@ -793,6 +794,7 @@ def live_stock_rows(
                     "start_date": str(row.get("start_date") or ""),
                     "end_date": end_date,
                     "latest_date": end_date,
+                    "latest_open": to_float(row.get("latest_open")),
                     "latest_close": to_float(row.get("latest_close")),
                     "latest_volume": to_int(row.get("latest_volume")),
                     "latest_amount": to_float(row.get("latest_amount")),
@@ -978,3 +980,31 @@ def prewarm() -> None:
                 pass
 
     threading.Thread(target=_run, name="live-db-prewarm", daemon=True).start()
+
+def live_stock_history(code: str, days: int, end: date | None = None) -> List[Dict[str, Any]]:
+    """Return the latest daily observations for a single stock."""
+    if not re.fullmatch(r"[0-9]{6}", code) or not 1 <= days <= 250:
+        raise ValueError("无效的股票代码或交易日数量")
+    end = end or date.today()
+    # Use a calendar window wide enough for weekends and exchange holidays.
+    start = end - timedelta(days=days * 2 + 30)
+    before = end + timedelta(days=1)
+    fields = {
+        "open": "open", "close": "close", "high": "high", "low": "low", "ycp": "previous_close",
+        "vol": "volume", "amount": "amount", "ChangePCT": "change_pct",
+        "RangePCT": "range_pct", "TurnoverRate": "turnover_pct", "Ifsuspend": "suspended",
+    }
+    columns = ", ".join(f"toString({field}) AS daily_{alias}" for field, alias in fields.items())
+    rows = _client(resolve_settings()).query(f"""
+        SELECT toString(toDate(timestamps)) AS trade_date, {columns}
+        FROM {DAILY_TABLE}
+        WHERE category = 'stock' AND code = '{code}'
+          AND timestamps >= '{start.isoformat()}' AND timestamps < '{before.isoformat()}'
+        ORDER BY timestamps DESC
+        LIMIT 1 BY toDate(timestamps)
+        LIMIT {days:d}
+    """)
+    return [
+        {"date": row["trade_date"], **{alias: to_float(row.get(f"daily_{alias}")) for alias in fields.values()}}
+        for row in reversed(rows)
+    ]

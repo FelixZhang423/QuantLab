@@ -1232,6 +1232,7 @@ def compose_factors(
                 "metrics": component.candidate.metrics,
                 "direction": component.candidate.raw.get("direction", 1),
                 "training_ic": component.candidate.raw.get("training_ic"),
+                "segments": component.candidate.raw.get("segments"),
                 "direction_source": component.candidate.raw.get("direction_source"),
                 "effective_expression": component.candidate.backtest_expression,
             }

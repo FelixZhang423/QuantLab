@@ -368,7 +368,7 @@ def test_refresh_composition_screen_recomputes_next_open(composition_env, monkey
     assert entry["screen_refresh_snapshot_id"] == "snap_refresh"
 
 
-def test_refresh_composition_screen_requires_next_trading_day(composition_env, monkeypatch):
+def test_refresh_composition_screen_returns_pending_without_next_trading_day(composition_env, monkeypatch):
     _write_composition_result(composition_env["results_root"])
     panel = _refresh_panel()
     panel = panel[panel["date"] == "2024-02-01"].reset_index(drop=True)
@@ -379,16 +379,17 @@ def test_refresh_composition_screen_requires_next_trading_day(composition_env, m
         lambda *args, **kwargs: (panel, "local"),
     )
 
-    with pytest.raises(DomainError) as error:
-        composition_service.refresh_factor_composition_screen(
-            "comp_1",
-            FactorCompositionScreenRefreshRequest(
-                pool_id="pool_a", signal_date="2024-02-01", size=2
-            ),
-        )
+    response = composition_service.refresh_factor_composition_screen(
+        "comp_1",
+        FactorCompositionScreenRefreshRequest(
+            pool_id="pool_a", signal_date="2024-02-01", size=2
+        ),
+    )
 
-    assert error.value.status_code == 422
-    assert "还没有可用的交易日行情" in error.value.detail
+    assert response["screen"]["execution_pending"] is True
+    assert response["screen"]["execution_date"] is None
+    assert response["refreshed_at"] is None
+
 
 
 def test_refresh_composition_screen_rejects_unknown_signal_date(composition_env, monkeypatch):

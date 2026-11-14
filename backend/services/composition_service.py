@@ -14,7 +14,7 @@ import common
 from common import _cache_ymd, _live_error, _parse_ymd, _read_json, _safe_child, _sanitize
 from custom_bt.engine import BacktestConfig
 from custom_bt.factor_composition import rebuild_latest_screen
-from errors import make_error
+from errors import DomainError, make_error
 from repositories import clickhouse as live_db
 from repositories import company_source
 from repositories.composition_store import write_composition_manifest, write_latest_screen
@@ -436,9 +436,29 @@ def get_factor_composition(
         try:
             raw_weights = _read_json(weights_path)
             if isinstance(raw_weights, list):
-                weights = raw_weights
+                weights = [row for row in raw_weights if isinstance(row, dict)]
         except (OSError, ValueError):
             weights = []
+    missing = {row.get("factor_id") for row in weights if not row.get("segments")}
+    if missing:
+        source_segments: Dict[str, Any] = {}
+        ambiguous = set()
+        for run_id in manifest.get("source_factor_run_ids") or []:
+            try:
+                rows = confirmed_records(_safe_child(common.FACTOR_RUNS_ROOT, run_id))
+            except (DomainError, OSError, ValueError):
+                continue
+            for row in rows:
+                factor_id, segments = row.get("factor_id"), row.get("segments")
+                if factor_id not in missing or not segments:
+                    continue
+                if factor_id in source_segments and source_segments[factor_id] != segments:
+                    ambiguous.add(factor_id)
+                source_segments[factor_id] = segments
+        for row in weights:
+            factor_id = row.get("factor_id")
+            if not row.get("segments") and factor_id in source_segments and factor_id not in ambiguous:
+                row["segments"] = source_segments[factor_id]
     return _sanitize(
         {
             "composition_id": composition_id,
@@ -610,13 +630,19 @@ def refresh_factor_composition_screen(
     except ValueError as exc:
         raise make_error(status_code=422, detail=str(exc)) from None
     if screen.get("execution_pending"):
-        raise make_error(
-            status_code=422,
-            detail=(
-                f"信号日 {signal_date.isoformat()} 之后还没有可用的交易日行情，"
-                "暂时无法复算次日可买状态；请等待下一交易日数据后再试"
-            ),
-        )
+        # Return a preview without overwriting the previously saved screen.
+        screen.pop("flat_rows", None)
+        screen["returned_rows"] = len(screen["rows"])
+        screen["total_returned_rows"] = len(screen["rows"])
+        return _sanitize({
+            "composition_id": composition_id,
+            "pool_id": request.pool_id,
+            "size": resolved_size,
+            "screen": screen,
+            "refreshed_at": None,
+            "snapshot_id": panel.attrs.get("snapshot_id"),
+            "data_source": source,
+        })
 
     refreshed_at = datetime.now().isoformat(timespec="seconds")
     snapshot_id = panel.attrs.get("snapshot_id")
