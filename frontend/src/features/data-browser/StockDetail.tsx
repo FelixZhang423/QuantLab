@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Descriptions, Drawer, Empty, Select, Space, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Button, Descriptions, Drawer, Empty, Select, Space, Spin, Table, Typography } from "antd";
 import * as echarts from "echarts";
 import { apiGet, useApiData, withQuery } from "../../shared/api/base";
 import type { StockInfo } from "./api";
@@ -81,8 +81,6 @@ export function StockDetail({ stock, onClose }: { stock: StockInfo; onClose: () 
                 render: (value: number | null) => value == null ? "—"
                   : `${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}${key.endsWith("_pct") ? "%" : ""}`,
               })),
-              { title: "交易状态", dataIndex: "suspended", render: (value: number | null) =>
-                value === 1 ? <Tag color="orange">停牌</Tag> : value === 0 ? "正常" : "—" },
             ]} />
         </>}
     </Space>

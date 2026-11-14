@@ -155,3 +155,37 @@ body { margin: 0; min-width: 1180px; min-height: 100vh; }
   background: color-mix(in srgb, currentColor 10%, white);
   font-size: 18px;
 }
+
+.data-overview-header {
+  padding: 20px 24px;
+  border: 1px solid #e5edf6;
+  border-radius: 8px;
+  background: linear-gradient(115deg, #ffffff, #f5f9ff);
+}
+
+.data-overview-header h4.ant-typography {
+  margin: 0;
+  color: #172033;
+}
+
+.data-overview-metrics {
+  margin-top: 18px;
+  padding-block: 16px;
+  border-block: 1px solid #e5edf6;
+}
+
+.data-overview-metrics .ant-statistic-title,
+.data-overview-meta {
+  color: #53657d;
+}
+
+.data-overview-metrics .ant-statistic-content {
+  color: #193b68;
+  font-size: clamp(16px, 2vw, 24px);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-overview-meta {
+  margin-top: 12px;
+  font-size: 12px;
+}

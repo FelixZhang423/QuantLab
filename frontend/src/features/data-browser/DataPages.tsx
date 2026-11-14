@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
-  Alert, Button, Card, Col, Descriptions, Flex, Input, Pagination, Row, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
+  Alert, Button, Card, Col, Descriptions, Flex, Input, Pagination, Progress, Row, Segmented, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography,
 } from "antd";
 import type { TableColumnsType } from "antd";
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
@@ -32,64 +32,167 @@ const StockDetail = lazy(() => import("./StockDetail").then((module) => ({ defau
 
 /* ============ 数据总览 ============ */
 
+const snapshotTime = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+});
+
+function formatSnapshotTime(value?: string | null) {
+  if (!value) return "—";
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? snapshotTime.format(time) : "—";
+}
+
+function categoryCounts(labels: string[]) {
+  const counts = new Map<string, number>();
+  for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+  return [...counts.entries()].map(([label, count]) => ({ label, count }));
+}
+
 export function DataOverviewPage({ navigate }: { navigate: PageNav }) {
   const master = useApiData(api.master);
+  const fieldCatalog = useApiData(api.fields);
+  const operatorCatalog = useApiData(api.operators);
+  const fields = fieldCatalog.data?.fields ?? [];
+  const operators = operatorCatalog.data?.operators ?? [];
+  const catalogs = [
+    {
+      page: "fields", title: "数据字段总览", state: fieldCatalog, total: fields.length,
+      counts: categoryCounts(fields.map((field) => fieldCategory(field).label)),
+      usable: fieldCatalog.data ? fields.filter((field) => field.status === "usable" || (field.status == null && field.expression)).length : null,
+    },
+    {
+      page: "operators", title: "操作符总览", state: operatorCatalog, total: operators.length,
+      counts: categoryCounts(operators.map((operator) => operator.category_cn || operator.category || "其他")),
+      usable: null,
+    },
+  ];
   const info = master.data;
   const coverage = useApiData(api.universeOptions);
   const options = coverage.data;
   const [dimension, setDimension] = useState<"boards" | "exchanges" | "industries">("boards");
   const coverageRows = [...(options?.[dimension] ?? [])].sort((a, b) => b.count - a.count);
+  function refresh() {
+    master.reload();
+    coverage.reload();
+    fieldCatalog.reload();
+    operatorCatalog.reload();
+  }
+
   return (
-    <LoadGate state={master} hint={LIVE_HINT}>
-      {info && (
-        <Space direction="vertical" size={16} className="page-stack">
-          <Flex wrap gap={8}>
-            <Button onClick={() => navigate("fields")}>查看数据字段</Button>
-            <Button onClick={() => navigate("stocks")}>预览股票</Button>
+    <Space direction="vertical" size={16} className="page-stack data-overview">
+      <section className="data-overview-header">
+        <Flex justify="space-between" align="center" gap={12} wrap>
+          <Space wrap>
+            <Typography.Title level={4}>日线行情</Typography.Title>
+            <Tag color="cyan">ClickHouse</Tag>
+            {info && <Tag color={info.ready && !master.error ? "green" : "orange"}>
+              {master.error ? "上次查询结果" : info.ready ? "数据可用" : "数据未就绪"}
+            </Tag>}
+          </Space>
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} onClick={refresh}
+              loading={master.loading || coverage.loading || fieldCatalog.loading || operatorCatalog.loading}>重新查询</Button>
             <Button type="primary" onClick={() => navigate("pools")}>创建股票池</Button>
-          </Flex>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12} xl={6}><Card className="metric-card metric-blue"><Statistic title="数据行数" value={info.rows ?? "—"} /></Card></Col>
-            <Col xs={24} sm={12} xl={6}><Card className="metric-card metric-cyan"><Statistic title="覆盖股票" value={info.n_stocks ?? "—"} suffix="只" /></Card></Col>
-            <Col xs={24} sm={12} xl={6}><Card className="metric-card metric-violet"><Statistic title="数据区间" value={info.date_min ?? "—"} suffix={<Text type="secondary">至 {info.date_max ?? "—"}</Text>} /></Card></Col>
-            <Col xs={24} sm={12} xl={6}><Card className="metric-card metric-orange"><Statistic title="可用字段" value={info.n_fields} suffix="个" /></Card></Col>
-          </Row>
-          <Card title="实时数据源" className="data-card" extra={<Space wrap><Tag color={info.ready ? "success" : "warning"}>{info.ready ? "数据可用" : "数据未就绪"}</Tag><Button icon={<ReloadOutlined />} loading={master.loading || coverage.loading} onClick={() => { master.reload(); coverage.reload(); }}>刷新数据</Button></Space>}>
-            <Descriptions column={2} size="small" bordered items={[
-              { key: "store", label: "数据源", children: <Space><Tag color="blue">ClickHouse</Tag><Text code copyable={{ text: info.store_dir }}>{info.store_dir}</Text></Space> },
-              { key: "layout", label: "数据布局", children: info.layout ?? "—" },
-              { key: "rows", label: "总行数", children: fmtInt(info.rows) },
-              { key: "stocks", label: "股票数", children: `${fmtInt(info.n_stocks)} 只` },
-              { key: "fields", label: "可用字段", children: `${info.n_fields} 个` },
-              { key: "queried", label: "查询时间", children: <Space size={6}><Text code>{info.queried_at ?? "—"}</Text><Tag color={info.cached ? "default" : "green"}>{info.cached ? "60 秒缓存" : "实时查询"}</Tag></Space> },
-            ]} />
-          </Card>
-          <Card title="股票覆盖分布" className="data-card" extra={
-            <Select value={dimension} onChange={setDimension} aria-label="分组维度" options={[
-              { value: "boards", label: "按板块" },
-              { value: "exchanges", label: "按交易所" },
-              { value: "industries", label: "按行业" },
-            ]} />
-          }>
-            {coverage.error && <Alert type="error" showIcon message="覆盖分布加载失败" description={coverage.error} />}
-            <Table size="small" rowKey="value" loading={coverage.loading} dataSource={coverageRows}
-              pagination={{ pageSize: 6, hideOnSinglePage: true, showSizeChanger: false }}
-              columns={[
-                { title: "分组", dataIndex: "label" },
-                { title: "股票数", align: "right", render: (_, item) => fmtInt(item.count) },
-                { title: "占候选股票比例", align: "right", render: (_, item) => options?.total ? `${(item.count / options.total * 100).toFixed(1)}%` : "—" },
+          </Space>
+        </Flex>
+        <Row gutter={[16, 16]} className="data-overview-metrics">
+          <Col xs={12} xl={6}><Statistic title="日线记录" value={info?.rows ?? "—"} /></Col>
+          <Col xs={12} xl={6}><Statistic title="覆盖股票" value={info?.n_stocks ?? "—"} suffix="只" /></Col>
+          <Col xs={12} xl={6}><Statistic title="最新行情日" value={info?.date_max ?? "—"} /></Col>
+          <Col xs={12} xl={6}><Statistic title="研究快照" value={info?.snapshot_count ?? "—"} suffix="份" /></Col>
+        </Row>
+        <Flex gap={16} wrap className="data-overview-meta">
+          <span>覆盖起点 {info?.date_min ?? "—"}</span>
+          <span>查询时间 {info?.queried_at ?? "—"}</span>
+          {info?.cached && <span>服务端缓存</span>}
+        </Flex>
+      </section>
+      {master.error && <Alert type="error" showIcon message="行情概览查询失败" description={master.error} />}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={16}>
+          <Card title="股票覆盖分布" className="data-card"
+            extra={<Button type="link" onClick={() => navigate("stocks")}>股票预览</Button>}>
+            <Flex align="center" justify="space-between" gap={8} wrap style={{ marginBottom: 12 }}>
+              <Segmented value={dimension} onChange={setDimension} options={[
+                { value: "boards", label: "板块" },
+                { value: "exchanges", label: "交易所" },
+                { value: "industries", label: "行业" },
               ]} />
+              <Text type="secondary">候选样本 {fmtInt(options?.total)} 只</Text>
+            </Flex>
+            <LoadGate state={coverage} hint={LIVE_HINT}>
+              <Table size="small" rowKey="value" dataSource={coverageRows}
+                pagination={{ pageSize: 6, hideOnSinglePage: true, showSizeChanger: false }}
+                columns={[
+                  { title: "分类", dataIndex: "label" },
+                  { title: "股票数", align: "right", render: (_, item) => fmtInt(item.count) },
+                  { title: "占候选样本", width: "42%", render: (_, item) => options?.total
+                    ? <Progress size="small" percent={Number((item.count / options.total * 100).toFixed(1))} />
+                    : "—" },
+                ]} />
+            </LoadGate>
           </Card>
-          <Card title="研究数据快照" className="data-card">
-            <Descriptions column={2} size="small" bordered items={[
-              { key: "count", label: "快照数量", children: fmtInt(info.snapshot_count) },
-              { key: "latest", label: "最近快照时间", children: info.latest_snapshot_at ?? "—" },
-            ]} />
-            <Alert className="page-stack-item" type="info" showIcon message="研究任务会创建或复用 ClickHouse 数据快照。已有快照保持不变，训练、回测与组合复用同一版本。" />
+        </Col>
+        <Col xs={24} xl={8}>
+          <Card title="数据源与研究快照" className="data-card">
+            <Space direction="vertical" size={16} className="full-width">
+              <div>
+                <Text type="secondary">行情来源</Text>
+                <Typography.Paragraph copyable={info?.store_dir ? { text: info.store_dir } : false}
+                  style={{ margin: "4px 0 0", overflowWrap: "anywhere" }}>
+                  {info?.store_dir ?? "—"}
+                </Typography.Paragraph>
+              </div>
+              <Row gutter={[16, 12]}>
+                <Col span={12}>
+                  <Text type="secondary">数据布局</Text>
+                  <div>{info?.layout === "clickhouse-live" ? "ClickHouse 实时查询" : info?.layout ?? "—"}</div>
+                </Col>
+                <Col span={12}>
+                  <Text type="secondary">行情字段数</Text>
+                  <div>{fmtInt(info?.n_fields)}</div>
+                </Col>
+              </Row>
+              <div style={{ paddingTop: 12, borderTop: "1px solid #f0f0f0" }}>
+                <Text type="secondary">最近快照（北京时间）</Text>
+                <div><Text strong>{formatSnapshotTime(info?.latest_snapshot_at)}</Text></div>
+                <Typography.Paragraph style={{ margin: "8px 0 0" }}>
+                  快照保存任务所需的股票、日期区间和字段，供因子生成、回测和组合选股复用。
+                  最近快照是版本保存时间，最新行情日是行情对应的交易日期。
+                </Typography.Paragraph>
+              </div>
+            </Space>
           </Card>
-        </Space>
-      )}
-    </LoadGate>
+        </Col>
+      </Row>
+      <Row gutter={[16, 16]}>
+        {catalogs.map(({ page, title, state, total, counts, usable }) => (
+          <Col key={page} xs={24} lg={12}>
+            <Card title={title} className="data-card" extra={
+              <Button type="link" onClick={() => navigate(page)}>查看明细</Button>
+            }>
+              <LoadGate state={state}>
+                <Space direction="vertical" size={16} className="full-width">
+                  <Space size={24} wrap>
+                    <Statistic title="总数" value={total} />
+                    <Statistic title="分类数" value={counts.length} />
+                    {usable != null && <Statistic title="可用于表达式" value={usable} />}
+                  </Space>
+                  <Table size="small" rowKey="label" dataSource={counts} pagination={false}
+                    columns={[
+                      { title: "分类", dataIndex: "label" },
+                      { title: "数量", dataIndex: "count", align: "right", sorter: (a, b) => a.count - b.count },
+                      { title: "占比", width: "36%", render: (_, item) =>
+                        <Progress size="small" percent={Number((item.count / total * 100).toFixed(1))} /> },
+                    ]} />
+                </Space>
+              </LoadGate>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+    </Space>
   );
 }
 
@@ -300,7 +403,7 @@ export function StocksPage() {
   }, [query, page, pageSize, filters, suspended, sort]);
   const items = stocksApi.data?.items ?? [];
   const columns: TableColumnsType<StockInfo> = [
-    { title: "股票代码", dataIndex: "code", width: 110, sorter: true, render: (v, stock) => <Button type="link" size="small" onClick={() => setSelectedStock(stock)}>{v}</Button> },
+    { title: "股票代码", dataIndex: "code", width: 110, sorter: true, render: (v, stock) => <Button type="link" size="small" onClick={(event) => { event.stopPropagation(); setSelectedStock(stock); }}>{v}</Button> },
     { title: "名称", dataIndex: "name", width: 140, ellipsis: true, render: (v) => v || "—" },
     { title: "行业", dataIndex: "industry", width: 120 },
     { title: "板块", dataIndex: "board", width: 120 },
@@ -343,7 +446,11 @@ export function StocksPage() {
       </Card>
       <LoadGate state={stocksApi} hint={LIVE_HINT}>
         <Card className="data-card">
-          <Table rowKey="code" size="middle" columns={columns} dataSource={items} loading={stocksApi.loading}
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            点击任意一行，查看该股票的日 K 线和历史行情。
+          </Typography.Paragraph>
+          <Table rowKey="code" size="middle" className="clickable-rows" columns={columns} dataSource={items}
+            loading={stocksApi.loading} onRow={(stock) => ({ onClick: () => setSelectedStock(stock) })}
             scroll={{ x: 1700 }} pagination={{ current: page, pageSize, total: stocksApi.data?.total ?? 0,
               showSizeChanger: true, pageSizeOptions: [20, 50, 100], showTotal: (total) => `共 ${total} 只股票` }}
             onChange={(pagination, _, sorter, extra) => {
